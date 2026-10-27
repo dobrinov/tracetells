@@ -1,0 +1,26 @@
+[package]
+name = "diagnostic-server"
+description = "Diagnostic server and CLI: collector endpoint, dashboard, analysis and evaluation"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "diagnostic"
+path = "src/main.rs"
+
+[dependencies]
+diagnostic-core.workspace = true
+diagnostic-agent.workspace = true
+anyhow.workspace = true
+axum.workspace = true
+brotli = "9"
+flate2 = "1"
+clap.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio = { workspace = true, features = ["io-std", "io-util"] }
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

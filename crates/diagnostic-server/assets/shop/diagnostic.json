@@ -1,0 +1,31 @@
+{
+  "product": "Stride",
+  "events": {
+    "add_to_cart": "A shopper added a pair of shoes to the cart (data-diagnostic-event on the Add to cart button)",
+    "purchase": "Payment succeeded; sent once per order from the checkout code",
+    "signup_completed": "A Stride+ account was created"
+  },
+  "kpis": {
+    "checkout_conversion": {
+      "name": "Checkout conversion",
+      "description": "Share of sessions reaching checkout that complete payment",
+      "conversion": { "from": { "pageview": "/checkout" }, "to": { "pageview": "/checkout/success" } },
+      "goal": "increase",
+      "target": "55%"
+    },
+    "signup_completion": {
+      "name": "Signup completion",
+      "description": "Share of sessions that start the signup form and finish it",
+      "conversion": { "from": { "form_start": "/signup" }, "to": { "event": "signup_completed" } },
+      "goal": "increase",
+      "target": "60%"
+    },
+    "js_errors": {
+      "name": "Sessions with errors",
+      "description": "Share of sessions with any exception, console error, failed request or missing file",
+      "session_rate": { "error": "*" },
+      "goal": "decrease",
+      "target": "1%"
+    }
+  }
+}

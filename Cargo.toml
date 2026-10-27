@@ -7,17 +7,26 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
-telltale-core = { path = "crates/telltale-core" }
-telltale-agent = { path = "crates/telltale-agent" }
+argon2 = { version = "0.5", features = ["std"] }
+data-encoding = "2"
+getrandom = "0.2"
+hmac = "0.12"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+sha1 = "0.10"
+sha2 = "0.10"
+subtle = "2"
+diagnostic-core = { path = "crates/diagnostic-core" }
+diagnostic-agent = { path = "crates/diagnostic-agent" }
 anyhow = "1"
 axum = "0.8"
 clap = { version = "4", features = ["derive", "env"] }
+regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "signal"] }
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.6", features = ["cors", "compression-br", "compression-gzip"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }

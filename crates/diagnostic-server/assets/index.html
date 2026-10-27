@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Diagnostic</title>
+    <link rel="stylesheet" href="/assets/style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23163a36'/%3E%3Cpath d='M5 17h5l3-7 4 13 3-9 2 3h5' stroke='%237ee0c8' stroke-width='2.4' stroke-linejoin='round' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <rect width="32" height="32" rx="7" class="brand-tile" />
+          <path d="M5 17h5l3-7 4 13 3-9 2 3h5" class="brand-mark" />
+        </svg>
+        <span>Diagnostic</span>
+        <span class="project" id="project-name"></span>
+      </div>
+      <nav id="nav">
+        <a href="#/ideas" data-view="ideas">Ideas</a>
+        <a href="#/kpis" data-view="kpis">KPIs</a>
+        <a href="#/behaviour" data-view="behaviour">Behaviour</a>
+        <a href="#/privacy" data-view="privacy">Privacy</a>
+        <a href="#/setup" data-view="setup">Setup</a>
+        <a href="#/team" data-view="team" hidden>Team</a>
+      </nav>
+      <a class="collect-status" id="collect-status" href="#/setup" hidden></a>
+      <button class="primary" id="run-analysis" type="button">Run analysis</button>
+      <a class="me" id="me" href="#/account" data-view="account" hidden></a>
+    </header>
+    <main id="view" aria-live="polite"></main>
+    <div class="toast" id="toast" role="status" hidden></div>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>
