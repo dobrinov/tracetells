@@ -1,0 +1,9 @@
+# Every issue is an OpenSpec change; questions go to Discussions.
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/OWNER/diagnostic/security/advisories/new
+    about: Report privately. Please don't open a public issue.
+  - name: Questions and ideas that aren't ready for a proposal
+    url: https://github.com/OWNER/diagnostic/discussions
+    about: Talk it through first; turn it into an OpenSpec proposal when it's concrete.

@@ -241,6 +241,10 @@ diagnostic serve [--config diagnostic.json] [--demo-site ADDR] | check [FILE] | 
 
 `POST /v1/collect` (collector, write key) · `POST /mcp` (MCP, API token) · admin token: `GET|POST /api/config` · `GET /api/kpis` · `GET /api/digest?days=14` · `GET /api/ideas?status=` · `GET /api/ideas/{id}/prompt` · `POST /api/ideas/{id}/status` · `POST /api/ideas/{id}/kpi` · `POST /api/analyze` · `POST /api/evaluate` · `GET /api/runs`
 
+## Contributing
+
+Contributions come in as OpenSpec changes filed as GitHub issues. Explore the problem with `/opsx:explore`, draft the change with `/opsx:propose`, then run `scripts/openspec-issue.sh <change-id>` to validate it and open the issue. An automated check validates every proposal, and maintainers review it for privacy and site impact. See [CONTRIBUTING.md](CONTRIBUTING.md), and report security problems privately ([SECURITY.md](SECURITY.md)).
+
 ## Layout
 
 - `crates/diagnostic-core`: storage, ingestion, KPI measurement, digest, idea lifecycle, prompt rendering, evaluation

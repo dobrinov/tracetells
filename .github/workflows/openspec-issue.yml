@@ -1,0 +1,90 @@
+# Checks that an issue carries a complete, valid OpenSpec change: rebuilds the
+# change from the issue body, runs `openspec validate --strict`, then labels the
+# issue and keeps one bot comment up to date with the result.
+name: OpenSpec issue check
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: openspec-issue-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    if: contains(github.event.issue.labels.*.name, 'openspec') || contains(github.event.issue.body, '### proposal.md')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install OpenSpec
+        run: npm install -g @fission-ai/openspec@1.15.0
+
+      - name: Rebuild the change from the issue
+        id: extract
+        env:
+          # Untrusted input: passed through a file, never interpolated into the script.
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          printf '%s' "$ISSUE_BODY" > "$RUNNER_TEMP/body.md"
+          if id=$(python3 scripts/openspec_issue.py extract "$RUNNER_TEMP/body.md" 2> "$RUNNER_TEMP/problems.md"); then
+            echo "id=$id" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate
+        id: validate
+        if: steps.extract.outputs.id != ''
+        env:
+          CHANGE_ID: ${{ steps.extract.outputs.id }}
+        run: |
+          if openspec validate "$CHANGE_ID" --strict --no-interactive > "$RUNNER_TEMP/validate.txt" 2>&1; then
+            echo "valid=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          CHANGE_ID: ${{ steps.extract.outputs.id }}
+          VALID: ${{ steps.validate.outputs.valid }}
+        run: |
+          gh label create openspec-valid --color 1d7a3a --description "Complete OpenSpec change, ready for review" --force >/dev/null
+          gh label create openspec-needs-work --color b3261e --description "The OpenSpec change is incomplete or invalid" --force >/dev/null
+          report="$RUNNER_TEMP/comment.md"
+          {
+            echo "<!-- openspec-issue-check -->"
+            if [ "$VALID" = "true" ]; then
+              echo "✅ **The OpenSpec change \`$CHANGE_ID\` is complete and valid.** A maintainer will review it against the privacy and site-impact rules in \`openspec/config.yaml\`."
+            else
+              echo "❌ **This issue doesn't hold a valid OpenSpec change yet.** Fix the problems below and edit the issue; this check runs again on every edit."
+              echo
+              if [ -s "$RUNNER_TEMP/problems.md" ]; then cat "$RUNNER_TEMP/problems.md"; fi
+              if [ -s "$RUNNER_TEMP/validate.txt" ]; then
+                echo; echo "\`openspec validate --strict\` says:"; echo; echo '```'; cat "$RUNNER_TEMP/validate.txt"; echo '```'
+              fi
+              echo
+              echo "The easiest route is \`scripts/openspec-issue.sh <change-id>\` from your checkout: see CONTRIBUTING.md."
+            fi
+          } > "$report"
+          if [ "$VALID" = "true" ]; then
+            gh issue edit "$ISSUE" --add-label openspec-valid --remove-label openspec-needs-work
+          else
+            gh issue edit "$ISSUE" --add-label openspec-needs-work --remove-label openspec-valid
+          fi
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE/comments" --jq '[.[] | select(.body | startswith("<!-- openspec-issue-check -->"))][0].id // empty')
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F body=@"$report" >/dev/null
+          else
+            gh issue comment "$ISSUE" --body-file "$report"
+          fi

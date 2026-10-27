@@ -1,0 +1,71 @@
+name: Feature request
+description: Propose a new capability as an OpenSpec change (explore + propose).
+title: "[feature] "
+labels: [feature, openspec]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Feature request.** Diagnostic takes contributions as **OpenSpec changes**: explore the problem, then propose it.
+        The quickest way is to run `scripts/openspec-issue.sh <change-id>`, which validates your change and opens this issue for you.
+        See [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) for the steps.
+
+  - type: input
+    id: change-id
+    attributes:
+      label: Change id
+      description: The kebab-case name of your OpenSpec change (the folder under openspec/changes/).
+      placeholder: add-funnel-kpi
+    validations:
+      required: true
+  - type: textarea
+    id: exploration
+    attributes:
+      label: Exploration
+      description: |
+        What `/opsx:explore` found: the problem as you mapped it, the modules and files involved and how they behave today, and alternatives you considered.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: proposal.md
+      description: The full contents of `openspec/changes/<id>/proposal.md`, including the Privacy impact and Site impact sections.
+    validations:
+      required: true
+  - type: textarea
+    id: specs
+    attributes:
+      label: Spec deltas
+      description: |
+        Every file under `openspec/changes/<id>/specs/`. Start each file with a line like
+        `<!-- file: specs/<capability>/spec.md -->`, then paste its contents.
+      value: |
+        <!-- file: specs/CAPABILITY/spec.md -->
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: design.md
+      description: The contents of `design.md`, or leave empty if the change didn't need one.
+  - type: textarea
+    id: tasks
+    attributes:
+      label: tasks.md
+      description: The contents of `tasks.md`.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I ran `/opsx:explore` and `/opsx:propose` (or wrote the same artifacts by hand) against the current `main`.
+          required: true
+        - label: "`openspec validate <change-id> --strict` passes."
+          required: true
+        - label: The proposal states its privacy impact and its effect on visitors' browsers.
+          required: true
+        - label: Nothing in this issue contains personal data, secrets or real customer information.
+          required: true

@@ -1,0 +1,32 @@
+schema: spec-driven
+
+# Constraints every Diagnostic change must respect. Contributors' agents read
+# this before exploring the code; maintainers review proposals against it.
+context: |
+  Diagnostic is privacy-first web analytics for improving a site's UX. It studies
+  aggregated behaviour patterns, never individual people.
+  Privacy is the first priority:
+  - Never collect what users type, page titles, query strings, DOM snapshots or session replays.
+  - New collection must say which pattern it reveals; when in doubt, don't collect.
+  - Anything that could identify a person must be scrubbed in the browser (crates/diagnostic-server/assets/d.js)
+    and again on the server (crates/diagnostic-core/src/privacy.rs), or not collected at all.
+  - The dashboard, HTTP API, MCP tools and analyst digest expose aggregates only: no per-user or per-session views.
+  The collector must never slow down or break the host page:
+  - Event handlers stay passive and cheap; real work runs when the browser is idle; nothing reads layout on the hot path.
+  - Collector errors are swallowed; the collector stays ES5 with no build step and no dependencies.
+  KPIs and the custom-event catalogue are defined in code (diagnostic.json), not in the dashboard.
+  The community edition is a single Rust binary on SQLite; it must keep working with no external services.
+
+rules:
+  proposal:
+    - Say whether this is a feature, a bug fix or another kind of change.
+    - Include a "Privacy impact" section - what new data is collected, stored or exposed, and how it is scrubbed; write "None" only if nothing changes.
+    - Include a "Site impact" section - effect on the collector's size, CPU work and network use in visitors' browsers; write "None" if the collector is unchanged.
+    - For bugs, state the observed behaviour, the expected behaviour and how to reproduce it.
+  design:
+    - The Context section must reflect the exploration - name the modules and files involved and describe how they behave today.
+  specs:
+    - Describe behaviour users, operators or agents can observe, not implementation.
+    - For bugs, add or modify a scenario that fails today and passes once fixed.
+  tasks:
+    - Include tasks for tests, and for README or dashboard copy when user-facing behaviour changes.
