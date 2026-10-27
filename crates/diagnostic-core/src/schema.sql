@@ -185,7 +185,10 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   name TEXT NOT NULL,
   token_hash TEXT NOT NULL UNIQUE,
   prefix TEXT NOT NULL,
+  -- The person the token belongs to; it acts with their current role.
   created_by INTEGER,
+  -- Acts as a viewer whatever the owner's role.
+  read_only INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   last_used_at INTEGER,
   revoked_at INTEGER

@@ -447,15 +447,12 @@ async fn mcp_http(State(state): State<AppStateRef>, headers: HeaderMap, body: By
         }
     }
     let token = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer "));
-    let name = match token {
-        Some(t) if state.admin_token.as_deref().is_some_and(|a| diagnostic_core::auth::constant_time_eq(a, t)) => {
-            Some("DIAGNOSTIC_ADMIN_TOKEN".to_string())
-        }
-        Some(t) => diagnostic_core::auth::verify_api_token(&state.pool, state.project_id, t).await.ok().flatten().map(|(_, n)| n),
+    let principal = match token {
+        Some(t) => crate::auth_api::token_principal(&state, t).await,
         None => None,
     };
-    let Some(name) = name else {
-        let mut res = (StatusCode::UNAUTHORIZED, Json(json!({ "error": "send an API token from the dashboard's Team page as `Authorization: Bearer dgt_...`" }))).into_response();
+    let Some(principal) = principal else {
+        let mut res = (StatusCode::UNAUTHORIZED, Json(json!({ "error": "send a personal API token (create one under Account) as `Authorization: Bearer dgt_...`" }))).into_response();
         res.headers_mut().insert(header::WWW_AUTHENTICATE, header::HeaderValue::from_static("Bearer"));
         return res;
     };
@@ -463,8 +460,8 @@ async fn mcp_http(State(state): State<AppStateRef>, headers: HeaderMap, body: By
         pool: &state.pool,
         project_id: state.project_id,
         claude: state.claude.as_ref(),
-        actor: format!("mcp: token \"{name}\""),
-        role: diagnostic_core::auth::Role::Admin,
+        actor: format!("mcp: {}", principal.actor()),
+        role: principal.role(),
     };
     let replies = match serde_json::from_slice::<Value>(&body) {
         Ok(Value::Array(batch)) => {

@@ -318,6 +318,11 @@ pub async fn remove_user(pool: &SqlitePool, project_id: i64, user_id: i64) -> Re
         bail!("the owner can't be removed");
     }
     let mut tx = pool.begin().await?;
+    sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE created_by = ? AND revoked_at IS NULL")
+        .bind(now_ms())
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
     for sql in [
         "DELETE FROM auth_sessions WHERE user_id = ?",
         "DELETE FROM recovery_codes WHERE user_id = ?",
@@ -583,6 +588,10 @@ pub async fn accept_invite(pool: &SqlitePool, project_id: i64, token: &str, name
 }
 
 // ---- API tokens ------------------------------------------------------------------
+//
+// Tokens are personal: each belongs to the person who created it and acts with
+// that person's current role (or as a viewer, if created read-only). Changing
+// someone's role changes what their tokens can do; removing them revokes them.
 
 #[derive(Debug, Serialize)]
 pub struct ApiToken {
@@ -590,70 +599,122 @@ pub struct ApiToken {
     pub name: String,
     /// First characters, so people can tell tokens apart.
     pub prefix: String,
+    pub read_only: bool,
+    pub owner_id: i64,
+    pub owner_email: String,
     pub created_at: i64,
     pub last_used_at: Option<i64>,
 }
 
-pub async fn create_api_token(pool: &SqlitePool, project_id: i64, name: &str, created_by: i64) -> Result<(ApiToken, String)> {
+/// A valid token and who it acts for.
+#[derive(Debug, Clone)]
+pub struct TokenAuth {
+    pub id: i64,
+    pub name: String,
+    pub read_only: bool,
+    pub user: User,
+}
+
+impl TokenAuth {
+    /// The owner's role, or viewer for read-only tokens.
+    pub fn role(&self) -> Role {
+        if self.read_only { Role::Viewer } else { self.user.role }
+    }
+}
+
+pub async fn create_api_token(pool: &SqlitePool, project_id: i64, owner: &User, name: &str, read_only: bool) -> Result<(ApiToken, String)> {
     let name = name.trim();
     if name.is_empty() {
-        bail!("give the token a name, e.g. \"GitHub Actions\"");
+        bail!("give the token a name, e.g. \"Claude Code\" or \"GitHub Actions\"");
     }
     let token = format!("dgt_{}", random_token(32));
     let prefix = token[..10].to_string();
     let now = now_ms();
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO api_tokens (project_id, name, token_hash, prefix, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+        "INSERT INTO api_tokens (project_id, name, token_hash, prefix, created_by, read_only, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
     )
     .bind(project_id)
     .bind(name)
     .bind(sha256_hex(&token))
     .bind(&prefix)
-    .bind(created_by)
+    .bind(owner.id)
+    .bind(read_only)
     .bind(now)
     .fetch_one(pool)
     .await?;
-    Ok((ApiToken { id, name: name.to_string(), prefix, created_at: now, last_used_at: None }, token))
+    let t = ApiToken {
+        id,
+        name: name.to_string(),
+        prefix,
+        read_only,
+        owner_id: owner.id,
+        owner_email: owner.email.clone(),
+        created_at: now,
+        last_used_at: None,
+    };
+    Ok((t, token))
 }
 
-pub async fn list_api_tokens(pool: &SqlitePool, project_id: i64) -> Result<Vec<ApiToken>> {
-    let rows: Vec<(i64, String, String, i64, Option<i64>)> = sqlx::query_as(
-        "SELECT id, name, prefix, created_at, last_used_at FROM api_tokens WHERE project_id = ? AND revoked_at IS NULL ORDER BY created_at DESC",
+/// Active tokens: one person's (`owner`), or everyone's for admins (`None`).
+pub async fn list_api_tokens(pool: &SqlitePool, project_id: i64, owner: Option<i64>) -> Result<Vec<ApiToken>> {
+    let rows: Vec<(i64, String, String, bool, i64, String, i64, Option<i64>)> = sqlx::query_as(
+        "SELECT t.id, t.name, t.prefix, t.read_only, u.id, u.email, t.created_at, t.last_used_at
+         FROM api_tokens t JOIN users u ON u.id = t.created_by
+         WHERE t.project_id = ? AND t.revoked_at IS NULL AND (?2 IS NULL OR u.id = ?2)
+         ORDER BY t.created_at DESC",
     )
     .bind(project_id)
+    .bind(owner)
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(|(id, name, prefix, created_at, last_used_at)| ApiToken { id, name, prefix, created_at, last_used_at }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|(id, name, prefix, read_only, owner_id, owner_email, created_at, last_used_at)| ApiToken {
+            id,
+            name,
+            prefix,
+            read_only,
+            owner_id,
+            owner_email,
+            created_at,
+            last_used_at,
+        })
+        .collect())
 }
 
-pub async fn revoke_api_token(pool: &SqlitePool, project_id: i64, id: i64) -> Result<bool> {
-    let r = sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE project_id = ? AND id = ? AND revoked_at IS NULL")
-        .bind(now_ms())
-        .bind(project_id)
-        .bind(id)
-        .execute(pool)
-        .await?;
+/// Revokes a token; with `owner`, only if it belongs to that person.
+pub async fn revoke_api_token(pool: &SqlitePool, project_id: i64, id: i64, owner: Option<i64>) -> Result<bool> {
+    let r = sqlx::query(
+        "UPDATE api_tokens SET revoked_at = ?1 WHERE project_id = ?2 AND id = ?3 AND revoked_at IS NULL AND (?4 IS NULL OR created_by = ?4)",
+    )
+    .bind(now_ms())
+    .bind(project_id)
+    .bind(id)
+    .bind(owner)
+    .execute(pool)
+    .await?;
     Ok(r.rows_affected() > 0)
 }
 
-/// The token's id if it's valid for this project.
-pub async fn verify_api_token(pool: &SqlitePool, project_id: i64, token: &str) -> Result<Option<(i64, String)>> {
+/// The token and its owner, if the token is valid and its owner still has an account.
+pub async fn verify_api_token(pool: &SqlitePool, project_id: i64, token: &str) -> Result<Option<TokenAuth>> {
     if !token.starts_with("dgt_") {
         return Ok(None);
     }
-    let row: Option<(i64, String, Option<i64>)> = sqlx::query_as(
-        "SELECT id, name, last_used_at FROM api_tokens WHERE project_id = ? AND token_hash = ? AND revoked_at IS NULL",
+    let row: Option<(i64, String, bool, i64, Option<i64>)> = sqlx::query_as(
+        "SELECT id, name, read_only, created_by, last_used_at FROM api_tokens WHERE project_id = ? AND token_hash = ? AND revoked_at IS NULL",
     )
     .bind(project_id)
     .bind(sha256_hex(token))
     .fetch_optional(pool)
     .await?;
-    let Some((id, name, last_used)) = row else { return Ok(None) };
+    let Some((id, name, read_only, owner, last_used)) = row else { return Ok(None) };
+    let Some(user) = get_user(pool, project_id, owner).await? else { return Ok(None) };
     let now = now_ms();
     if last_used.is_none_or(|t| now - t > 60_000) {
         sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?").bind(now).bind(id).execute(pool).await?;
     }
-    Ok(Some((id, name)))
+    Ok(Some(TokenAuth { id, name, read_only, user }))
 }
 
 // ---- audit log -------------------------------------------------------------------
@@ -744,8 +805,20 @@ mod tests {
         assert_eq!(verify_second_factor(&pool, ana.id, &recovery[0]).await.unwrap(), None, "recovery codes are single use");
         assert_eq!(recovery_codes_left(&pool, ana.id).await.unwrap(), 9);
 
-        let (_, api) = create_api_token(&pool, p, "CI", owner.id).await.unwrap();
-        assert!(verify_api_token(&pool, p, &api).await.unwrap().is_some());
+        let (_, owner_token) = create_api_token(&pool, p, &owner, "CI", false).await.unwrap();
+        assert_eq!(verify_api_token(&pool, p, &owner_token).await.unwrap().unwrap().role(), Role::Owner);
+        let (_, ana_token) = create_api_token(&pool, p, &ana, "Claude Code", false).await.unwrap();
+        let (_, ana_read) = create_api_token(&pool, p, &ana, "read only", true).await.unwrap();
+        assert_eq!(verify_api_token(&pool, p, &ana_token).await.unwrap().unwrap().role(), Role::Member);
+        assert_eq!(verify_api_token(&pool, p, &ana_read).await.unwrap().unwrap().role(), Role::Viewer);
+        set_role(&pool, p, ana.id, Role::Viewer).await.unwrap();
+        assert_eq!(verify_api_token(&pool, p, &ana_token).await.unwrap().unwrap().role(), Role::Viewer, "tokens follow the owner's role");
+        assert_eq!(list_api_tokens(&pool, p, Some(ana.id)).await.unwrap().len(), 2);
+        assert_eq!(list_api_tokens(&pool, p, None).await.unwrap().len(), 3);
+        let first = list_api_tokens(&pool, p, Some(owner.id)).await.unwrap()[0].id;
+        assert!(!revoke_api_token(&pool, p, first, Some(ana.id)).await.unwrap(), "people can only revoke their own");
+        remove_user(&pool, p, ana.id).await.unwrap();
+        assert!(verify_api_token(&pool, p, &ana_token).await.unwrap().is_none(), "removing someone revokes their tokens");
         assert!(remove_user(&pool, p, owner.id).await.is_err(), "the owner stays");
         let _ = std::fs::remove_file(path);
     }

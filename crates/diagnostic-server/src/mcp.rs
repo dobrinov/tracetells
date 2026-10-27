@@ -213,7 +213,11 @@ fn arg_id(args: &Value) -> anyhow::Result<i64> {
 
 fn need(ctx: &Context, role: Role) -> anyhow::Result<()> {
     if ctx.role < role {
-        anyhow::bail!("this needs the {role} role; ask an admin for a token with more access");
+        anyhow::bail!(
+            "this needs the {role} role, and this token acts as {}. Tokens act with their owner's role (or read-only): \
+             use a token that isn't read-only, or ask an admin to change your role",
+            ctx.role
+        );
     }
     Ok(())
 }

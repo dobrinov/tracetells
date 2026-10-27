@@ -33,6 +33,7 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
         ("projects", "config_source", "TEXT"),
         ("projects", "last_event_at", "INTEGER"),
         ("projects", "require_mfa", "INTEGER NOT NULL DEFAULT 0"),
+        ("api_tokens", "read_only", "INTEGER NOT NULL DEFAULT 0"),
         ("kpis", "key", "TEXT"),
         ("kpis", "archived_at", "INTEGER"),
     ] {

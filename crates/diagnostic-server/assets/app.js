@@ -292,7 +292,7 @@ const CONFIG_EXAMPLE = `{
 async function renderKpis() {
   const [kpis, cfg] = await Promise.all([api("/kpis"), api("/config")]);
   kpiCache = kpis;
-  const push = `diagnostic push diagnostic.json --server ${location.origin} --token $DIAGNOSTIC_TOKEN   # create a token under Team`;
+  const push = `diagnostic push diagnostic.json --server ${location.origin} --token $DIAGNOSTIC_TOKEN   # create one under Account`;
   const source = cfg.synced_at
     ? `<p class="hint">Defined in <code>${esc(cfg.source || "diagnostic.json")}</code>, synced ${esc(ago(cfg.synced_at))}. To change a KPI, edit <code>diagnostic.json</code> in your repository and push it.</p>`
     : "";
@@ -500,7 +500,7 @@ diagnostic.track("purchase", { plan: "pro" });\ndiagnostic.identify(currentUser.
     <div class="copy-row"><pre class="snippet">${esc(custom)}</pre><button data-copy="${esc(custom)}">Copy</button></div>
 
     <h2>4. Connect your coding agent (MCP)</h2>
-    <p class="hint">Let Claude Code, Cursor or any MCP client read your KPIs and ideas, fetch an idea as a task, and mark it released once it ships. Agents only see aggregated patterns, like this dashboard. Create an API token under <a href="#/team">Team</a>${can("admin") ? "" : " (an admin can do this)"}, then:</p>
+    <p class="hint">Let Claude Code, Cursor or any MCP client read your KPIs and ideas, fetch an idea as a task, and mark it released once it ships. Agents only see aggregated patterns, like this dashboard. Create a personal API token under <a href="#/account">Account</a> (read-only is enough if the agent only needs to look), then:</p>
     <div class="copy-row"><pre class="snippet">${esc(mcpCommand)}</pre><button data-copy="${esc(mcpCommand)}">Copy</button></div>
     <p class="hint">Other MCP clients:</p>
     <div class="copy-row"><pre class="snippet">${esc(mcpJson)}</pre><button data-copy="${esc(mcpJson)}">Copy</button></div>
@@ -786,7 +786,7 @@ function applyRole() {
 }
 
 async function renderAccount() {
-  const a = await api("/account");
+  const [a, tokens] = await Promise.all([api("/account"), api("/account/tokens")]);
   const u = a.user;
   view.innerHTML = `
     <h1>Account</h1>
@@ -808,6 +808,19 @@ async function renderAccount() {
       <label class="field">New password <input name="new" type="password" autocomplete="new-password" minlength="10" required></label>
       <div><button type="submit">Change password</button> <span class="hint">Signs you out on other devices.</span></div>
     </form>
+    <h2>Your API tokens</h2>
+    <p class="hint">For your coding agent over MCP and for CI (<code>diagnostic push --token</code>). A token can do what you can (you're ${esc(u.role)}), or only read if you tick read-only. Use one token per tool, so you can revoke them separately.</p>
+    ${tokens.length ? table(
+      [{ label: "Token" }, { label: "Access" }, { label: "Created" }, { label: "Last used" }, { label: "" }],
+      tokens.map((k) => [`${esc(k.name)} <code>${esc(k.prefix)}…</code>`, k.read_only ? "read-only" : esc(u.role), new Date(k.created_at).toLocaleDateString(), esc(ago(k.last_used_at)), `<button class="quiet" data-revoke-mine="${k.id}">Revoke</button>`])
+    ) : ""}
+    <form class="card row" id="new-token">
+      <label class="field">Name <input name="name" placeholder="Claude Code" required></label>
+      <label class="check"><input type="checkbox" name="read_only"> <span>Read-only</span></label>
+      <button type="submit">Create token</button>
+    </form>
+    <div id="token-result"></div>
+
     <h2>Session</h2>
     <button data-sign-out>Sign out</button>`;
   const box = view.querySelector("#mfa-box");
@@ -836,6 +849,20 @@ async function renderAccount() {
     toast("Password changed");
   });
   view.querySelector("[data-sign-out]").addEventListener("click", signOut);
+  onSubmit(view.querySelector("#new-token"), async (fd) => {
+    const r = await api("/account/tokens", { method: "POST", body: JSON.stringify({ name: fd.get("name"), read_only: fd.get("read_only") === "on" }) });
+    await renderAccount();
+    view.querySelector("#token-result").innerHTML = `<div class="card"><p><strong>Copy this token now.</strong> It won't be shown again.</p>
+      <div class="copy-row"><pre class="snippet">${esc(r.secret)}</pre><button data-copy="${esc(r.secret)}">Copy</button></div></div>`;
+    view.querySelector("#token-result [data-copy]").addEventListener("click", async (e) => (await copyText(e.target.dataset.copy)) && toast("Copied"));
+  });
+  view.querySelectorAll("[data-revoke-mine]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm("Revoke this token? Anything using it stops working.")) return;
+      await api(`/account/tokens/${b.dataset.revokeMine}`, { method: "DELETE" });
+      renderAccount();
+    })
+  );
 }
 
 async function renderTeam() {
@@ -843,7 +870,7 @@ async function renderTeam() {
     view.innerHTML = `<div class="empty">Only admins can manage the team.</div>`;
     return;
   }
-  const [t, tokens, log] = await Promise.all([api("/team"), api("/tokens"), api("/audit")]);
+  const [t, tokens, log] = await Promise.all([api("/team"), api("/team/tokens"), api("/audit")]);
   const roleSelect = (u) =>
     u.role === "owner" || u.id === auth.user.id
       ? esc(u.role)
@@ -893,16 +920,11 @@ async function renderTeam() {
     }
 
     <h2>API tokens</h2>
-    <p class="hint">For CI (<code>diagnostic push --server ${esc(location.origin)} --token $DIAGNOSTIC_TOKEN</code>) and coding agents over MCP (see Setup). Tokens can do what an admin can, except manage people and tokens. Give each tool its own token, so you can revoke them one at a time.</p>
-    <form class="card row" id="new-token">
-      <label class="field">Name <input name="name" placeholder="GitHub Actions" required></label>
-      <button type="submit">Create token</button>
-    </form>
-    <div id="token-result"></div>
+    <p class="hint">Everyone creates their own tokens under Account. A token acts with its owner's current role (or read-only), and stops working when they leave the team. You can revoke any of them here.</p>
     ${tokens.length ? table(
-      [{ label: "Token" }, { label: "Created" }, { label: "Last used" }, { label: "" }],
-      tokens.map((k) => [`${esc(k.name)} <code>${esc(k.prefix)}…</code>`, new Date(k.created_at).toLocaleDateString(), esc(ago(k.last_used_at)), `<button class="quiet" data-revoke-token="${k.id}">Revoke</button>`])
-    ) : ""}
+      [{ label: "Token" }, { label: "Owner" }, { label: "Access" }, { label: "Last used" }, { label: "" }],
+      tokens.map((k) => [`${esc(k.name)} <code>${esc(k.prefix)}…</code>`, esc(k.owner_email), k.read_only ? "read-only" : "owner's role", esc(ago(k.last_used_at)), `<button class="quiet" data-revoke-token="${k.id}">Revoke</button>`])
+    ) : `<p class="hint">No tokens yet.</p>`}
 
     <h2>Activity</h2>
     ${table(
@@ -957,17 +979,10 @@ async function renderTeam() {
       renderTeam();
     })
   );
-  onSubmit(view.querySelector("#new-token"), async (fd) => {
-    const r = await api("/tokens", { method: "POST", body: JSON.stringify({ name: fd.get("name") }) });
-    await renderTeam();
-    view.querySelector("#token-result").innerHTML = `<div class="card"><p><strong>Copy this token now.</strong> It won't be shown again.</p>
-      <div class="copy-row"><pre class="snippet">${esc(r.secret)}</pre><button data-copy="${esc(r.secret)}">Copy</button></div></div>`;
-    view.querySelector("#token-result [data-copy]").addEventListener("click", async (e) => (await copyText(e.target.dataset.copy)) && toast("Copied"));
-  });
   view.querySelectorAll("[data-revoke-token]").forEach((b) =>
     b.addEventListener("click", async () => {
       if (!confirm("Revoke this token? Anything using it stops working.")) return;
-      await api(`/tokens/${b.dataset.revokeToken}`, { method: "DELETE" });
+      await api(`/team/tokens/${b.dataset.revokeToken}`, { method: "DELETE" });
       renderTeam();
     })
   );

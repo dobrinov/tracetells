@@ -48,29 +48,41 @@ impl LoginLimiter {
 #[derive(Clone)]
 pub enum Principal {
     User(Session),
-    /// An API token (CI, `diagnostic push`) or the legacy DIAGNOSTIC_ADMIN_TOKEN.
-    Token(String),
+    /// A person's API token: acts with their current role, or as a viewer if read-only.
+    Token(auth::TokenAuth),
+    /// The deprecated shared DIAGNOSTIC_ADMIN_TOKEN, which belongs to nobody.
+    LegacyToken,
 }
 
 impl Principal {
-    fn role(&self) -> Role {
+    pub fn role(&self) -> Role {
         match self {
             Self::User(s) => s.user.role,
-            Self::Token(_) => Role::Admin,
+            Self::Token(t) => t.role(),
+            Self::LegacyToken => Role::Admin,
         }
     }
     pub fn actor(&self) -> String {
         match self {
             Self::User(s) => s.user.email.clone(),
-            Self::Token(name) => format!("token \"{name}\""),
+            Self::Token(t) => format!("{} via token \"{}\"", t.user.email, t.name),
+            Self::LegacyToken => "DIAGNOSTIC_ADMIN_TOKEN".into(),
         }
     }
     fn user(&self) -> Option<&Session> {
         match self {
             Self::User(s) => Some(s),
-            Self::Token(_) => None,
+            _ => None,
         }
     }
+}
+
+/// Resolves a bearer token: a person's API token, or the legacy shared one.
+pub async fn token_principal(state: &AppStateRef, token: &str) -> Option<Principal> {
+    if state.admin_token.as_deref().is_some_and(|t| auth::constant_time_eq(t, token)) {
+        return Some(Principal::LegacyToken);
+    }
+    auth::verify_api_token(&state.pool, state.project_id, token).await.ok().flatten().map(Principal::Token)
 }
 
 fn session_cookie(headers: &HeaderMap) -> Option<String> {
@@ -101,7 +113,7 @@ fn required_role(method: &Method, path: &str) -> Role {
         || path == "/evaluate"
         || (path.starts_with("/ideas/") && (path.ends_with("/status") || path.ends_with("/kpi")));
     match () {
-        _ if path.starts_with("/team") || path.starts_with("/tokens") || path.starts_with("/audit") => Role::Admin,
+        _ if path.starts_with("/team") || path.starts_with("/audit") => Role::Admin,
         _ if path.starts_with("/account") => Role::Viewer,
         _ if read => Role::Viewer,
         _ if member_actions => Role::Member,
@@ -111,7 +123,7 @@ fn required_role(method: &Method, path: &str) -> Role {
 
 /// Endpoints only people (not tokens) may use.
 fn people_only(path: &str) -> bool {
-    path.starts_with("/team") || path.starts_with("/tokens") || path.starts_with("/account") || path.starts_with("/audit")
+    path.starts_with("/team") || path.starts_with("/account") || path.starts_with("/audit")
 }
 
 /// What a signed-in person still has to do before using the dashboard.
@@ -137,11 +149,9 @@ pub async fn authorize(State(state): State<AppStateRef>, mut req: Request, next:
     let headers = req.headers();
     let bearer = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer "));
     let principal = if let Some(token) = bearer {
-        let legacy = state.admin_token.as_deref().is_some_and(|t| auth::constant_time_eq(t, token));
-        match (legacy, auth::verify_api_token(&state.pool, state.project_id, token).await) {
-            (true, _) => Principal::Token("DIAGNOSTIC_ADMIN_TOKEN".into()),
-            (false, Ok(Some((_, name)))) => Principal::Token(name),
-            _ => return deny(StatusCode::UNAUTHORIZED, "bad_token", "invalid or revoked API token"),
+        match token_principal(&state, token).await {
+            Some(p) => p,
+            None => return deny(StatusCode::UNAUTHORIZED, "bad_token", "invalid or revoked API token"),
         }
     } else {
         let Some(cookie) = session_cookie(headers) else {
@@ -166,8 +176,8 @@ pub async fn authorize(State(state): State<AppStateRef>, mut req: Request, next:
             _ => return deny(StatusCode::UNAUTHORIZED, "signed_out", "your session has ended; sign in again"),
         }
     };
-    if matches!(principal, Principal::Token(_)) && people_only(&path) {
-        return deny(StatusCode::FORBIDDEN, "people_only", "API tokens can't manage people or tokens");
+    if principal.user().is_none() && people_only(&path) {
+        return deny(StatusCode::FORBIDDEN, "people_only", "API tokens can't manage people, tokens or accounts");
     }
     let needed = required_role(req.method(), &path);
     if principal.role() < needed {
@@ -198,8 +208,10 @@ pub fn routes() -> Router<AppStateRef> {
         .route("/team/users/{id}", delete(remove_user))
         .route("/team/users/{id}/reset-mfa", post(reset_mfa))
         .route("/team/settings", post(team_settings))
-        .route("/tokens", get(list_tokens).post(create_token))
-        .route("/tokens/{id}", delete(revoke_token))
+        .route("/account/tokens", get(my_tokens).post(create_token))
+        .route("/account/tokens/{id}", delete(revoke_my_token))
+        .route("/team/tokens", get(all_tokens))
+        .route("/team/tokens/{id}", delete(revoke_any_token))
         .route("/audit", get(audit_log))
 }
 
@@ -512,27 +524,48 @@ async fn team_settings(State(state): State<AppStateRef>, Extension(p): Extension
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn list_tokens(State(state): State<AppStateRef>) -> ApiResult<Json<Value>> {
-    Ok(Json(json!(auth::list_api_tokens(&state.pool, state.project_id).await?)))
+// Tokens are personal: everyone manages their own under Account; admins can
+// see and revoke anyone's from Team, but not create tokens for other people.
+
+async fn my_tokens(State(state): State<AppStateRef>, Extension(p): Extension<Principal>) -> ApiResult<Json<Value>> {
+    let s = me(&p)?;
+    Ok(Json(json!(auth::list_api_tokens(&state.pool, state.project_id, Some(s.user.id)).await?)))
 }
 
 #[derive(Deserialize)]
 struct TokenBody {
     name: String,
+    #[serde(default)]
+    read_only: bool,
 }
 
 async fn create_token(State(state): State<AppStateRef>, Extension(p): Extension<Principal>, Json(b): Json<TokenBody>) -> ApiResult<Json<Value>> {
     let s = me(&p)?;
-    let (t, secret) = auth::create_api_token(&state.pool, state.project_id, &b.name, s.user.id).await.map_err(bad)?;
-    audit(&state, &s.user.email, "token.created", &t.name).await;
+    let (t, secret) = auth::create_api_token(&state.pool, state.project_id, &s.user, &b.name, b.read_only).await.map_err(bad)?;
+    let access = if t.read_only { "read-only".to_string() } else { format!("acts as {}", s.user.role) };
+    audit(&state, &s.user.email, "token.created", &format!("{} ({access})", t.name)).await;
     Ok(Json(json!({ "token": t, "secret": secret })))
 }
 
-async fn revoke_token(State(state): State<AppStateRef>, Extension(p): Extension<Principal>, Path(id): Path<i64>) -> ApiResult<StatusCode> {
-    if !auth::revoke_api_token(&state.pool, state.project_id, id).await? {
+async fn revoke_my_token(State(state): State<AppStateRef>, Extension(p): Extension<Principal>, Path(id): Path<i64>) -> ApiResult<StatusCode> {
+    let s = me(&p)?;
+    if !auth::revoke_api_token(&state.pool, state.project_id, id, Some(s.user.id)).await? {
         return Err(ApiError::not_found_msg("no such token"));
     }
-    audit(&state, &p.actor(), "token.revoked", &format!("token #{id}")).await;
+    audit(&state, &s.user.email, "token.revoked", &format!("own token #{id}")).await;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn all_tokens(State(state): State<AppStateRef>) -> ApiResult<Json<Value>> {
+    Ok(Json(json!(auth::list_api_tokens(&state.pool, state.project_id, None).await?)))
+}
+
+async fn revoke_any_token(State(state): State<AppStateRef>, Extension(p): Extension<Principal>, Path(id): Path<i64>) -> ApiResult<StatusCode> {
+    let owner = auth::list_api_tokens(&state.pool, state.project_id, None).await?.into_iter().find(|t| t.id == id).map(|t| t.owner_email);
+    if !auth::revoke_api_token(&state.pool, state.project_id, id, None).await? {
+        return Err(ApiError::not_found_msg("no such token"));
+    }
+    audit(&state, &p.actor(), "token.revoked", &format!("token #{id} of {}", owner.unwrap_or_default())).await;
     Ok(StatusCode::NO_CONTENT)
 }
 

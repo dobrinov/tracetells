@@ -94,7 +94,7 @@ Diagnostic is also an MCP server, so an agent such as Claude Code or Cursor can 
 
 Agents can't change privacy rules or people, which stay in the dashboard, or KPIs, which stay in `diagnostic.json`. Status changes and analysis runs appear in the activity log under the token's name.
 
-**Remote** (any server; Streamable HTTP, authenticated with an API token from the Team page):
+**Remote** (any server; Streamable HTTP, authenticated with a personal API token from **Account**):
 
 ```sh
 claude mcp add --transport http diagnostic https://diagnostic.example.com/mcp \
@@ -119,12 +119,18 @@ Works for one person or a whole company.
   | Role | Can |
   |---|---|
   | Owner | Everything (one per workspace, can't be removed) |
-  | Admin | Manage the team, two-step policy, API tokens and privacy rules |
+  | Admin | Manage the team, two-step policy and privacy rules; see and revoke anyone's API tokens |
   | Member | Move ideas through their statuses, link KPIs, run analysis |
   | Viewer | Look, but not change anything |
 
 - **Two-step verification (TOTP):** anyone can add an authenticator app (1Password, Google Authenticator, Authy…) under **Account**. Setting it up gives 10 single-use recovery codes. Admins can **require it for everyone**: members without it are held at a setup screen the next time they sign in, and an admin can only turn the requirement on after enabling it for their own account. If someone loses their phone, an admin can reset their two-step verification, and a locked-out owner can use `diagnostic user reset-mfa --email …` or `diagnostic user reset-password --email …` on the server.
-- **API tokens** for CI and scripts are created under **Team**. They can do what an admin can, except manage people and tokens. Pass one to `diagnostic push --token` (or `DIAGNOSTIC_TOKEN`). The old shared `DIAGNOSTIC_ADMIN_TOKEN` still works.
+- **API tokens are personal.** Everyone creates their own under **Account**, for MCP agents and CI.
+  - A token acts with its owner's *current* role, or only reads if it's made read-only. Demoting someone demotes their tokens at once, and removing them revokes their tokens.
+  - Tokens can't manage people, tokens or accounts.
+  - The activity log shows who acted, e.g. `ana@acme.example via token "Claude Code"`.
+  - Admins see and revoke everyone's tokens on **Team**.
+  - Pass a token to `diagnostic push --token` (or `DIAGNOSTIC_TOKEN`).
+  - The old shared `DIAGNOSTIC_ADMIN_TOKEN` still works but is deprecated, because it belongs to nobody.
 - **How it's protected:**
   - Passwords are hashed with Argon2id. Sessions, invite links, API tokens and recovery codes are stored only as SHA-256 hashes, so a copy of the database can't be used to sign in.
   - Session cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` when `DIAGNOSTIC_PUBLIC_URL` is https. Writes must be JSON, which blocks cross-site request forgery.
@@ -212,8 +218,8 @@ Multi-page sites keep one session across page loads (30 minutes of inactivity st
 | `DIAGNOSTIC_CONFIG` | – | `diagnostic.json` for `serve` to apply and watch |
 | `DIAGNOSTIC_SERVER` | – | Server URL for `diagnostic push` |
 | `DIAGNOSTIC_RETENTION_DAYS` | `90` | Delete raw events older than this (0 keeps them) |
-| `DIAGNOSTIC_TOKEN` | – | API token for `diagnostic push` (create one under Team) |
-| `DIAGNOSTIC_ADMIN_TOKEN` | – | Legacy shared API token. Prefer named tokens created under Team, which can be revoked one by one |
+| `DIAGNOSTIC_TOKEN` | – | Personal API token for `diagnostic push` (create one under Account) |
+| `DIAGNOSTIC_ADMIN_TOKEN` | – | Deprecated shared token with admin rights. Prefer personal tokens, which carry their owner's role and name |
 | `ANTHROPIC_API_KEY` | – | Turns on the Claude analyst |
 | `DIAGNOSTIC_MODEL` | `claude-opus-5-5` | Analyst model |
 | `DIAGNOSTIC_EFFORT` | `high` | `output_config.effort` for the analyst |
