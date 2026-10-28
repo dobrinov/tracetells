@@ -311,6 +311,15 @@ pre { margin: 0; }
   .lane-tag.is-agent { color: var(--text-2); }
 }
 
+/* Legal pages */
+.legal { max-width: 760px; padding-top: 56px; padding-bottom: 72px; }
+.legal h1 { margin: 0 0 8px; font-size: 40px; letter-spacing: -0.02em; }
+.legal-meta { margin: 0 0 32px; color: var(--muted); font-size: 14px; }
+.legal h2 { margin: 36px 0 10px; font-size: 21px; }
+.legal p, .legal li { color: var(--text-2); line-height: 1.65; font-size: 16px; }
+.legal ul { padding-left: 22px; display: grid; gap: 6px; }
+.legal a { color: var(--link); }
+
 @media (max-width: 720px) {
   .header-inner { gap: 12px 16px; }
   .brand { order: 0; }
