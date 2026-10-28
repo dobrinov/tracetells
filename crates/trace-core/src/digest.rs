@@ -126,6 +126,39 @@ impl Digest {
     pub fn page(&self, path: &str) -> Option<&PageStat> {
         self.pages.iter().find(|p| p.path == path)
     }
+
+    /// Ingest already does this; doing it again covers events stored before it
+    /// did, since this summary is what agents read.
+    fn visitor_text_on_one_line(mut self) -> Self {
+        use crate::privacy::{one_line, one_line_path};
+        let path = |s: &mut String| *s = one_line_path(s);
+        let text = |s: &mut String| *s = one_line(s);
+        self.pages.iter_mut().for_each(|p| path(&mut p.path));
+        for t in &mut self.transitions {
+            path(&mut t.from);
+            path(&mut t.to);
+        }
+        for c in self.rage_clicks.iter_mut().chain(self.dead_clicks.iter_mut()) {
+            path(&mut c.path);
+            text(&mut c.selector);
+            if let Some(t) = &mut c.text {
+                text(t);
+            }
+        }
+        for e in &mut self.errors {
+            path(&mut e.path);
+            text(&mut e.message);
+            if let Some(s) = &mut e.source {
+                text(s);
+            }
+        }
+        for f in &mut self.forms {
+            path(&mut f.path);
+            text(&mut f.selector);
+        }
+        self.custom_events.iter_mut().for_each(|e| text(&mut e.name));
+        self
+    }
 }
 
 pub async fn build(pool: &Pool, project_id: i64, days: u32) -> Result<Digest> {
@@ -300,7 +333,7 @@ pub async fn build(pool: &Pool, project_id: i64, days: u32) -> Result<Digest> {
         });
     }
 
-    Ok(Digest {
+    Ok(Digest::visitor_text_on_one_line(Digest {
         window: Window { from, to, days },
         totals: Totals { sessions, visitors, pageviews, events },
         devices,
@@ -312,7 +345,7 @@ pub async fn build(pool: &Pool, project_id: i64, days: u32) -> Result<Digest> {
         forms,
         custom_events,
         kpis,
-    })
+    }))
 }
 
 fn round1(v: f64) -> f64 {

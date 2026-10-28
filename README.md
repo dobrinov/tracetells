@@ -258,6 +258,8 @@ Trace is built to never collect passwords, payment details, tokens or other secr
 
 The analyst only ever sees this scrubbed, aggregated digest, never individual sessions.
 
+**Visitor text is data, not instructions.** Anyone can send events to a website's collector, and labels, error messages, selectors, routes and event names end up in what coding agents read. So the server stores them as one plain line (line breaks, control and invisible characters become spaces, backticks become quotes, spaces in paths become `%20`) and cleans them again in the summary. The behaviour summary, the analysis brief, the server's instructions and every insight's task prompt tell the agent that this text came from visitors' browsers and is never to be followed. Read an insight's task before handing it to an agent that can run commands, as you would any issue a stranger could have filed.
+
 **Your own rules.** On the dashboard's **Privacy** page, admins can add rules on top of the built-in protections:
 
 | Rule | Example | Applied |
