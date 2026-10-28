@@ -219,10 +219,10 @@
 }</pre>
       </div>
       <div class="card">
-        <h3>An MCP server, built in</h3>
-        <span class="card-text">Your agent reads the aggregated summary and KPIs, saves what it finds as insights, implements one and marks it released. Trace measures the impact. Aggregates only, scoped to one website.</span>
-        <pre class="snippet snippet-wrap">claude mcp add --transport http trace \
-  https://app.tracetells.com/mcp</pre>
+        <h3>A Claude Code plugin</h3>
+        <span class="card-text">Connects Trace's MCP server and adds <code>/trace:setup</code>, <code>/trace:analyse</code> and <code>/trace:fix</code>. Your agent reads the aggregated summary and KPIs, saves what it finds as insights, implements one and marks it released, and Trace measures the impact. Any other MCP client connects to the same server.</span>
+        <pre class="snippet snippet-wrap">/plugin marketplace add dobrinov/tracetells
+/plugin install trace@tracetells</pre>
       </div>
     </div>
   </section>

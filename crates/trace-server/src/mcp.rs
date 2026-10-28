@@ -1036,6 +1036,8 @@ fn agent_insight(item: &Value, kpis: &[trace_core::model::Kpi], created_by: &str
     })
 }
 
+/// The Claude Code plugin's analyse skill (plugins/trace/skills/analyse) gives
+/// the same steps: change both together.
 const ANALYSE_PROMPT: &str = "analyse_website";
 
 fn analyse_prompt_info() -> Value {

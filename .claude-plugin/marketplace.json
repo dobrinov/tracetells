@@ -1,0 +1,15 @@
+{
+  "name": "tracetells",
+  "description": "Trace: privacy-first web analytics for coding agents.",
+  "owner": {
+    "name": "Deyan Dobrinov",
+    "email": "hello@tracetells.com"
+  },
+  "plugins": [
+    {
+      "name": "trace",
+      "source": "./plugins/trace",
+      "description": "Set Trace up on a website, analyse how people use it, fix what holds them back, and measure whether the KPI moved."
+    }
+  ]
+}

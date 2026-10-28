@@ -155,13 +155,20 @@ trace push --server https://trace.example.com --token "$TRACE_ADMIN_TOKEN"
 
 Trace is also an MCP server, and your coding agent can run all of it: setting a website up, and then being its analyst.
 
-**Connect** (no token to copy):
+**Connect** (no token to copy). In Claude Code, the plugin connects the server and adds `/trace:setup`, `/trace:analyse` and `/trace:fix`:
+
+```
+/plugin marketplace add dobrinov/tracetells
+/plugin install trace@tracetells
+```
+
+It asks for your server's address (the default is the hosted `https://app.tracetells.com/mcp`). Then run `/mcp`, choose **plugin:trace:trace** and **Authenticate**. Without the plugin, add the server alone:
 
 ```sh
 claude mcp add --transport http trace https://trace.example.com/mcp
 ```
 
-Then run `/mcp` in Claude Code, choose **trace** and **Authenticate**. Your browser opens Trace: sign in (with two-step verification if it's on) and approve. Other clients use `{"mcpServers": {"trace": {"url": "https://trace.example.com/mcp"}}}` and sign in the same way. This is the MCP authorization flow (OAuth 2.1 with PKCE and dynamic client registration): `/mcp` answers a request without a token with `401` and a `WWW-Authenticate` header that points to `/.well-known/oauth-protected-resource`. You can approve read-only access. The connection becomes a token named after the app, such as "Claude Code (signed in 2026-10-28)", that acts as you. It's listed under **Account**, where you can revoke it.
+and then run `/mcp`, choose **trace** and **Authenticate**. Your browser opens Trace: sign in (with two-step verification if it's on) and approve. Other clients use `{"mcpServers": {"trace": {"url": "https://trace.example.com/mcp"}}}` and sign in the same way. This is the MCP authorization flow (OAuth 2.1 with PKCE and dynamic client registration): `/mcp` answers a request without a token with `401` and a `WWW-Authenticate` header that points to `/.well-known/oauth-protected-resource`. You can approve read-only access. The connection becomes a token named after the app, such as "Claude Code (signed in 2026-10-28)", that acts as you. It's listed under **Account**, where you can revoke it.
 
 **Set up** a website from the codebase: `add_site`, `get_install_snippet` (the tag, where it goes, single-page apps, consent and masking), `check_config` then `push_config` for `trace.json`, `add_privacy_rule`, and `get_setup_status` until events arrive. Ask it something like *"Set up Trace for this project: add the snippet to every page, write trace.json with KPIs that matter here and push it, and mask screens with customer data."*
 

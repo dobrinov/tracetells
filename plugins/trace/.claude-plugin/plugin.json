@@ -1,0 +1,30 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "trace",
+  "version": "0.1.0",
+  "description": "Privacy-first web analytics your coding agent works with: set Trace up on a website, analyse how people use it, fix what holds them back, and measure whether the KPI moved.",
+  "author": {
+    "name": "Deyan Dobrinov",
+    "email": "hello@tracetells.com"
+  },
+  "homepage": "https://tracetells.com",
+  "repository": "https://github.com/dobrinov/tracetells",
+  "privacyPolicyUrl": "https://tracetells.com/privacy.html",
+  "license": "MIT",
+  "keywords": [
+    "analytics",
+    "ux",
+    "kpi",
+    "privacy",
+    "mcp"
+  ],
+  "userConfig": {
+    "server_url": {
+      "type": "string",
+      "title": "Trace MCP server",
+      "description": "The /mcp address of your Trace server. Leave the default for the hosted service; change it if you run Trace yourself.",
+      "default": "https://app.tracetells.com/mcp"
+    }
+  },
+  "icon": "./.claude-plugin/icon.png"
+}

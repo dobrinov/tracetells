@@ -782,6 +782,10 @@ function setupSnippets() {
   };
   // No token to paste: the client opens Trace in the browser to sign in and approve.
   const mcpCommand = `claude mcp add --transport http trace ${location.origin}/mcp`;
+  // The Claude Code plugin: the MCP connection plus skills for setup, analysis and fixes.
+  const pluginInstall = `/plugin marketplace add dobrinov/tracetells\n/plugin install trace@tracetells`;
+  const hosted = location.hostname === "app.tracetells.com";
+  const pluginServerNote = hosted ? "" : ` and, when it asks for the <strong>Trace MCP server</strong>, enter <code>${esc(location.origin)}/mcp</code>`;
   const mcpJson = JSON.stringify({ mcpServers: { trace: { url: `${location.origin}/mcp` } } }, null, 2);
   const setupPrompt =
     `Set up Trace (${location.origin}) for this project with the trace MCP tools: use the website "${project.slug}", ` +
@@ -811,7 +815,7 @@ trace.track("purchase", { plan: "pro" });\ntrace.identify(currentUser.id);      
     null,
     2
   );
-  return { installs, mcpCommand, mcpJson, setupPrompt, custom, push, analysisHook };
+  return { installs, mcpCommand, mcpJson, pluginInstall, pluginServerNote, setupPrompt, custom, push, analysisHook };
 }
 
 // A task a coding agent can follow to install the collector.
@@ -843,7 +847,7 @@ function publicCard(pub) {
 
 async function renderSetup() {
   const [runs, pub] = await Promise.all([api("/runs"), api("/publish").catch(() => null)]);
-  const { installs, mcpCommand, mcpJson, setupPrompt, custom, analysisHook } = setupSnippets();
+  const { installs, mcpCommand, mcpJson, pluginInstall, pluginServerNote, setupPrompt, custom, analysisHook } = setupSnippets();
   let installTab = store("trace_install") || "site";
   if (!installs[installTab]) installTab = "site";
   view.innerHTML = `
@@ -870,13 +874,15 @@ async function renderSetup() {
     <div class="copy-row"><pre class="snippet">${esc(custom)}</pre><button data-copy="${esc(custom)}">Copy</button></div>
 
     <h2>4. Connect your coding agent (MCP)</h2>
-    <p class="hint">Your coding agent can do everything on this page from your codebase: add the snippet, write and push trace.json, add privacy rules, then analyse the behaviour, save insights and mark them released when they ship. It sees only aggregated patterns, like this dashboard. Add Trace to Claude Code:</p>
+    <p class="hint">Your coding agent can do everything on this page from your codebase: add the snippet, write and push trace.json, add privacy rules, then analyse the behaviour, save insights and mark them released when they ship. It sees only aggregated patterns, like this dashboard. In Claude Code, install the Trace plugin${pluginServerNote}:</p>
+    <div class="copy-row"><pre class="snippet">${esc(pluginInstall)}</pre><button data-copy="${esc(pluginInstall)}">Copy</button></div>
+    <p class="hint">Then run <code>/mcp</code>, choose <strong>plugin:trace:trace</strong> and <strong>Authenticate</strong>. Your browser opens Trace, where you approve it: no token to copy. The plugin adds <code>/trace:setup</code>, <code>/trace:analyse</code> and <code>/trace:fix</code>. Without the plugin, add the server alone:</p>
     <div class="copy-row"><pre class="snippet">${esc(mcpCommand)}</pre><button data-copy="${esc(mcpCommand)}">Copy</button></div>
-    <p class="hint">Then run <code>/mcp</code> in Claude Code, choose <strong>trace</strong> and <strong>Authenticate</strong>. Your browser opens Trace, where you approve it: no token to copy. Other MCP clients (Cursor and others) sign in the same way with:</p>
+    <p class="hint">Other MCP clients (Cursor and others) sign in the same way with:</p>
     <div class="copy-row"><pre class="snippet">${esc(mcpJson)}</pre><button data-copy="${esc(mcpJson)}">Copy</button></div>
     <p class="hint">Ask it to set things up:</p>
     <div class="copy-row"><pre class="snippet wrap">${esc(setupPrompt)}</pre><button data-copy="${esc(setupPrompt)}">Copy</button></div>
-    <p class="hint">And to analyse: run <code>/mcp__trace__analyse_website</code> in Claude Code, or pick the <strong>analyse_website</strong> prompt in other clients. Connected apps appear under <a href="#/account">Account</a>, where you can disconnect them. CI and scripts use a personal API token from there instead.</p>
+    <p class="hint">And to analyse: run <code>/trace:analyse</code> with the plugin, <code>/mcp__trace__analyse_website</code> without it, or pick the <strong>analyse_website</strong> prompt in other clients. Connected apps appear under <a href="#/account">Account</a>, where you can disconnect them. CI and scripts use a personal API token from there instead.</p>
     <h3>Get told when it's time to analyse</h3>
     <p class="hint">Trace says a website is worth analysing once it has 100 new sessions since the last analysis (30 after a week); the Insights page shows it too. To hear it from Claude Code each time you start it, add this to <code>~/.claude/settings.json</code> and put your token in the <code>TRACE_TOKEN</code> environment variable (in your shell profile, not in the file). It prints nothing until there's something to analyse.</p>
     <div class="copy-row"><pre class="snippet">${esc(analysisHook)}</pre><button data-copy="${esc(analysisHook)}">Copy</button></div>
@@ -1040,7 +1046,7 @@ async function renderStart() {
   const current = steps.find((x) => x.key === asked) || firstOpen;
   const index = steps.indexOf(current);
   const next = steps[index + 1];
-  const { installs, mcpCommand, setupPrompt } = setupSnippets();
+  const { installs, pluginInstall, pluginServerNote, setupPrompt } = setupSnippets();
   let installTab = store("trace_install") || "site";
   if (!installs[installTab]) installTab = "site";
 
@@ -1094,11 +1100,11 @@ async function renderStart() {
       <h1>Let your coding agent set it up</h1>
       <p class="sub">Connect Claude Code, Cursor or any MCP client once, and it does the rest from your codebase: it adds the snippet, writes your KPIs, keeps customer data out, and later analyses the behaviour and fixes what it finds. It sees only aggregated patterns, like this dashboard.</p>
       <ol class="steps">
-        <li>In your project's folder, add Trace to Claude Code:<div class="copy-row" style="margin-top: 8px"><pre class="snippet">${esc(mcpCommand)}</pre><button class="primary" data-copy="${esc(mcpCommand)}">Copy</button></div></li>
-        <li>In Claude Code, run <code>/mcp</code>, choose <strong>trace</strong>, then <strong>Authenticate</strong>. Your browser opens Trace: approve it there. No token to copy.</li>
+        <li>In Claude Code, install the Trace plugin${pluginServerNote}:<div class="copy-row" style="margin-top: 8px"><pre class="snippet">${esc(pluginInstall)}</pre><button class="primary" data-copy="${esc(pluginInstall)}">Copy</button></div></li>
+        <li>Run <code>/mcp</code>, choose <strong>plugin:trace:trace</strong>, then <strong>Authenticate</strong>. Your browser opens Trace: approve it there. No token to copy.</li>
         <li>Ask it to set things up:<div class="copy-row" style="margin-top: 8px"><pre class="snippet wrap">${esc(setupPrompt)}</pre><button data-copy="${esc(setupPrompt)}">Copy</button></div></li>
       </ol>
-      <p class="hint">This step ticks off once your agent connects. Other MCP clients sign in the same way with <code>${esc(location.origin)}/mcp</code> (see Setup). Rather do it by hand? The next steps show how.</p>`,
+      <p class="hint">This step ticks off once your agent connects. Or run <code>/trace:setup</code> instead of the prompt. Other MCP clients sign in the same way with <code>${esc(location.origin)}/mcp</code> (see Setup). Rather do it by hand? The next steps show how.</p>`,
     team: () => `
       <h1>Invite your team</h1>
       <p class="sub">Optional. Users work with insights and analysis; admins also manage the team, websites, security and privacy rules. You can require two-step verification for everyone.</p>
