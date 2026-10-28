@@ -363,7 +363,7 @@ pub fn tools() -> Vec<Value> {
             "get_install_snippet",
             "Install snippet",
             "The script tag to add to the website's pages, with where it goes, how single-page apps, custom events and consent work, and how to keep customer data out.",
-            json!({ "consent": { "type": "string", "enum": ["none", "banner", "required"], "description": "none (default): collect from the first page; banner: Trace's own small consent bar; required: wait for your consent tool to call trace.consent(true)" } }),
+            json!({ "consent": { "type": "string", "enum": ["none", "banner", "required"], "description": "none (default): cookieless, nothing stored on visitors' devices and no banner; required: for sites with their own consent tool, which calls trace.consent(true); banner: Trace's own bar, kept for sites that already use it" } }),
             &[],
             true,
         ),
@@ -765,7 +765,7 @@ async fn call(ctx: &Context<'_>, name: &str, args: &Value) -> anyhow::Result<Too
                 "where": "In the HTML every page shares (layout, template, index.html), before </head>. One copy per page.",
                 "single_page_apps": "Nothing extra: route changes (history API, hash routes) count as pageviews. Add data-routes=\"/products/:slug, /docs/*\" to the tag to group dynamic URLs; numeric and UUID segments become :id on their own.",
                 "custom_events": "trace.track(\"signup\", { plan: \"pro\" }) from code, or data-trace-event=\"signup\" on an element. Declare each event in trace.json. If code can call trace.track before the script loads, put this stub before the tag: <script>window.trace=window.trace||{q:[]};[\"track\",\"identify\",\"page\",\"init\",\"consent\"].forEach(function(m){trace[m]=trace[m]||function(){trace.q.push([m,arguments])}})</script>",
-                "consent": "consent: banner shows a small bar and records nothing before the visitor says yes; required waits for your own consent tool to call trace.consent(true). Use one where the rules that apply to the site require consent for analytics.",
+                "consent": "By default the collector is cookieless: it stores nothing on visitors' devices, and the server tells visits apart with a hash salted daily that can't be traced back, so there is no banner to show. Visitors can't be followed across days. A site that already asks for consent can pass consent: required and call trace.consent(true) from its consent tool; after a yes, visits are followed across days.",
                 "privacy": "Put data-trace-mask on any element that shows customer data; no text is read inside it. Never pass emails to identify().",
                 "check": "After deploying, get_setup_status shows when events arrive.",
             }))

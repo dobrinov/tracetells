@@ -29,6 +29,10 @@ const MAX_PROPS_BYTES: usize = 2048;
 #[derive(Debug, Deserialize)]
 pub struct Batch {
     pub key: String,
+    /// The collector's session id. Empty from a cookieless collector, which
+    /// keeps nothing on the device: the server finds the visit itself
+    /// ([`crate::visits`]) and fills this in before storing.
+    #[serde(default)]
     pub sid: String,
     #[serde(default)]
     pub vid: Option<String>,
@@ -42,6 +46,10 @@ pub struct Batch {
     /// Client clock when the batch was sent; used to correct clock skew.
     #[serde(default)]
     pub now: Option<i64>,
+    /// Share of visitors to record, from a cookieless collector, which can't
+    /// sample by itself without an id; the server samples by visitor instead.
+    #[serde(default)]
+    pub sample: Option<f64>,
     #[serde(default)]
     pub events: Vec<IncomingEvent>,
 }

@@ -326,6 +326,8 @@ Trace is built to never collect passwords, payment details, tokens or other secr
 | URLs | Query strings are never sent. Path segments that look like emails, ids or tokens become `:email`, `:id`, `:token` |
 | Referrer | Origin only, and only from another site |
 | Custom-event props | Keys such as `password`, `token`, `card`, `cvv`, `iban`, `email`, `phone`, `address`, `dob`, `balance`, `salary` are dropped. Other string values are scrubbed as above |
+| Visitors' addresses | Never stored. Hashed with the website, the browser and a daily salt to tell visits apart; salts older than yesterday are deleted |
+| Visitors' devices | Nothing stored unless the site waits for its own consent tool and the visitor agrees |
 | User ids from `identify()` | Must be opaque. Email-like ids are hashed (SHA-256) in the browser, and the server drops anything still personal |
 | Raw events | Deleted after 90 days (`--retention-days`). Insights, KPIs and evaluations are aggregates and are kept |
 
@@ -379,31 +381,35 @@ The one-line stub queues calls made before the script loads, so `trace.track()` 
 | `key` | Write key (required) |
 | `endpoint` | Collect URL. Defaults to `/v1/collect` next to `d.js` |
 | `routes` | Patterns that group dynamic URLs: `:param` matches one segment, a trailing `*` matches the rest. Numeric, UUID and long-hash segments become `:id` even without a pattern. |
-| `sample` | Share of visitors to record, e.g. `0.25` |
+| `sample` | Share of visitors to record, e.g. `0.25`. Cookieless, the server does the sampling, by visitor |
 | `pageviews` | `auto` (default) or `manual`, in which case you call `trace.page()` yourself |
 | `console` | `false` stops recording `console.error` calls. The collector wraps `console.error`, so devtools shows `d.js` as the call site for those messages |
-| `consent` | `banner` or `required`: record nothing until the visitor agrees (see below) |
-| `consent-text`, `consent-link` | The consent bar's sentence, and the address of a "How it works" link |
-| `consent-allow`, `consent-deny`, `consent-link-text` | The bar's two button labels and the link's text, for a site not in English |
+| `consent` | Leave it out to stay cookieless (the default), or `required` to wait for your own consent tool (see below) |
 
 API: `trace.track(name, props)`, `trace.identify(userId)`, `trace.page(route?)`, `trace.flush()`, `trace.consent(true | false)`.
 
-### Asking for consent
+### Cookieless by default
 
-The collector keeps a random visitor id and session id in `localStorage`. In the EU, storing anything on a visitor's device usually needs their consent first, so the collector can ask:
+The collector stores nothing on visitors' devices: no cookie, nothing in `localStorage` or `sessionStorage`. Ids live in memory for the page only. The server tells visits apart instead, from a hash of the website, the visitor's address and their browser, salted with a random value that changes every day (UTC). The address is never stored, and salts older than yesterday are deleted, so once a day is over its hashes can't be linked to anyone or to the next day's visits. With nothing stored on the device and only aggregates kept, there is no consent banner to show. Check that this fits the rules that apply to your site.
+
+**Signed-in people** count once across days when the site calls `trace.identify(userId)` with its own opaque id. Cookieless, the id is kept for the page only, so call it on every page while someone is signed in. Linking someone's visits across days is per-person tracking, even with an opaque id: say so in your privacy policy, and leave it out where it doesn't fit, as on a site for children.
+
+A site that used to ask for consent can switch by removing `data-consent`: the collector deletes the ids it left in visitors' browsers, and keeps not recording anyone who said no.
+
+What it costs: a visitor who comes back tomorrow counts as a new visitor, and two people on one network with the same browser look like one. Sessions, funnels, rage and dead clicks, errors and KPIs all work as usual, and a session that runs past midnight carries on.
+
+### When your site already asks for consent
 
 ```html
-<script src="https://trace.example.com/d.js?k=WRITE_KEY" data-key="WRITE_KEY" data-consent="banner" data-consent-link="/privacy" defer></script>
-...
-<footer><a href="#" data-trace-consent>Privacy choices</a></footer>
+<script src="https://trace.example.com/d.js?k=WRITE_KEY" data-key="WRITE_KEY" data-consent="required" defer></script>
 ```
 
 - **Before an answer**, nothing is stored, no listeners run and nothing is sent. Calls such as `trace.track()` wait.
-- **`banner`** shows a small bar at the bottom of the page with one sentence and two buttons that look the same, **Allow** and **No thanks**. **`required`** shows nothing: your own consent tool calls `trace.consent(true)` or `trace.consent(false)`, which also works through the loading stub before `d.js` arrives.
-- **The answer** is the one thing kept beforehand, as `trc_consent` in `localStorage`. **No thanks**, or withdrawing later, deletes Trace's ids and stops collection. A browser sending **Global Privacy Control** counts as no, and sees no bar.
-- **Any element with `data-trace-consent`**, such as a footer link, opens the bar again so visitors can change their answer. `trace.consent()` returns `"yes"`, `"no"` or `null`.
+- **Your consent tool** calls `trace.consent(true)` or `trace.consent(false)`, which also works through the loading stub before `d.js` arrives. Trace draws nothing itself.
+- **After a yes**, the collector keeps a random visitor id and session id in `localStorage`, so returning visitors are recognised across days.
+- **The answer** is kept as `trc_consent` in `localStorage`. A no, or withdrawing later, deletes Trace's ids and stops collection. A browser sending **Global Privacy Control** counts as no. `trace.consent()` returns `"yes"`, `"no"` or `null`.
 
-The dashboard's install snippets include `data-consent="banner"` unless you turn off **Ask visitors for consent first**.
+`data-consent="banner"` still works for sites that already use it: Trace's own small bar, with `consent-text`, `consent-link`, `consent-allow`, `consent-deny` and `consent-link-text` for its wording, and `data-trace-consent` on a link to open it again. New installs don't need it.
 
 Multi-page sites keep one session across page loads (30 minutes of inactivity starts a new one). Pages restored from the back/forward cache count as pageviews, and form submits are sent before the browser navigates away. Query strings are never recorded. The collector sends JSON as `text/plain` through `sendBeacon`, so browsers skip the CORS preflight.
 

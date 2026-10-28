@@ -668,11 +668,11 @@ async function renderBehaviour() {
     <div class="stats">
       ${[
         ["Sessions", t.sessions],
-        ["Visitors", t.visitors],
+        ["Visitors", t.visitors, "Signed-in people your site names with trace.identify() count once. Everyone else counts once a day: nothing is stored on their device to recognise them by."],
         ["Pageviews", t.pageviews],
         ["Events", t.events],
       ]
-        .map(([l, v]) => `<div class="card stat"><div class="value">${num(v)}</div><div class="label">${l}</div></div>`)
+        .map(([l, v, hint]) => `<div class="card stat"${hint ? ` title="${esc(hint)}"` : ""}><div class="value">${num(v)}</div><div class="label">${l}</div></div>`)
         .join("")}
       ${d.devices
         .map((x) => `<div class="card stat"><div class="value">${pct(t.sessions ? x.count / t.sessions : 0)}</div><div class="label">${esc(x.name)}</div></div>`)
@@ -733,18 +733,20 @@ async function renderBehaviour() {
 // ---------------------------------------------------------------- Setup
 
 // Snippets for the current website, shared by Setup and Get started.
-// Whether install snippets ask visitors for consent first (on unless turned off).
-const askConsent = () => store("trace_ask_consent") !== "no";
+// Whether install snippets wait for the site's own consent tool. Off by default:
+// the collector is cookieless, so there is nothing to ask consent for.
+const askConsent = () => store("trace_wait_consent") === "yes";
 
-/// The "ask for consent" checkbox shown above install snippets.
+/// The "wait for consent" checkbox shown above install snippets.
 function consentToggle() {
-  return `<label class="check-row"><input type="checkbox" data-ask-consent ${askConsent() ? "checked" : ""}>
-    <span><strong>Ask visitors for consent first</strong> <span class="hint">Nothing is stored or sent until they click Allow on a small bar; a "No thanks" or Global Privacy Control is respected. Usually needed in the EU. Add <code>data-trace-consent</code> to a footer link to let visitors change their mind.</span></span></label>`;
+  return `<p class="hint">Cookieless by default: Trace stores nothing on visitors' devices and shows no banner. It tells visits apart with a hash that changes every day and can't be traced back.</p>
+    <label class="check-row"><input type="checkbox" data-ask-consent ${askConsent() ? "checked" : ""}>
+    <span><strong>Wait for my consent tool</strong> <span class="hint">For sites that already ask for consent. Nothing is sent until your tool calls <code>trace.consent(true)</code>; after a yes, Trace keeps an id so it can follow visits across days.</span></span></label>`;
 }
 
 function bindConsentToggle(rerender) {
   view.querySelector("[data-ask-consent]")?.addEventListener("change", (e) => {
-    store("trace_ask_consent", e.target.checked ? "yes" : "no");
+    store("trace_wait_consent", e.target.checked ? "yes" : "no");
     rerender();
   });
 }
@@ -753,8 +755,8 @@ function setupSnippets() {
   // ?k= serves this website's privacy rules built into the collector.
   const src = `${location.origin}/d.js?k=${project.write_key}`;
   const key = project.write_key;
-  const consent = askConsent() ? ` data-consent="banner"` : "";
-  const consentInit = askConsent() ? `, consent: "banner"` : "";
+  const consent = askConsent() ? ` data-consent="required"` : "";
+  const consentInit = askConsent() ? `, consent: "required"` : "";
   const stub = `<script>window.trace=window.trace||{q:[]};["track","identify","page","init","consent"].forEach(function(m){trace[m]=trace[m]||function(){trace.q.push([m,arguments])}})</script>`;
   const installs = {
     site: {
@@ -824,8 +826,8 @@ It loads after the page and never records what people type.${
     askConsent()
       ? `
 
-It asks visitors for consent first (data-consent="banner"): a small bar with Allow and No thanks appears, and nothing is stored or sent until they click Allow. Add a "Privacy choices" link with the attribute data-trace-consent to the site's footer so visitors can change their answer later. Check that before clicking Allow no requests go to ${location.origin}/v1/collect, and after it they return 204.`
-      : ` Then open a page and check that requests to ${location.origin}/v1/collect return 204.`
+It waits for the site's own consent tool (data-consent="required"): call trace.consent(true) when the visitor agrees and trace.consent(false) when they decline or withdraw. Check that before agreeing no requests go to ${location.origin}/v1/collect, and after it they return 204.`
+      : ` It is cookieless: it stores nothing on visitors' devices and needs no consent banner. Then open a page and check that requests to ${location.origin}/v1/collect return 204.`
   }`;
 }
 

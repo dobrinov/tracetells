@@ -36,6 +36,8 @@ pub struct Window {
 #[derive(Debug, Serialize)]
 pub struct Totals {
     pub sessions: i64,
+    /// People where the site names them with `trace.identify()`, once across
+    /// days; everyone else by the cookieless visitor hash, which changes daily.
     pub visitors: i64,
     pub pageviews: i64,
     pub events: i64,
@@ -167,8 +169,11 @@ pub async fn build(pool: &Pool, project_id: i64, days: u32) -> Result<Digest> {
     let from = to - days as i64 * DAY_MS;
     let p = project_id;
 
+    // A signed-in person is the same visitor every day; the prefix keeps a user
+    // id from ever matching a visitor hash.
     let (sessions, visitors): (i64, i64) = sqlx::query_as(
-        "SELECT COUNT(*), COUNT(DISTINCT visitor_id) FROM sessions WHERE project_id = $1 AND started_at >= $2 AND started_at < $3",
+        "SELECT COUNT(*), COUNT(DISTINCT COALESCE('u:' || user_id, visitor_id)) FROM sessions
+         WHERE project_id = $1 AND started_at >= $2 AND started_at < $3",
     )
     .bind(p).bind(from).bind(to)
     .fetch_one(pool).await?;
@@ -351,4 +356,41 @@ pub async fn build(pool: &Pool, project_id: i64, days: u32) -> Result<Digest> {
 
 fn round1(v: f64) -> f64 {
     (v * 10.0).round() / 10.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn signed_in_people_count_once_across_days() {
+        let path = crate::db::test_target("digest").await;
+        let pool = crate::db::connect(&path).await.unwrap();
+        let account = crate::db::create_account(&pool, "Acme", None).await.unwrap().id;
+        let site = crate::db::create_site(&pool, account, "Shop").await.unwrap().id;
+        let now = now_ms();
+        // One person signed in on two days (a new visitor hash each day), one
+        // anonymous visitor with two sessions in a day, and another anonymous one.
+        for (id, visitor, user, days_ago) in [
+            ("s1", "v_monday", Some("u-42"), 3),
+            ("s2", "v_thursday", Some("u-42"), 0),
+            ("s3", "v_anon", None, 1),
+            ("s4", "v_anon", None, 1),
+            ("s5", "v_other", None, 2),
+        ] {
+            let at = now - days_ago * DAY_MS - 60_000;
+            sqlx::query("INSERT INTO sessions (id, project_id, visitor_id, user_id, started_at, last_seen_at) VALUES ($1, $2, $3, $4, $5, $5)")
+                .bind(id)
+                .bind(site)
+                .bind(visitor)
+                .bind(user)
+                .bind(at)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let totals = build(&pool, site, 14).await.unwrap().totals;
+        assert_eq!((totals.sessions, totals.visitors), (5, 3));
+        crate::db::drop_test_target(&path).await;
+    }
 }

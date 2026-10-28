@@ -21,5 +21,6 @@ pub mod query;
 pub mod retention;
 pub mod usage;
 pub mod util;
+pub mod visits;
 
 pub use sqlx::AnyPool as Pool;

@@ -91,6 +91,13 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS sessions_project_started ON sessions(project_id, started_at);
 
+-- One random salt per day (UTC) for recognising cookieless visits. Salts older
+-- than yesterday are deleted, so old visitor hashes can't be linked to anyone.
+CREATE TABLE IF NOT EXISTS daily_salts (
+  day TEXT PRIMARY KEY,
+  salt TEXT NOT NULL
+);
+
 -- One row per captured interaction. `selector` holds the element selector for
 -- clicks and forms, and the source location for errors. `value` holds numeric
 -- payloads: scroll depth (%) for `scroll`, time on page (ms) for `leave`.

@@ -182,6 +182,7 @@ mod tests {
             vw: Some(1200),
             referrer: None,
             now: Some(now),
+            sample: None,
             events,
         };
         ingest::store(pool, project_id, batch, None, None, &Default::default()).await.unwrap();

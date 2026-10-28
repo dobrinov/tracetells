@@ -399,6 +399,19 @@ async fn collect(
     if !state.collect_limits.hit(&format!("site:{site}"), BATCHES_PER_SITE, 60_000) {
         return Err(ApiError(StatusCode::TOO_MANY_REQUESTS, "too many batches for this website".into()));
     }
+    // A cookieless collector keeps nothing on the device, so the visit is found
+    // here, from a daily-salted hash; the address itself is never stored. It
+    // can't sample without an id either, so sampling happens here, by visitor,
+    // before anything counts towards the account's quota.
+    if batch.sid.is_empty() {
+        let ua = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("");
+        let visit = trace_core::visits::visit(&state.pool, site, &ip, ua, trace_core::util::now_ms()).await?;
+        if batch.sample.is_some_and(|s| s < 1.0 && trace_core::visits::sample_position(&visit.visitor_id) >= s) {
+            return Ok(StatusCode::NO_CONTENT);
+        }
+        batch.sid = visit.session_id;
+        batch.vid = Some(visit.visitor_id);
+    }
     // Over the monthly limit: drop the rest, count it, and still answer 204 so
     // visitors' browsers do no extra work and never retry.
     let n = batch.events.len() as i64;
@@ -1485,6 +1498,55 @@ mod isolation_tests {
         assert_eq!(app.clone().oneshot(req).await.unwrap().status(), StatusCode::NO_CONTENT);
         let acme_events: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events WHERE project_id = $1").bind(acme_site.id).fetch_one(&state.pool).await.unwrap();
         assert_eq!(acme_events, 0);
+        trace_core::db::drop_test_target(&path).await;
+    }
+
+    /// The default collector sends no ids: the server finds the visit from a
+    /// daily-salted hash, keeps one session per visitor across page loads, and
+    /// samples by visitor when asked.
+    #[tokio::test]
+    async fn cookieless_batches_find_their_visit() {
+        let (app, state, path) = app().await;
+        let (_, site) = db::create_account_with_site(&state.pool, "Acme", None).await.unwrap();
+        let post = |ua: &'static str, body: Value| {
+            let app = app.clone();
+            async move {
+                let req = Request::builder()
+                    .method("POST")
+                    .uri("/v1/collect")
+                    .header(header::USER_AGENT, ua)
+                    .body(axum::body::Body::from(body.to_string()))
+                    .unwrap();
+                app.oneshot(req).await.unwrap().status()
+            }
+        };
+        let page = |p: &str| json!({ "key": site.write_key, "events": [{ "type": "pageview", "path": p }] });
+
+        assert_eq!(post("Firefox 140", page("/")).await, StatusCode::NO_CONTENT);
+        assert_eq!(post("Firefox 140", page("/pricing")).await, StatusCode::NO_CONTENT);
+        assert_eq!(post("Safari 19", page("/")).await, StatusCode::NO_CONTENT);
+        let sessions: Vec<(String, String)> = sqlx::query_as("SELECT id, visitor_id FROM sessions WHERE project_id = $1 ORDER BY started_at, id")
+            .bind(site.id)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap();
+        assert_eq!(sessions.len(), 2, "two browsers, and one session across the first one's two pages: {sessions:?}");
+        assert!(sessions.iter().all(|(id, v)| id.starts_with("c_") && v.starts_with("v_")));
+        let firefox_pages: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM events e JOIN sessions s ON s.id = e.session_id WHERE s.project_id = $1 AND s.user_agent = 'Firefox 140'",
+        )
+        .bind(site.id)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+        assert_eq!(firefox_pages, 2);
+
+        // Sampled out: nothing stored, nothing counted.
+        let mut sampled = page("/");
+        sampled["sample"] = json!(0.0);
+        assert_eq!(post("Chrome 150", sampled).await, StatusCode::NO_CONTENT);
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions WHERE project_id = $1").bind(site.id).fetch_one(&state.pool).await.unwrap();
+        assert_eq!(total, 2);
         trace_core::db::drop_test_target(&path).await;
     }
 

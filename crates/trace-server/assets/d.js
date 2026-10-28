@@ -14,12 +14,18 @@
  *   endpoint   collect URL, defaults to /v1/collect next to d.js
  *   routes     route patterns that group dynamic URLs, e.g. "/products/:id, /docs/*".
  *              Numeric, UUID and long-hash segments become :id automatically.
- *   sample     share of visitors to record, e.g. 0.25 (the rest pay no cost at all)
+ *   sample     share of visitors to record, e.g. 0.25 (with consent, the rest pay no
+ *              cost at all; cookieless, the server samples by visitor)
  *   pageviews  "auto" (default) or "manual", where you call trace.page()
  *   console    "false" to stop recording console.error calls
- *   consent    "banner" or "required": record nothing until the visitor agrees.
- *              "banner" shows a small bar with Allow / No thanks; "required"
- *              leaves asking to your own consent tool, which calls trace.consent().
+ *   consent    Without it (the default) the collector is cookieless: it stores
+ *              nothing on the visitor's device, keeps ids only in memory for the
+ *              page, and the server tells visits apart with a daily-salted hash
+ *              it can't reverse. Nothing to ask consent for, and no banner.
+ *              "required": record nothing until your own consent tool calls
+ *              trace.consent(true); after a yes the collector keeps a visitor and
+ *              session id in localStorage, so visits are followed across days.
+ *              "banner" is kept for sites that already use it: Trace's own bar.
  *              Before an answer nothing is stored, listened to or sent; the answer
  *              itself is kept in localStorage (trc_consent). Global Privacy
  *              Control counts as "no". Any element with data-trace-consent (e.g. a
@@ -32,6 +38,8 @@
  *   <script>window.trace=window.trace||{q:[]};["track","identify","page","init"].forEach(function(m){trace[m]=trace[m]||function(){trace.q.push([m,arguments])}})</script>
  *
  * API: trace.track(name, props) | trace.identify(userId) | trace.page([route]) | trace.flush()
+ *      Cookieless, identify() lasts for the page: call it on every page while
+ *      someone is signed in, and they count as one visitor across days.
  *      trace.consent(true | false) records the visitor's answer; trace.consent() returns
  *      "yes", "no" or null
  * Tracking without JavaScript: data-trace-event="add_to_cart" sends that custom
@@ -60,7 +68,8 @@
  * - Nothing reads layout on the hot path: no innerText, and scroll height is
  *   sampled at most every 250 ms (re-measured at most every 2 s).
  * - DOM mutations are observed only during the second after a click, not continuously.
- * - Storage writes are throttled; network goes out in batches via sendBeacon.
+ * - Nothing is written to storage unless the site asks for consent and gets it;
+ *   then writes are throttled. Network goes out in batches via sendBeacon.
  * - Every callback is wrapped so a collector bug can never throw into the page.
  */
 (function () {
@@ -281,7 +290,12 @@
       });
 
     // ---- storage -------------------------------------------------------------
+    // Only with consent does anything go into the browser's storage. Otherwise
+    // ids live in memory for this page, and the server recognises the visit.
+    var CONSENT_MODE = String(config.consent || "");
+    var PERSIST = CONSENT_MODE === "banner" || CONSENT_MODE === "required";
     var ls = (function () {
+      if (!PERSIST) return null;
       try {
         var s = window.localStorage;
         s.setItem("trc_probe", "1");
@@ -317,8 +331,9 @@
     var vid = get("trc_vid") || uuid();
     set("trc_vid", vid);
 
-    // Sampling is per visitor and stable, so a visitor is either always or never recorded.
-    if (SAMPLE < 1) {
+    // Sampling is per visitor and stable, so a visitor is either always or never
+    // recorded. Cookieless, there is no lasting id, so the server samples instead.
+    if (PERSIST && SAMPLE < 1) {
       var h = 2166136261;
       for (var i = 0; i < vid.length; i++) h = Math.imul(h ^ vid.charCodeAt(i), 16777619);
       if ((h >>> 0) / 4294967296 >= SAMPLE) {
@@ -420,10 +435,12 @@
       timer = null;
       if (optedOut) queue.length = 0;
       if (!queue.length || !sentSid) return;
+      // Cookieless batches carry no ids: the server finds the visit.
       var body = JSON.stringify({
         key: KEY,
-        sid: sentSid,
-        vid: vid,
+        sid: PERSIST ? sentSid : undefined,
+        vid: PERSIST ? vid : undefined,
+        sample: !PERSIST && SAMPLE < 1 ? SAMPLE : undefined,
         uid: uid,
         vw: window.innerWidth,
         ref: referrerOrigin(),
@@ -1031,6 +1048,14 @@
   function begin(config) {
     var mode = config && String(config.consent || "");
     if (!config || !config.key || (mode !== "banner" && mode !== "required")) {
+      // Cookieless. A site that used to ask may have left ids behind: delete
+      // them. Someone who said no back then is still not recorded.
+      if (storedAnswer() === "no") return;
+      try {
+        ["trc_vid", "trc_sid", "trc_uid", "trc_last"].forEach(function (k) {
+          if (window.localStorage.getItem(k) !== null) window.localStorage.removeItem(k);
+        });
+      } catch (e) {}
       start(config);
       if (started) replay();
       return;

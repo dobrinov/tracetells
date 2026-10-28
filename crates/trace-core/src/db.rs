@@ -303,6 +303,7 @@ async fn migrate(pool: &Pool, path: &str) -> Result<()> {
          CREATE UNIQUE INDEX IF NOT EXISTS projects_account_slug ON projects(account_id, slug);
          CREATE UNIQUE INDEX IF NOT EXISTS projects_public_token ON projects(public_token);
          CREATE INDEX IF NOT EXISTS users_account ON users(account_id);
+         CREATE INDEX IF NOT EXISTS sessions_project_visitor ON sessions(project_id, visitor_id, last_seen_at);
          CREATE INDEX IF NOT EXISTS audit_account ON audit_log(account_id, id);",
     )
     .execute(pool)
