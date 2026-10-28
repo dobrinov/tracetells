@@ -25,6 +25,8 @@
  *              Control counts as "no". Any element with data-trace-consent (e.g. a
  *              footer link) opens the bar again so visitors can change their mind.
  *   consent-text, consent-link   the bar's sentence, and a "How it works" link
+ *   consent-allow, consent-deny, consent-link-text   the two buttons' labels and
+ *              the link's text, for a site that is not in English
  *
  * Calls made before the script loads are queued if you add this stub first:
  *   <script>window.trace=window.trace||{q:[]};["track","identify","page","init"].forEach(function(m){trace[m]=trace[m]||function(){trace.q.push([m,arguments])}})</script>
@@ -249,7 +251,7 @@
   function scriptConfig() {
     if (!script) return null;
     var c = {};
-    ["key", "endpoint", "routes", "sample", "pageviews", "console", "consent", "consent-text", "consent-link"].forEach(function (k) {
+    ["key", "endpoint", "routes", "sample", "pageviews", "console", "consent", "consent-text", "consent-link", "consent-link-text", "consent-allow", "consent-deny"].forEach(function (k) {
       var v = script.getAttribute("data-" + k);
       if (v != null) c[k] = v;
     });
@@ -938,11 +940,34 @@
   }
 
   function hideBar() {
+    if (bodyWatcher) {
+      bodyWatcher.disconnect();
+      bodyWatcher = null;
+    }
     if (bar && bar.parentNode) bar.parentNode.removeChild(bar);
     bar = null;
   }
 
+  // Turbo, and every other framework that swaps <body> on navigation, throws
+  // the bar out with the old body. A bar that is no longer in the document is
+  // no bar, and the watcher puts it back, so a visitor who clicks through
+  // before answering is still asked rather than silently never recorded.
+  var bodyWatcher = null;
+  function barGone() {
+    return bar !== null && !bar.isConnected;
+  }
+  function watchBody() {
+    if (bodyWatcher || typeof MutationObserver !== "function") return;
+    bodyWatcher = new MutationObserver(
+      safe(function () {
+        if (barGone()) showBar();
+      })
+    );
+    bodyWatcher.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
   function showBar() {
+    if (barGone()) bar = null;
     if (bar || !gated) return;
     if (!document.body) return document.addEventListener("DOMContentLoaded", safe(showBar));
     var c = gated;
@@ -951,6 +976,9 @@
       c.consentText ||
       "This site uses Trace to see, in aggregate, how its pages are used. If you allow it, Trace keeps a random ID on this device. It never records what you type.";
     var link = c["consent-link"] || c.consentLink;
+    var linkText = c["consent-link-text"] || c.consentLinkText || "How it works";
+    var allow = c["consent-allow"] || c.consentAllow || "Allow";
+    var deny = c["consent-deny"] || c.consentDeny || "No thanks";
     var font = "14px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
     bar = document.createElement("div");
     bar.setAttribute("role", "region");
@@ -967,7 +995,7 @@
     if (link) {
       var a = document.createElement("a");
       a.href = link;
-      a.textContent = "How it works";
+      a.textContent = linkText;
       a.style.cssText = "color:#8ea3ff;text-decoration:underline;font:inherit;";
       p.appendChild(a);
     }
@@ -975,7 +1003,7 @@
     var row = document.createElement("span");
     row.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;";
     // The same look for both answers: saying no is as easy as saying yes.
-    [["Allow", true], ["No thanks", false]].forEach(function (choice) {
+    [[allow, true], [deny, false]].forEach(function (choice) {
       var b = document.createElement("button");
       b.type = "button";
       b.textContent = choice[0];
@@ -992,6 +1020,7 @@
     });
     bar.appendChild(row);
     document.body.appendChild(bar);
+    watchBody();
   }
 
   api.consent = safe(function (yes) {

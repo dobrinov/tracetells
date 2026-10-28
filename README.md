@@ -383,6 +383,7 @@ The one-line stub queues calls made before the script loads, so `trace.track()` 
 | `console` | `false` stops recording `console.error` calls. The collector wraps `console.error`, so devtools shows `d.js` as the call site for those messages |
 | `consent` | `banner` or `required`: record nothing until the visitor agrees (see below) |
 | `consent-text`, `consent-link` | The consent bar's sentence, and the address of a "How it works" link |
+| `consent-allow`, `consent-deny`, `consent-link-text` | The bar's two button labels and the link's text, for a site not in English |
 
 API: `trace.track(name, props)`, `trace.identify(userId)`, `trace.page(route?)`, `trace.flush()`, `trace.consent(true | false)`.
 
