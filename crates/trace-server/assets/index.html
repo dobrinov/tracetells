@@ -37,6 +37,7 @@
       </div>
       <nav id="nav">
         <a href="#/start" data-view="start" hidden>Get started<span class="progress" id="start-progress"></span></a>
+        <a href="#/home" data-view="home">Home</a>
         <a href="#/insights" data-view="insights">Insights</a>
         <a href="#/kpis" data-view="kpis">KPIs</a>
         <a href="#/behaviour" data-view="behaviour">Behaviour</a>
@@ -44,12 +45,13 @@
         <a href="#/setup" data-view="setup">Setup</a>
         <a href="#/team" data-view="team" hidden>Team</a>
         <a href="#/plan" data-view="plan">Plan</a>
-        <a href="#/admin" data-view="admin" hidden>Admin</a>
+        <a href="/admin" data-view="admin" hidden>Admin</a>
       </nav>
       <a class="collect-status" id="collect-status" href="#/setup" hidden></a>
       <button id="run-analysis" type="button">Run analysis</button>
       <a class="me" id="me" href="#/account" data-view="account" hidden></a>
     </header>
+    <div class="viewing-as" id="viewing-as" role="status" hidden></div>
     <div class="notice" id="notice" role="status" hidden></div>
     <main id="view" aria-live="polite"></main>
     <div class="toast" id="toast" role="status" hidden></div>

@@ -11,6 +11,10 @@ const MIN_DEAD_SESSIONS: i64 = 5;
 const MIN_ERROR_SESSIONS: i64 = 3;
 const MIN_FORM_STARTS: i64 = 10;
 const MAX_FORM_COMPLETION: f64 = 0.6;
+/// A funnel step worth a look: at least this many sessions lost, and fewer than
+/// this share getting through.
+const MIN_FUNNEL_LOST: i64 = 10;
+const MAX_STEP_CONVERSION: f64 = 0.7;
 
 /// What built-in insights record as their creator.
 pub const CREATOR: &str = "Trace's built-in checks";
@@ -295,6 +299,87 @@ pub fn find(digest: &Digest, kpis: &[Kpi]) -> Vec<NewInsight> {
                 created_by: Some(CREATOR.into()),
                 readings: Vec::new(),
                 fingerprint: Some(format!("form:{}:{}", f.path, f.selector)),
+            },
+        ));
+    }
+
+    // Funnels: the step that loses the most sessions, with what is wrong on the
+    // page before it. Weighted by sessions lost, so it competes with the rest.
+    for f in &digest.funnels {
+        let Some(drop) = f.biggest_drop.as_ref().filter(|d| d.lost >= MIN_FUNNEL_LOST && 1.0 - d.rate < MAX_STEP_CONVERSION) else { continue };
+        let i = drop.to_step - 1;
+        let (before, step) = (&f.funnel.steps[i - 1], &f.funnel.steps[i]);
+        let through = f.steps[i].of_previous.unwrap_or(0.0);
+        let page = (before.matcher.kind == "pageview").then(|| before.matcher.path.clone()).flatten().filter(|p| !p.ends_with('*'));
+        let mut evidence = vec![
+            Evidence::Measured {
+                claim: format!("Of sessions that reach {}, those that go on to {}", before.label, step.label),
+                metric: Metric { measure: Measure::Conversion, matcher: None, from: Some(before.matcher.clone()), to: Some(step.matcher.clone()) },
+                goal: Direction::Increase,
+            },
+            Evidence::note(format!(
+                "Funnel \"{}\": {} sessions reached {}, {} went on to {}; {} lost here in the last {days} days, the most of any step",
+                f.funnel.name, f.steps[i - 1].sessions, before.label, f.steps[i].sessions, step.label, drop.lost
+            )),
+        ];
+        if let Some(p) = &page {
+            evidence.extend(page_line(p).map(Evidence::note));
+            let on = |list: &[trace_core::digest::ClickStat]| list.iter().filter(|c| &c.path == p).map(|c| c.sessions).sum::<i64>();
+            let (rage, dead) = (on(&digest.rage_clicks), on(&digest.dead_clicks));
+            let errors: i64 = digest.errors.iter().filter(|e| &e.path == p).map(|e| e.sessions).sum();
+            if rage + dead + errors > 0 {
+                evidence.push(Evidence::note(format!("On {p}: {rage} sessions with rage clicks, {dead} with dead clicks, {errors} with errors")));
+            }
+        }
+        let mobile = f.by_device.iter().find(|d| d.device == "mobile");
+        let desktop = f.by_device.iter().find(|d| d.device == "desktop");
+        if let (Some(m), Some(d)) = (mobile, desktop)
+            && m.sessions[i - 1] > 0
+            && d.sessions[i - 1] > 0
+        {
+            evidence.push(Evidence::note(format!(
+                "This step by device: {} on mobile, {} on desktop",
+                pct(m.sessions[i] as f64 / m.sessions[i - 1] as f64),
+                pct(d.sessions[i] as f64 / d.sessions[i - 1] as f64)
+            )));
+        }
+        let kpi_id = kpis
+            .iter()
+            .find(|k| matches!(&k.definition, trace_core::model::KpiDefinition::Conversion { from, to } if *from == before.matcher && *to == step.matcher))
+            .or_else(|| kpis.iter().find(|k| k.definition.matchers().iter().any(|m| **m == step.matcher)))
+            .map(|k| k.id);
+        found.push((
+            drop.lost,
+            NewInsight {
+                title: format!("Get more people from {} to {}", before.label, step.label),
+                problem: format!(
+                    "In the funnel \"{}\", only {} of sessions that reach {} go on to {}: {} sessions stop here, more than at any other step.",
+                    f.funnel.name,
+                    pct(through),
+                    before.label,
+                    step.label,
+                    drop.lost
+                ),
+                evidence,
+                proposal: format!(
+                    "Find what stops people {}. Make the way to {} the obvious next action there: one clear primary button, no \
+                     competing choices above it, nothing broken or slow on the way (check the rage clicks, dead clicks and errors above), \
+                     and the information people need to decide right next to it.",
+                    page.as_deref().map(|p| format!("on {p}")).unwrap_or_else(|| format!("after {}", before.label)),
+                    step.label
+                ),
+                acceptance_criteria: vec![
+                    format!("The step from {} to {} converts better over the next 14 days", before.label, step.label),
+                    "No new errors on the pages involved".into(),
+                ],
+                pages: page.into_iter().collect(),
+                kpi_id,
+                expected_impact: format!("More of the {} sessions lost at this step reach {}, and the funnel converts better overall", drop.lost, step.label),
+                confidence: if drop.lost >= 50 { "high" } else { "medium" }.into(),
+                source: "heuristics".into(),
+                created_by: Some(CREATOR.into()),
+                readings: Vec::new(),
+                fingerprint: Some(format!("funnel:{}:{}", f.funnel.key, drop.to_step)),
             },
         ));
     }

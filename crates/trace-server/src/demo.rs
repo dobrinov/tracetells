@@ -17,7 +17,14 @@ use trace_core::{Pool, config, db, insights, kpi};
 const SHOP_HTML: &str = include_str!("../assets/shop/index.html");
 const SHOP_JS: &str = include_str!("../assets/shop/shop.js");
 /// The shop's own trace.json, as it would live in the shop's repository.
-pub const SHOP_CONFIG: &str = include_str!("../assets/shop/trace.json");
+/// The shop's trace.json, with `{{BASE}}` where its pages' address starts: empty
+/// here, `/demo` on tracetells.com (where `deploy/build-site.sh` serves it).
+pub const SHOP_CONFIG_TEMPLATE: &str = include_str!("../assets/shop/trace.json");
+
+/// The shop's trace.json for a shop served at `base` ("" or e.g. "/demo").
+pub fn shop_config(base: &str) -> String {
+    SHOP_CONFIG_TEMPLATE.replace("{{BASE}}", base)
+}
 
 /// The line of shop.js that throws when someone picks Annual on /pricing,
 /// as a browser would report it.
@@ -40,7 +47,7 @@ pub fn site(trace_url: &str, write_key: &str) -> Router {
             .into_boxed_str(),
     );
     Router::new()
-        .route("/trace.json", get(|| async { ([(header::CONTENT_TYPE, "application/json; charset=utf-8")], SHOP_CONFIG).into_response() }))
+        .route("/trace.json", get(|| async { ([(header::CONTENT_TYPE, "application/json; charset=utf-8")], shop_config("")).into_response() }))
         .route("/shop.js", get(|| async { ([(header::CONTENT_TYPE, "application/javascript; charset=utf-8")], SHOP_JS).into_response() }))
         .route("/favicon.ico", get(|| async { axum::http::StatusCode::NO_CONTENT }))
         // Planted problem: the reviews API fails about 30% of the time.
@@ -323,7 +330,7 @@ pub async fn seed(pool: &Pool, sessions: usize) -> Result<()> {
         }
     }
     tx.commit().await?;
-    let parsed = config::parse(SHOP_CONFIG).map_err(|e| anyhow::anyhow!(e.join("; ")))?;
+    let parsed = config::parse(&shop_config("")).map_err(|e| anyhow::anyhow!(e.join("; ")))?;
     config::apply(pool, project_id, &parsed, "demo: assets/shop/trace.json").await?;
     let checkout = kpi::list(pool, project_id)
         .await?

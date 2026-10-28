@@ -60,12 +60,12 @@ pub async fn get(pool: &Pool, project_id: i64, id: i64) -> Result<Option<Kpi>> {
     row.map(from_row).transpose()
 }
 
-struct Hit {
-    session_id: String,
-    ts: i64,
+pub(crate) struct Hit {
+    pub(crate) session_id: String,
+    pub(crate) ts: i64,
 }
 
-async fn hits(pool: &Pool, project_id: i64, m: &EventMatch, from: i64, to: i64) -> Result<Vec<Hit>> {
+pub(crate) async fn hits(pool: &Pool, project_id: i64, m: &EventMatch, from: i64, to: i64) -> Result<Vec<Hit>> {
     let rows: Vec<(String, i64, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT session_id, ts, path, selector, name FROM events
          WHERE project_id = $1 AND type = $2 AND ts >= $3 AND ts < $4",

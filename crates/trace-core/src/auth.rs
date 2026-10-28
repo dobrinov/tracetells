@@ -463,7 +463,13 @@ pub struct Session {
     pub user: User,
     /// Second factor passed (or not needed).
     pub mfa_ok: bool,
+    /// The operator viewing as this person, if this is such a session. It is
+    /// read-only, and leaves the person's own state (last account, sign-in) alone.
+    pub impersonator: Option<User>,
 }
+
+/// How long an operator can view as someone before signing in again.
+pub const IMPERSONATION_MS: i64 = 60 * 60 * 1000;
 
 /// Starts a session in one of the person's accounts and returns the cookie
 /// value. `mfa_ok` is false while a second factor is still due.
@@ -493,14 +499,14 @@ pub async fn create_session(pool: &Pool, user: &User, mfa_ok: bool, user_agent: 
 pub async fn session(pool: &Pool, token: &str) -> Result<Option<Session>> {
     let token_hash = sha256_hex(token);
     // Sessions from before memberships have no account: they act in the person's last-used one.
-    let row: Option<(i64, i64, Flag, i64, i64)> = sqlx::query_as(
-        "SELECT s.user_id, COALESCE(s.account_id, u.account_id), s.mfa_ok, s.expires_at, s.last_seen_at
+    let row: Option<(i64, i64, Flag, i64, i64, Option<i64>)> = sqlx::query_as(
+        "SELECT s.user_id, COALESCE(s.account_id, u.account_id), s.mfa_ok, s.expires_at, s.last_seen_at, s.impersonator_id
          FROM auth_sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1",
     )
     .bind(&token_hash)
     .fetch_optional(pool)
     .await?;
-    let Some((user_id, account_id, mfa_ok, expires_at, last_seen_at)) = row else { return Ok(None) };
+    let Some((user_id, account_id, mfa_ok, expires_at, last_seen_at, impersonator_id)) = row else { return Ok(None) };
     let now = now_ms();
     if expires_at <= now {
         end_session(pool, token).await?;
@@ -520,7 +526,52 @@ pub async fn session(pool: &Pool, token: &str) -> Result<Option<Session>> {
             None => return Ok(None),
         },
     };
-    Ok(Some(Session { token_hash, user, mfa_ok: mfa_ok.0 }))
+    let impersonator = match impersonator_id {
+        // An operator who lost operator rights can't keep viewing as anyone.
+        Some(id) => match home_user(pool, id).await?.filter(|o| o.is_operator) {
+            Some(o) => Some(o),
+            None => {
+                end_session(pool, token).await?;
+                return Ok(None);
+            }
+        },
+        None => None,
+    };
+    Ok(Some(Session { token_hash, user, mfa_ok: mfa_ok.0, impersonator }))
+}
+
+/// Starts an operator's read-only session as another person, in their
+/// last-used account (or `account_id`), for [`IMPERSONATION_MS`]. Operators
+/// can't view as other operators. Returns the cookie value and the person.
+pub async fn impersonate(pool: &Pool, operator: &User, target_id: i64, account_id: Option<i64>, user_agent: Option<&str>) -> Result<(String, User)> {
+    if !operator.is_operator {
+        bail!("only operators can view as someone");
+    }
+    let target = match account_id {
+        Some(a) => get_user(pool, a, target_id).await?,
+        None => home_user(pool, target_id).await?,
+    }
+    .context("no such person")?;
+    if target.is_operator {
+        bail!("operators can't view as other operators");
+    }
+    let token = random_token(32);
+    let now = now_ms();
+    sqlx::query(
+        "INSERT INTO auth_sessions (token_hash, user_id, account_id, created_at, expires_at, last_seen_at, mfa_ok, user_agent, impersonator_id)
+         VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8)",
+    )
+    .bind(sha256_hex(&token))
+    .bind(target.id)
+    .bind(target.account_id)
+    .bind(now)
+    .bind(now + IMPERSONATION_MS)
+    .bind(now)
+    .bind(user_agent.map(|u| crate::util::truncate(u, 300)))
+    .bind(operator.id)
+    .execute(pool)
+    .await?;
+    Ok((token, target))
 }
 
 /// Moves a session to another of the person's accounts, which sign-in opens
@@ -528,7 +579,10 @@ pub async fn session(pool: &Pool, token: &str) -> Result<Option<Session>> {
 pub async fn switch_account(pool: &Pool, s: &Session, account_id: i64) -> Result<User> {
     let user = get_user(pool, account_id, s.user.id).await?.context("you're not a member of that account")?;
     sqlx::query("UPDATE auth_sessions SET account_id = $1 WHERE token_hash = $2").bind(account_id).bind(&s.token_hash).execute(pool).await?;
-    sqlx::query("UPDATE users SET account_id = $1 WHERE id = $2").bind(account_id).bind(user.id).execute(pool).await?;
+    // Viewing as someone never changes what their own sign-in opens.
+    if s.impersonator.is_none() {
+        sqlx::query("UPDATE users SET account_id = $1 WHERE id = $2").bind(account_id).bind(user.id).execute(pool).await?;
+    }
     Ok(user)
 }
 

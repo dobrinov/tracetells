@@ -287,7 +287,9 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
   mfa_ok BIGINT NOT NULL,
   user_agent TEXT,
   -- The account the session acts in; null means the person's last-used one.
-  account_id BIGINT
+  account_id BIGINT,
+  -- An operator viewing as this person (read-only); null for the person's own sessions.
+  impersonator_id BIGINT
 );
 CREATE INDEX IF NOT EXISTS auth_sessions_user ON auth_sessions(user_id);
 

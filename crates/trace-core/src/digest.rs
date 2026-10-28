@@ -24,6 +24,8 @@ pub struct Digest {
     /// Custom events seen in the window, plus declared events that never arrived.
     pub custom_events: Vec<EventStat>,
     pub kpis: Vec<KpiSnapshot>,
+    /// Declared and recognised funnels, with where each loses the most sessions.
+    pub funnels: Vec<crate::funnel::FunnelReport>,
 }
 
 #[derive(Debug, Serialize)]
@@ -351,6 +353,7 @@ pub async fn build(pool: &Pool, project_id: i64, days: u32) -> Result<Digest> {
         forms,
         custom_events,
         kpis,
+        funnels: crate::funnel::report(pool, p, days.min(90)).await?,
     }))
 }
 

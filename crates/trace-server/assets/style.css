@@ -1515,3 +1515,183 @@ ul.checklist li::before {
 .access-choice input { margin-top: 4px; }
 .history { margin-top: 2px; font-variant-numeric: tabular-nums; }
 .verdict.item { margin-top: 6px; }
+
+/* Funnels: steps as bars against the first, the biggest drop marked. */
+.funnel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.funnel {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.funnel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.funnel-head .value {
+  font-size: 22px;
+  font-weight: 700;
+}
+.funnel-head .value-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.funnel-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.funnel-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+.funnel-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.funnel-label code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.funnel-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.funnel-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: var(--accent);
+}
+.funnel-step.is-drop .funnel-bar span {
+  background: var(--bad);
+}
+.funnel-nums {
+  font-size: 13px;
+}
+.funnel-count {
+  font-weight: 600;
+  margin-right: 6px;
+}
+.funnel-label .badge.bad {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: var(--bad);
+  background: var(--bad-soft);
+  white-space: nowrap;
+}
+
+/* Home: what needs attention now. */
+.today {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.today-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line-strong, var(--line));
+  border-radius: 10px;
+  background: var(--surface);
+}
+.today-item.tone-action { border-left-color: var(--accent); }
+.today-item.tone-bad { border-left-color: var(--bad); }
+.today-item.tone-good { border-left-color: var(--good); }
+.today-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.today-text span {
+  color: var(--text-2);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.today-item .button {
+  flex-shrink: 0;
+}
+.week .value {
+  font-size: 22px;
+  font-weight: 700;
+}
+@media (max-width: 640px) {
+  .today-item { flex-direction: column; align-items: flex-start; }
+}
+
+/* An operator viewing as someone: on every page, impossible to miss. */
+.viewing-as {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.viewing-as > div {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 10px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.viewing-as button {
+  background: var(--accent-ink);
+  color: var(--accent);
+  border-color: var(--accent-ink);
+}
+
+/* Admin: sessions per day. */
+.day-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 180px;
+  padding: 16px;
+}
+.day-bar {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.day-bar span {
+  display: block;
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+}
+.day-bar small {
+  font-size: 11px;
+  color: var(--muted);
+}

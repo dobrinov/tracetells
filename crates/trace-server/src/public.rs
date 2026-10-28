@@ -28,6 +28,7 @@ pub fn routes() -> Router<AppStateRef> {
         .route("/p/{token}", get(|| async { Html(crate::api::INDEX_HTML) }))
         .route("/v1/public/{token}/project", get(overview))
         .route("/v1/public/{token}/kpis", get(kpis))
+        .route("/v1/public/{token}/funnels", get(funnels))
         .route("/v1/public/{token}/config", get(tracking))
         .route("/v1/public/{token}/digest", get(behaviour))
         .route("/v1/public/{token}/insights", get(list))
@@ -72,6 +73,20 @@ async fn kpis(
     let Json(list) = crate::api::list_kpis(State(state), Extension(CurrentSite(s)), q).await?;
     let keep = ["id", "key", "name", "description", "direction", "target", "summary", "current", "previous", "sessions", "target_met", "definition"];
     Ok(Json(Value::Array(list.as_array().into_iter().flatten().map(|k| pick(k, &keep)).collect())))
+}
+
+/// Funnels, without any built from fewer than 5 sessions, like every public row.
+async fn funnels(
+    State(state): State<AppStateRef>,
+    connect: Connect,
+    headers: HeaderMap,
+    Path(token): Path<String>,
+    q: Query<crate::api::DaysQuery>,
+) -> ApiResult<Json<Value>> {
+    let s = site(&state, &token, &connect, &headers).await?;
+    let mut list = trace_core::funnel::report(&state.pool, s.id, q.days.clamp(1, 90)).await?;
+    trace_core::public::suppress_funnels(&mut list);
+    Ok(Json(serde_json::json!(list)))
 }
 
 /// Declared events and whether they arrive; events sent without being

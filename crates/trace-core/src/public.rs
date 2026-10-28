@@ -81,7 +81,18 @@ pub fn suppress(mut d: Digest) -> Digest {
     d.errors.retain(|x| keep(x.sessions));
     d.forms.retain(|x| keep(x.started));
     d.custom_events.retain(|x| keep(x.sessions) || (x.declared && x.count == 0));
+    suppress_funnels(&mut d.funnels);
     d
+}
+
+/// Funnels whose first step has fewer than [`MIN_SESSIONS`] sessions are left
+/// out, and so are device rows that small.
+pub fn suppress_funnels(funnels: &mut Vec<crate::funnel::FunnelReport>) {
+    let keep = |sessions: i64| sessions >= MIN_SESSIONS;
+    funnels.retain(|f| f.steps.first().is_some_and(|s| keep(s.sessions)));
+    for f in funnels.iter_mut() {
+        f.by_device.retain(|r| r.sessions.first().is_some_and(|n| keep(*n)));
+    }
 }
 
 #[cfg(test)]

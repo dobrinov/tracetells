@@ -182,7 +182,7 @@ pub fn tools() -> Vec<Value> {
         tool(
             "get_overview",
             "Overview",
-            "Start here: whether data is being collected, each KPI against its target (last 14 days vs the 14 before), and how many insights are in each status.",
+            "Start here: whether data is being collected, each KPI against its target (last 14 days vs the 14 before), how many insights are in each status, and `today`: what needs attention now, most important first (setup, analysis, insights to review, verdicts, KPIs going the wrong way, the worst funnel drop, errors, events not arriving).",
             json!({}),
             &[],
             true,
@@ -221,6 +221,17 @@ pub fn tools() -> Vec<Value> {
             true,
         ),
         tool("list_kpis", "KPIs", "The KPIs defined in trace.json with current and previous values and targets.", json!({ "days": days }), &[], true),
+        tool(
+            "get_funnels",
+            "Funnels",
+            "The website's funnels: steps people take in order within one visit, declared in trace.json or recognised from conversion KPIs that chain. \
+             For each: sessions reaching every step, the share of the step before, the window before for comparison, conversion by device, and \
+             biggest_drop, the step where the most sessions are lost. Each step carries its `match`, so a step's conversion (from the step before \
+             to it) can be measured as evidence with query_behaviour's conversion measure. Aggregates only.",
+            json!({ "days": days }),
+            &[],
+            true,
+        ),
         tool(
             "list_insights",
             "List insights",
@@ -528,6 +539,8 @@ async fn call(ctx: &Context<'_>, name: &str, args: &Value) -> anyhow::Result<Too
                 "kpis": kpi_values(ctx, p, 14).await?,
                 "insights": counts,
                 "analysis": trace_core::readiness::status(pool, &project).await?,
+                // What the dashboard's home shows: what needs attention now, most important first.
+                "today": trace_core::today::build(pool, &project).await?.items,
                 "privacy": "Trace only exposes aggregated patterns: no individual sessions or people.",
             }))
         }
@@ -554,6 +567,17 @@ async fn call(ctx: &Context<'_>, name: &str, args: &Value) -> anyhow::Result<Too
         }
         "get_analysis_status" => ToolOutput::Json(serde_json::to_value(trace_core::readiness::status(pool, site.as_ref().expect("a website tool")).await?)?),
         "list_kpis" => ToolOutput::Json(json!({ "kpis": kpi_values(ctx, p, arg_days(args)).await? })),
+        "get_funnels" => {
+            let funnels = trace_core::funnel::report(pool, p, arg_days(args).clamp(1, 90)).await?;
+            ToolOutput::Json(json!({
+                "funnels": funnels,
+                "note": if funnels.is_empty() {
+                    "No funnels yet: declare them in trace.json under \"funnels\" (2 to 8 steps), or define conversion KPIs whose goal is the next one's start."
+                } else {
+                    "A step counts sessions that reached it after the step before, in the same session. Look first where `lost` is largest."
+                },
+            }))
+        }
         "list_insights" => {
             let status = match args.get("status").and_then(Value::as_str) {
                 Some(s) => Some(s.parse::<InsightStatus>()?),
@@ -1060,21 +1084,27 @@ fn analyse_prompt(args: &Value) -> Value {
     let site_arg = site.map(|s| format!(", \"site\": \"{s}\"")).unwrap_or_default();
     let text = format!(
         "You are the UX analyst for a website measured with Trace. Find the few changes most likely to move its KPIs, \
-and save them as Trace insights.
+above all the ones that get more people through its funnels, and save them as Trace insights.
 
 1. Call get_overview{{{site_obj}}} for the KPIs against their targets.
 2. Call get_behaviour_summary with {{\"days\": {days}{site_arg}}}: pages with exit rates, scroll and time, paths, rage \
 and dead clicks, errors, form completion and custom events. It holds aggregates only, never individual people.
 3. Call list_kpis{{{site_obj}}} and list_insights{{{site_obj}}}. Don't repeat an insight that exists in any status, and \
 read the dismiss_reason of dismissed ones: they say what this team doesn't want.
-4. Dig into what looks wrong with query_behaviour{site_note}: by device, by page, by day, compared with the window \
-before. Pick up to 5 problems that affect the most sessions or a KPI furthest from its target. For each, be specific: \
-the page, the element, what people do, and a concrete change. Prefer fixes a developer can ship in a day.
-5. Draft them with draft_insights{site_note}: title, problem, evidence, proposal, acceptance criteria, the pages, the \
+4. Call get_funnels{site_obj}. In each funnel, biggest_drop is the step where the most sessions are lost: that is where \
+more conversion is won. Compare it with the window before and across devices (a step that converts far worse on \
+mobile points at a mobile problem).
+5. Dig into why with query_behaviour{site_note}: on the page people leave from, look at exits, scroll, rage and dead \
+clicks, errors and forms, by device and by day, compared with the window before. Pick up to 5 problems, the ones that \
+lose the most sessions in a funnel first, then those that keep a KPI furthest from its target. For each, be specific: \
+the page, the element, what people do, and a concrete change that gets more of them to the next step. Prefer fixes a \
+developer can ship in a day.
+6. Draft them with draft_insights{site_note}: title, problem, evidence, proposal, acceptance criteria, the pages, the \
 KPI key it should move, expected impact, confidence and a stable fingerprint (e.g. \"rage:/checkout:button#pay\"). \
 Each evidence item is a measurement {{\"claim\", \"metric\", \"goal\"}} in query_behaviour's form, so Trace measures it \
-now and again every day; write claims without numbers.
-6. Show the person every draft with Trace's measured evidence, and ask which to keep. Save only those, with \
+now and again every day; write claims without numbers. For a funnel step, include its conversion: the conversion \
+measure from the step before (its `match`) to the step (its `match`), with goal increase.
+7. Show the person every draft with Trace's measured evidence, and ask which to keep. Save only those, with \
 save_insights and their draft_ids. If nothing is worth saving, call save_insights with an empty list: that records the \
 analysis, so Trace counts new sessions from now.
 

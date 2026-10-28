@@ -42,6 +42,8 @@ pub struct Config {
     /// Custom event name → what it means.
     pub events: BTreeMap<String, String>,
     pub kpis: Vec<KpiSpec>,
+    /// Steps people take in order; stored with the config (see [`crate::funnel`]).
+    pub funnels: Vec<crate::funnel::FunnelSpec>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -110,11 +112,11 @@ impl Parser {
     }
 
     fn root(&mut self, root: &Value) -> Config {
-        let mut config = Config { product: None, events: BTreeMap::new(), kpis: Vec::new() };
+        let mut config = Config { product: None, events: BTreeMap::new(), kpis: Vec::new(), funnels: Vec::new() };
         let Some(obj) = self.object(root, "(root)") else { return config };
         for key in obj.keys() {
-            if !matches!(key.as_str(), "$schema" | "product" | "events" | "kpis") {
-                self.err(key, "unknown key (expected product, events or kpis)");
+            if !matches!(key.as_str(), "$schema" | "product" | "events" | "kpis" | "funnels") {
+                self.err(key, "unknown key (expected product, events, kpis or funnels)");
             }
         }
         match obj.get("product") {
@@ -147,10 +149,51 @@ impl Parser {
                 }
             }
         }
+        if let Some(funnels) = obj.get("funnels").and_then(|v| self.object(v, "funnels")) {
+            for (key, v) in funnels {
+                if let Some(spec) = self.funnel(key, v, &config.events) {
+                    config.funnels.push(spec);
+                }
+            }
+        }
         if config.kpis.is_empty() && self.errors.is_empty() {
             self.warnings.push("no KPIs defined: the analyst works best when it knows what to improve".into());
         }
         config
+    }
+
+    fn funnel(&mut self, key: &str, v: &Value, events: &BTreeMap<String, String>) -> Option<crate::funnel::FunnelSpec> {
+        let at = format!("funnels.{key}");
+        if key.is_empty() || !key.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') {
+            self.err(&at, "funnel keys may only use lowercase letters, digits, _ and -");
+            return None;
+        }
+        let obj = self.object(v, &at)?;
+        for k in obj.keys() {
+            if !matches!(k.as_str(), "name" | "description" | "steps") {
+                self.err(&format!("{at}.{k}"), "unknown key (expected name, description or steps)");
+            }
+        }
+        let text = |k: &str| obj.get(k).and_then(Value::as_str).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let Some(steps) = obj.get("steps").and_then(Value::as_array) else {
+            self.err(&format!("{at}.steps"), "expected a list of steps, each an event matcher");
+            return None;
+        };
+        let max = crate::funnel::MAX_STEPS;
+        if steps.len() < 2 || steps.len() > max {
+            self.err(&format!("{at}.steps"), format!("a funnel has 2 to {max} steps"));
+            return None;
+        }
+        let mut parsed = Vec::new();
+        for (i, step) in steps.iter().enumerate() {
+            parsed.push(self.matcher(Some(step), &format!("{at}.steps[{i}]"), events)?);
+        }
+        Some(crate::funnel::FunnelSpec {
+            key: key.to_string(),
+            name: text("name").unwrap_or_else(|| key.replace(['_', '-'], " ")),
+            description: text("description").unwrap_or_default(),
+            steps: parsed,
+        })
     }
 
     fn kpi(&mut self, key: &str, v: &Value, events: &BTreeMap<String, String>) -> Option<KpiSpec> {
@@ -290,6 +333,9 @@ pub struct SyncReport {
     pub unchanged: Vec<String>,
     pub archived: Vec<String>,
     pub events: usize,
+    /// Funnels declared in the file.
+    #[serde(default)]
+    pub funnels: usize,
     pub warnings: Vec<String>,
 }
 
@@ -299,7 +345,7 @@ type StoredKpi = (i64, Option<String>, String, String, String, String, Option<f6
 /// replaces the event catalogue and records the sync.
 pub async fn apply(pool: &Pool, project_id: i64, parsed: &Parsed, source: &str) -> Result<SyncReport> {
     let config = &parsed.config;
-    let mut report = SyncReport { warnings: parsed.warnings.clone(), events: config.events.len(), ..Default::default() };
+    let mut report = SyncReport { warnings: parsed.warnings.clone(), events: config.events.len(), funnels: config.funnels.len(), ..Default::default() };
     let now = now_ms();
     let mut tx = pool.begin().await?;
 
@@ -520,6 +566,29 @@ mod tests {
         assert!(all.contains("kpis.a.conversion.to: missing event matcher"), "{all}");
         assert!(all.contains("kpis.a.goal: required"), "{all}");
         assert!(all.contains("kpis.b.target: 55 is not a rate"), "{all}");
+    }
+
+    #[test]
+    fn funnels_need_two_to_eight_known_steps() {
+        let ok = parse(
+            r#"{ "events": { "purchase": "Paid" },
+                 "funnels": { "checkout": { "name": "Checkout", "steps": [ { "pageview": "/cart" }, { "pageview": "/checkout" }, { "event": "purchase" } ] } } }"#,
+        )
+        .unwrap();
+        let f = &ok.config.funnels[0];
+        assert_eq!((f.key.as_str(), f.name.as_str(), f.steps.len()), ("checkout", "Checkout", 3));
+        let all = parse(
+            r#"{ "funnels": {
+                 "Bad Key": { "steps": [ { "pageview": "/" }, { "pageview": "/a" } ] },
+                 "short": { "steps": [ { "pageview": "/" } ] },
+                 "typo": { "steps": [ { "pageview": "/" }, { "pagview": "/a" } ], "colour": "red" } } }"#,
+        )
+        .unwrap_err()
+        .join("\n");
+        assert!(all.contains("funnels.Bad Key: funnel keys may only use"), "{all}");
+        assert!(all.contains("funnels.short.steps: a funnel has 2 to 8 steps"), "{all}");
+        assert!(all.contains("funnels.typo.steps[1]: unknown event type"), "{all}");
+        assert!(all.contains("funnels.typo.colour: unknown key"), "{all}");
     }
 
     #[test]

@@ -129,7 +129,7 @@ fn session_cookie(headers: &HeaderMap) -> Option<String> {
         .map(|(_, v)| v.to_string())
 }
 
-fn set_cookie(res: &mut Response, token: Option<&str>, secure: bool) {
+pub(crate) fn set_cookie(res: &mut Response, token: Option<&str>, secure: bool) {
     let value = match token {
         Some(t) => format!("{COOKIE}={t}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}", auth::SESSION_DAYS * 86400),
         None => format!("{COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"),
@@ -140,7 +140,7 @@ fn set_cookie(res: &mut Response, token: Option<&str>, secure: bool) {
 
 /// Paths about one website; everything else is about the account.
 fn is_site_path(path: &str) -> bool {
-    ["/project", "/config", "/digest", "/kpis", "/insights", "/analyze", "/analysis", "/releases", "/publish", "/query", "/evaluate", "/runs", "/privacy", "/onboarding"]
+    ["/project", "/config", "/digest", "/kpis", "/funnels", "/today", "/insights", "/analyze", "/analysis", "/releases", "/publish", "/query", "/evaluate", "/runs", "/privacy", "/onboarding"]
         .iter()
         .any(|p| path == *p || path.starts_with(&format!("{p}/")))
 }
@@ -222,6 +222,21 @@ pub async fn authorize(State(state): State<AppStateRef>, mut req: Request, next:
     if principal.user().is_none() && people_only(&path) {
         return deny(StatusCode::FORBIDDEN, "people_only", "API tokens can't manage people, tokens, websites or accounts");
     }
+    // An operator viewing as someone can look, not change: reads, questions and
+    // moving between the person's accounts only.
+    if let Some(s) = principal.user()
+        && let Some(op) = &s.impersonator
+    {
+        let looking = matches!(*req.method(), Method::GET | Method::HEAD)
+            || (*req.method() == Method::POST && (path == "/query" || path == "/account/switch"));
+        if !looking || path.starts_with("/operator") {
+            return deny(
+                StatusCode::FORBIDDEN,
+                "impersonating",
+                &format!("{} is viewing as {}: read-only. Stop viewing as them to make changes.", op.email, s.user.email),
+            );
+        }
+    }
     // A question is a POST with a body, but changes nothing.
     let asks = path == "/query" && *req.method() == Method::POST;
     if principal.read_only() && !asks && !matches!(*req.method(), Method::GET | Method::HEAD) {
@@ -269,6 +284,7 @@ pub fn routes() -> Router<AppStateRef> {
         .route("/auth/mfa", post(verify_mfa))
         .route("/auth/logout", post(logout))
         .route("/auth/signup", post(signup))
+        .route("/auth/stop-impersonating", post(stop_impersonating))
         .route("/auth/invite/{token}", get(invite_info).post(accept_invite))
         .route("/account", get(account))
         .route("/account/switch", post(switch_account))
@@ -312,7 +328,7 @@ async fn current_session(state: &AppStateRef, headers: &HeaderMap) -> ApiResult<
     Ok(auth::session(&state.pool, &cookie).await?)
 }
 
-async fn state_json(state: &AppStateRef, s: Option<&Session>) -> ApiResult<Value> {
+pub(crate) async fn state_json(state: &AppStateRef, s: Option<&Session>) -> ApiResult<Value> {
     let (require_mfa, account, accounts) = match s {
         Some(s) => (
             auth::require_mfa(&state.pool, s.user.account_id).await?,
@@ -330,7 +346,9 @@ async fn state_json(state: &AppStateRef, s: Option<&Session>) -> ApiResult<Value
         "account": account,
         // Every account the person belongs to, for switching between them.
         "accounts": accounts,
-        "can_create_account": s.is_some_and(|s| may_create_account(state, s)),
+        "can_create_account": s.is_some_and(|s| may_create_account(state, s) && s.impersonator.is_none()),
+        // An operator viewing as this person (read-only), if any.
+        "impersonating": s.and_then(|s| s.impersonator.as_ref()).map(|o| json!({ "operator": o.email })),
         "step": s.and_then(|s| pending_step(s, require_mfa)),
         "require_mfa": require_mfa,
     }))
@@ -341,7 +359,7 @@ async fn auth_state(State(state): State<AppStateRef>, headers: HeaderMap) -> Api
     Ok(Json(state_json(&state, s.as_ref()).await?))
 }
 
-async fn signed_in(state: &AppStateRef, user: User, mfa_ok: bool, headers: &HeaderMap) -> ApiResult<Response> {
+pub(crate) async fn signed_in(state: &AppStateRef, user: User, mfa_ok: bool, headers: &HeaderMap) -> ApiResult<Response> {
     let ua = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok());
     let token = auth::create_session(&state.pool, &user, mfa_ok, ua).await?;
     let s = auth::session(&state.pool, &token).await?.ok_or_else(|| bad("session was just created"))?;
@@ -466,6 +484,17 @@ async fn verify_mfa(State(state): State<AppStateRef>, headers: HeaderMap, Json(b
             Err(ApiError::unauthorized("that code didn't work; use the newest code from your app, or a recovery code"))
         }
     }
+}
+
+/// Ends viewing as someone and signs the operator back in as themselves.
+async fn stop_impersonating(State(state): State<AppStateRef>, headers: HeaderMap) -> ApiResult<Response> {
+    let s = current_session(&state, &headers).await?.ok_or_else(|| ApiError::unauthorized("sign in first"))?;
+    let operator = s.impersonator.clone().ok_or_else(|| bad("you're not viewing as anyone"))?;
+    if let Some(c) = session_cookie(&headers) {
+        auth::end_session(&state.pool, &c).await?;
+    }
+    audit(&state, operator.account_id, &operator.email, "operator.impersonation_ended", &s.user.email).await;
+    signed_in(&state, operator, true, &headers).await
 }
 
 async fn logout(State(state): State<AppStateRef>, headers: HeaderMap) -> ApiResult<Response> {

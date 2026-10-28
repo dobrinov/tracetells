@@ -96,5 +96,37 @@
       "goal": "decrease",
       "target": "1%"
     }
+  },
+  "funnels": {
+    "sign_up": {
+      "name": "Home to sign-up",
+      "description": "The homepage, the pricing page, then a Start free click",
+      "steps": [
+        {
+          "pageview": "/"
+        },
+        {
+          "pageview": "/pricing.html"
+        },
+        {
+          "event": "start_free"
+        }
+      ]
+    },
+    "demo": {
+      "name": "Home to the demo",
+      "description": "The homepage, the demo shop, then what Trace recorded about it",
+      "steps": [
+        {
+          "pageview": "/"
+        },
+        {
+          "event": "open_demo"
+        },
+        {
+          "event": "view_public"
+        }
+      ]
+    }
   }
 }

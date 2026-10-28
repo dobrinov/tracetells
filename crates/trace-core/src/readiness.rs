@@ -47,7 +47,7 @@ fn decide(name: &str, new_sessions: i64, last: Option<i64>, now: i64) -> Analysi
     let since = if last.is_some() { "since the last analysis" } else { "so far" };
     let message = if ready {
         format!(
-            "{name} has {new_sessions} new sessions {since}: worth analysing. In Claude Code, run /mcp__trace__analyse_website."
+            "{name} has {new_sessions} new sessions {since}: worth analysing. In Claude Code, run /trace:analyse (or /mcp__trace__analyse_website without the plugin)."
         )
     } else if new_sessions == 0 {
         format!("{name} has no new sessions {since}.")
@@ -70,7 +70,7 @@ mod tests {
         assert!(!decide("Shop", 40, Some(now - 2 * DAY_MS), now).ready, "too soon for the small threshold");
         assert!(decide("Shop", 40, Some(now - 8 * DAY_MS), now).ready);
         let s = decide("Shop", 140, Some(now - DAY_MS), now);
-        assert!(s.message.contains("140 new sessions since the last analysis") && s.message.contains("/mcp__trace__analyse_website"));
+        assert!(s.message.contains("140 new sessions since the last analysis") && s.message.contains("/trace:analyse"));
         assert_eq!(decide("Shop", 0, None, now).message, "Shop has no new sessions so far.");
     }
 

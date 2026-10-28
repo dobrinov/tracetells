@@ -77,6 +77,9 @@ impl AppState {
 }
 
 pub(crate) const INDEX_HTML: &str = include_str!("../assets/index.html");
+/// The operators' interface, separate from the dashboard (same styles, same CSP).
+const ADMIN_HTML: &str = include_str!("../assets/admin.html");
+const ADMIN_JS: &str = include_str!("../assets/admin.js");
 const APP_JS: &str = include_str!("../assets/app.js");
 const STYLE_CSS: &str = include_str!("../assets/style.css");
 const COLLECTOR_JS: &str = include_str!("../assets/d.js");
@@ -93,6 +96,8 @@ pub fn router(state: AppStateRef) -> Router {
         .route("/config", get(get_config).post(push_config))
         .route("/digest", get(get_digest))
         .route("/kpis", get(list_kpis))
+        .route("/funnels", get(list_funnels))
+        .route("/today", get(today))
         .route("/insights", get(list_insights))
         .route("/insights/{id}", get(get_insight))
         .route("/insights/{id}/prompt", get(get_prompt))
@@ -120,6 +125,8 @@ pub fn router(state: AppStateRef) -> Router {
     Router::new()
         .route("/", get(|| async { Html(INDEX_HTML) }))
         .route("/assets/app.js", get(|| async { asset("application/javascript; charset=utf-8", APP_JS, "no-cache") }))
+        .route("/admin", get(|| async { Html(ADMIN_HTML) }))
+        .route("/assets/admin.js", get(|| async { asset("application/javascript; charset=utf-8", ADMIN_JS, "no-cache") }))
         .route("/assets/style.css", get(|| async { asset("text/css; charset=utf-8", STYLE_CSS, "no-cache") }))
         .nest("/api", api)
         .route("/mcp", post(mcp_http).get(|| async { (StatusCode::METHOD_NOT_ALLOWED, "this MCP endpoint takes POST requests") }))
@@ -333,6 +340,12 @@ impl From<anyhow::Error> for ApiError {
     }
 }
 
+impl From<sqlx::Error> for ApiError {
+    fn from(e: sqlx::Error) -> Self {
+        anyhow::Error::from(e).into()
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         (self.0, Json(json!({ "error": self.1 }))).into_response()
@@ -483,6 +496,16 @@ pub(crate) async fn list_kpis(State(state): State<AppStateRef>, Extension(Curren
         out.push(v);
     }
     Ok(Json(json!(out)))
+}
+
+/// The website's home: what needs attention now, most important first.
+async fn today(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>) -> ApiResult<Json<Value>> {
+    Ok(Json(json!(trace_core::today::build(&state.pool, &site).await?)))
+}
+
+/// Declared and recognised funnels, measured over the window and the one before.
+pub(crate) async fn list_funnels(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<DaysQuery>) -> ApiResult<Json<Value>> {
+    Ok(Json(json!(trace_core::funnel::report(&state.pool, site.id, q.days.clamp(1, 90)).await?)))
 }
 
 /// Applies a trace.json pushed by `trace push` (or CI). Invalid
@@ -953,7 +976,7 @@ mod isolation_tests {
 
     /// Every endpoint about one website, as (method, path below the website).
     const SITE_ROUTES: &[(&str, &str)] = &[
-        ("GET", "project"), ("GET", "config"), ("POST", "config"), ("GET", "digest"), ("GET", "kpis"),
+        ("GET", "project"), ("GET", "config"), ("POST", "config"), ("GET", "digest"), ("GET", "kpis"), ("GET", "funnels"), ("GET", "today"),
         ("GET", "insights"), ("GET", "insights/1"), ("GET", "insights/1/prompt"), ("POST", "insights/1/status"), ("POST", "insights/1/kpi"), ("POST", "insights/1/refresh"), ("POST", "releases"), ("GET", "query"), ("GET", "publish"), ("POST", "publish"), ("DELETE", "publish"), ("POST", "publish/rotate"),
         ("POST", "analyze"), ("POST", "evaluate"), ("GET", "runs"), ("GET", "privacy"), ("POST", "privacy/rules"),
         ("POST", "privacy/rules/1"), ("DELETE", "privacy/rules/1"), ("POST", "privacy/test"),
@@ -1352,6 +1375,64 @@ mod isolation_tests {
         assert!(again["skipped"][0]["reason"].as_str().unwrap().starts_with("already released"), "{again}");
         let (status, _) = send(&app, json_req("POST", &url, ("cookie", &owner), json!({ "insights": [ids[0]], "at": "last tuesday" }))).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
+        trace_core::db::drop_test_target(&path).await;
+    }
+
+    /// Viewing as someone: operators only, read-only, never as another operator,
+    /// recorded in both logs, and the person's own state left alone.
+    #[tokio::test]
+    async fn operators_view_as_people_read_only() {
+        let (app, state, path) = app().await;
+        let (ops, _) = db::create_account_with_site(&state.pool, "Ops", None).await.unwrap();
+        let (acme, acme_site) = db::create_account_with_site(&state.pool, "Acme", None).await.unwrap();
+        let operator = person(&state, ops.id, "op@trace.example", Role::Owner).await;
+        let customer = person(&state, acme.id, "ana@acme.example", Role::Owner).await;
+        auth::set_operator(&state.pool, "op@trace.example", true).await.unwrap();
+        sqlx::query("UPDATE users SET totp_enabled_at = 1, totp_secret = 'AAAA' WHERE email = 'op@trace.example'").execute(&state.pool).await.unwrap();
+        let ana = auth::find_user(&state.pool, "ana@acme.example").await.unwrap().unwrap();
+        let op_user = auth::find_user(&state.pool, "op@trace.example").await.unwrap().unwrap();
+        let cookie_of = |res: &Response| {
+            res.headers().get_all(header::SET_COOKIE).iter().filter_map(|v| v.to_str().ok()).find(|c| c.starts_with("trc_session=")).map(|c| c.split(';').next().unwrap().to_string())
+        };
+
+        // Customers can't; operators can't view as operators.
+        let (status, _) = send(&app, json_req("POST", "/api/operator/impersonate", ("cookie", &customer), json!({ "user_id": op_user.id }))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _) = send(&app, json_req("POST", "/api/operator/impersonate", ("cookie", &operator), json!({ "user_id": op_user.id }))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let (status, people) = send(&app, json_req("GET", "/api/operator/people", ("cookie", &operator), Value::Null)).await;
+        assert_eq!((status, people.as_array().unwrap().len()), (StatusCode::OK, 2));
+
+        let res = app.clone().oneshot(json_req("POST", "/api/operator/impersonate", ("cookie", &operator), json!({ "user_id": ana.id }))).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let viewing = cookie_of(&res).expect("a session cookie");
+        let (_, st) = send(&app, json_req("GET", "/api/auth/state", ("cookie", &viewing), Value::Null)).await;
+        assert_eq!((st["user"]["email"].as_str(), st["impersonating"]["operator"].as_str()), (Some("ana@acme.example"), Some("op@trace.example")));
+
+        // Read, yes; change, no.
+        let (status, _) = send(&app, json_req("GET", &format!("/api/sites/{}/today", acme_site.slug), ("cookie", &viewing), Value::Null)).await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, body) = send(&app, json_req("POST", "/api/team/invites", ("cookie", &viewing), json!({ "email": "x@acme.example", "role": "user" }))).await;
+        assert_eq!((status, body["code"].as_str()), (StatusCode::FORBIDDEN, Some("impersonating")));
+        let (status, _) = send(&app, json_req("POST", "/api/account/password", ("cookie", &viewing), json!({ "current": "a", "new": "b" }))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _) = send(&app, json_req("GET", "/api/operator/overview", ("cookie", &viewing), Value::Null)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "no operator area from inside someone else's view");
+
+        // The customer sees it in their own activity log; their own state is untouched.
+        let log = auth::audit_log(&state.pool, acme.id, 10).await.unwrap();
+        assert!(log.iter().any(|e| e.action == "operator.viewed_as" && e.actor == "op@trace.example"), "{log:?}");
+        let ana_after = auth::find_user(&state.pool, "ana@acme.example").await.unwrap().unwrap();
+        assert_eq!((ana_after.account_id, ana_after.last_login_at), (ana.account_id, ana.last_login_at));
+
+        // Stopping signs the operator back in as themselves.
+        let res = app.clone().oneshot(json_req("POST", "/api/auth/stop-impersonating", ("cookie", &viewing), Value::Null)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let back = cookie_of(&res).expect("the operator's own session");
+        let (_, st) = send(&app, json_req("GET", "/api/auth/state", ("cookie", &back), Value::Null)).await;
+        assert_eq!((st["user"]["email"].as_str(), st["impersonating"].is_null()), (Some("op@trace.example"), true));
+        let (_, gone) = send(&app, json_req("GET", "/api/auth/state", ("cookie", &viewing), Value::Null)).await;
+        assert!(gone["user"].is_null(), "the viewing session is over: {gone}");
         trace_core::db::drop_test_target(&path).await;
     }
 

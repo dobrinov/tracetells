@@ -151,6 +151,28 @@ trace push --server https://trace.example.com --token "$TRACE_ADMIN_TOKEN"
 
 `check` reports every problem with its location, e.g. `kpis.checkout.conversion.from: unknown event type "pagview"`. `push` records the git commit it came from. KPIs are matched by key, so editing one keeps its history and the insights linked to it. A KPI removed from the file is archived; released insights that targeted it are still evaluated. When self-hosting, `trace serve --config trace.json` applies the file at startup and again whenever it changes.
 
+### Funnels
+
+A funnel is the steps people take in order within one visit, and where they stop. Declare them next to the KPIs:
+
+```json
+"funnels": {
+  "checkout": {
+    "name": "Product to purchase",
+    "steps": [
+      { "pageview": "/products/:id" },
+      { "event": "add_to_cart" },
+      { "pageview": "/checkout" },
+      { "event": "purchase" }
+    ]
+  }
+}
+```
+
+Each step is an event matcher, like a KPI's, and a funnel has 2 to 8 of them. A step counts the sessions that reached it after the step before, in the same session. Trace also **recognises funnels from your KPIs**: conversion KPIs that chain (`/` → `/pricing` and `/pricing` → `signup`) become the funnel `/` → `/pricing` → `signup`, unless a declared funnel already covers it.
+
+The **KPIs** page shows every funnel: sessions per step, the share that continued from the step before, the same over the previous window, conversion by device, and the **biggest drop**, the step where the most sessions are lost. That step is where analysis looks first: `get_funnels` over MCP returns the same, the analysis prompt and Trace's own analysis start from it, and an insight about a step carries that step's conversion as its evidence, so the release is judged on it.
+
 ## MCP: use Trace from your coding agent
 
 Trace is also an MCP server, and your coding agent can run all of it: setting a website up, and then being its analyst.
@@ -278,6 +300,8 @@ Works for one person or a whole company. An **account** is a company or a solo u
 
 ## Websites
 
+Each website opens on its **Home**: what needs attention now, most important first, each with a link to act on it. Finishing setup comes first while it's unfinished; then a release verdict that just came in, analysis being due, insights waiting to be reviewed, KPIs that are short of target and getting worse, the funnel step losing the most people, errors visitors hit this week, and declared events that stopped arriving. `get_overview` over MCP returns the same list as `today`, so an agent sees the same priorities.
+
 Switch websites with the menu next to the logo. **Add website** (owners) creates one with its own write key, and its Setup page has snippets ready to paste. Removing a website deletes its data and asks you to type its name.
 
 Everything that works on data takes a website:
@@ -321,6 +345,11 @@ An operator signs in normally, and the **Admin** area appears once they have tur
 Built-in templates: `unlimited` (no limits, the default), `free` (30 days, 1 website, 100,000 events, 3 members, 5 Claude analyses), `friend` (365 days, 5 websites, 1,000,000 events, 10 members, 50 Claude analyses) and `owner` (no limits).
 
 **Upgrading** a database from before accounts turns each website into its own account (people, invites, tokens and the log move with it), keeps a backup at `<db>.pre-accounts`, and turns members and viewers into users. It stops, listing them, if one email address is in more than one workspace.
+
+
+**The admin interface** is at `/admin`, separate from the dashboard: Overview (accounts, people, websites, sessions and events across the server, and sessions per day), Accounts (plans, limits and usage, with an account's people and websites), People (everyone and the accounts they belong to), Websites (every website with its account, status and usage) and Plans. It needs operator rights and two-step verification, like before.
+
+**Viewing as someone.** From People, or an account's people, an operator can open the dashboard as that person to see what they see. It is read-only (reads, questions and switching between their accounts; nothing that changes anything), ends after an hour, can't be used on another operator, and doesn't touch the person's own state such as their last-used account or last sign-in. A banner on every page says who is being viewed, with **Stop viewing as them**. It is recorded in the operator's activity log and, as `operator.viewed_as`, in the activity log of the account being viewed, so customers can see it.
 
 ## Privacy and sensitive data
 

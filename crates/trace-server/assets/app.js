@@ -204,11 +204,16 @@ async function addWebsite() {
   return true;
 }
 
+// Another website opens where a fresh visit to it would: Get started until data
+// arrives, Insights after. The page open for the previous website (its onboarding,
+// say) may mean nothing for this one.
 function switchSite(slug) {
   currentSite = slug;
   store("trace_site", slug);
   project = null;
   kpiCache = [];
+  checklist = null;
+  history.replaceState(null, "", "#/");
   route();
 }
 
@@ -580,8 +585,101 @@ function kpiCard(k) {
     </div>`;
 }
 
+// ---------------------------------------------------------------- Home
+
+// The website's home: what needs the team now, most important first, each with
+// a way to act on it. Built by the server from what Trace already measures.
+async function renderHome() {
+  const t = await api("/today");
+  const change = t.sessions_week_before
+    ? (() => {
+        const d = (t.sessions_week - t.sessions_week_before) / t.sessions_week_before;
+        if (Math.abs(d) < 0.005) return `<span class="delta">same as the week before</span>`;
+        return `<span class="delta ${d > 0 ? "good" : "bad"}">${d > 0 ? "▲" : "▼"} ${Math.abs(d * 100).toFixed(0)}% vs the week before</span>`;
+      })()
+    : "";
+  const items = t.items.length
+    ? `<ol class="today">${t.items
+        .map(
+          (i, n) => `<li class="today-item tone-${esc(i.tone)}">
+            <div class="today-text"><strong>${esc(i.title)}</strong><span>${esc(i.detail)}</span></div>
+            <a class="button${n === 0 ? " primary" : ""}" href="#/${esc(i.page)}" ${i.kind === "analyse" ? "data-analyse" : ""}>${esc(i.action)}</a>
+          </li>`
+        )
+        .join("")}</ol>`
+    : `<div class="card empty-today"><p><strong>Nothing needs you right now.</strong> Trace keeps measuring; this page fills up when there's something to look at.</p></div>`;
+  view.innerHTML = `
+    <div class="page-head">
+      <div><h1>${esc(project.name)}</h1><p class="sub">What needs attention now, most important first.</p></div>
+      <div class="week"><span class="value">${num(t.sessions_week)}</span> <span class="hint">sessions in the last 7 days</span> ${change}</div>
+    </div>
+    ${items}`;
+  view.querySelector("[data-analyse]")?.addEventListener("click", (e) => {
+    const run = document.getElementById("run-analysis");
+    if (run && !run.hidden) {
+      e.preventDefault();
+      run.click();
+    }
+  });
+}
+
+// One funnel: each step as a bar sized against the first, the share that got
+// there from the step before, and the step losing the most sessions marked.
+function funnelCard(f) {
+  const first = f.steps[0] ? f.steps[0].sessions : 0;
+  const drop = f.biggest_drop ? f.biggest_drop.to_step - 1 : -1;
+  const change =
+    f.conversion != null && f.previous_conversion != null
+      ? deltaHtml({ current: f.conversion, previous: f.previous_conversion, direction: "increase", definition: { conversion: true } })
+      : "";
+  const steps = f.steps
+    .map((s, i) => {
+      const width = first ? Math.max(2, (s.sessions / first) * 100) : 0;
+      const step = i === 0
+        ? `<span class="hint">start</span>`
+        : `<strong>${pct(s.of_previous)}</strong> <span class="hint">continue${s.lost ? `, ${num(s.lost)} lost` : ""}${s.previous_of_previous != null ? ` · was ${pct(s.previous_of_previous)}` : ""}</span>`;
+      return `<li class="funnel-step${i === drop ? " is-drop" : ""}">
+        <div class="funnel-label"><code>${esc(s.label)}</code>${i === drop ? ` <span class="badge bad">biggest drop</span>` : ""}</div>
+        <div class="funnel-bar"><span style="width:${width.toFixed(1)}%"></span></div>
+        <div class="funnel-nums"><span class="funnel-count">${num(s.sessions)}</span> ${step}</div>
+      </li>`;
+    })
+    .join("");
+  const devices = f.by_device.length > 1
+    ? `<p class="hint">By device: ${f.by_device.map((d) => `${esc(d.device)} ${pct(d.conversion)}`).join(" · ")}</p>`
+    : "";
+  return `<div class="card funnel">
+    <div class="funnel-head">
+      <div><strong>${esc(f.name)}</strong> <span class="hint">${f.source === "kpis" ? "recognised from your KPIs" : "from trace.json"}</span></div>
+      <div class="value-row"><span class="value">${pct(f.conversion)}</span> ${change}</div>
+    </div>
+    ${f.description && f.source !== "kpis" ? `<p class="hint">${esc(f.description)}</p>` : ""}
+    <ol class="funnel-steps">${steps}</ol>
+    ${devices}
+  </div>`;
+}
+
+function funnelsSection(funnels) {
+  const intro = `<p class="sub">Steps people take in order within one visit, over the last 14 days. Each step counts the sessions that reached it after the step before; the biggest drop is where more conversion is won, and where analysis looks first.</p>`;
+  if (!funnels.length)
+    return `<h2>Funnels</h2>${intro}<div class="card"><p>No funnels yet. Declare them in <code>trace.json</code>, or define conversion KPIs whose goal is the next one's start and Trace links them up.</p>
+      <div class="copy-row"><pre class="snippet">${esc(FUNNEL_EXAMPLE)}</pre><button data-copy="${esc(FUNNEL_EXAMPLE)}">Copy</button></div></div>`;
+  return `<h2>Funnels</h2>${intro}<div class="funnel-grid">${funnels.map(funnelCard).join("")}</div>`;
+}
+
+const FUNNEL_EXAMPLE = `"funnels": {
+  "checkout": {
+    "name": "Checkout",
+    "steps": [
+      { "pageview": "/cart" },
+      { "pageview": "/checkout" },
+      { "event": "purchase" }
+    ]
+  }
+}`;
+
 async function renderKpis() {
-  const [kpis, cfg] = await Promise.all([api("/kpis"), api("/config")]);
+  const [kpis, cfg, funnels] = await Promise.all([api("/kpis"), api("/config"), api("/funnels").catch(() => [])]);
   kpiCache = kpis;
   const push = `trace push trace.json --server ${location.origin} --token $TRACE_TOKEN   # create one under Account`;
   const source = cfg.synced_at
@@ -616,6 +714,7 @@ async function renderKpis() {
       ${source}
     </div>
     ${cards}
+    ${funnelsSection(funnels)}
     <h2>Tracking health</h2>
     <div class="side-by-side">
       <div>
@@ -1521,10 +1620,28 @@ async function signOut() {
   boot();
 }
 
+// While an operator views as someone: say so on every page, with a way out.
+function impersonationBanner() {
+  const notice = document.getElementById("viewing-as");
+  notice.hidden = !(auth && auth.impersonating);
+  if (notice.hidden) return;
+  notice.innerHTML = `<div><span>Viewing as <strong>${esc(auth.user.email)}</strong>, read-only.</span> <button type="button" id="stop-viewing">Stop viewing as them</button></div>`;
+  notice.querySelector("#stop-viewing").addEventListener("click", async () => {
+    try {
+      await post("/auth/stop-impersonating");
+      location.href = "/admin#/people";
+    } catch (e) {
+      toast(e.message, true);
+    }
+  });
+}
+
 function applyRole() {
+  impersonationBanner();
   document.querySelector('#nav a[data-view="team"]').hidden = !can("admin");
   document.querySelector('#nav a[data-view="admin"]').hidden = !auth.user.is_operator;
-  document.getElementById("run-analysis").hidden = !can("user");
+  // Viewing as someone is read-only: no analysis runs from inside it.
+  document.getElementById("run-analysis").hidden = !can("user") || Boolean(auth.impersonating);
   const me = document.getElementById("me");
   me.hidden = false;
   me.textContent = auth.user.name || auth.user.email;
@@ -1962,161 +2079,6 @@ async function renderPlan() {
 
 // ---------------------------------------------------------------- operator area
 
-const LIMIT_KEYS = ["retention_days", "max_sites", "monthly_events", "max_members", "monthly_ai_runs"];
-
-function limitInput(name, value, placeholder = "no limit") {
-  return `<input name="${name}" type="number" min="0" step="1" value="${value == null ? "" : value}" placeholder="${placeholder}">`;
-}
-
-async function renderAdmin() {
-  if (!auth.user.is_operator) {
-    view.innerHTML = `<div class="empty">This area is for the server's operators.</div>`;
-    return;
-  }
-  let o;
-  try {
-    o = await api("/operator/overview");
-  } catch (e) {
-    view.innerHTML = `<div class="empty"><p>${esc(e.message)}</p><p><a href="#/account">Set up two-step verification</a></p></div>`;
-    return;
-  }
-  const labels = Object.fromEntries(o.limits);
-  const usageCell = (a) => {
-    const ev = a.limits.monthly_events;
-    return `${num(a.usage.events)}${ev == null ? "" : ` / ${num(ev)}`}${a.usage.events_dropped ? ` <span class="delta bad">${num(a.usage.events_dropped)} dropped</span>` : ""}`;
-  };
-  view.innerHTML = `
-    <h1>Admin</h1>
-    <p class="sub">Every account on this server: plans, limits and usage. Customers never see plan names, and this area never shows their analytics.</p>
-    ${
-      o.database === "sqlite"
-        ? `<div class="card"><strong>This server keeps its data in SQLite.</strong> <span class="hint">That's fine for trying Trace and a few small websites. For production, use Postgres: run <code>trace init --database postgres</code> on the server and restart it. Data isn't copied between the two.</span></div>`
-        : ""
-    }
-    <h2>Accounts</h2>
-    ${table(
-      [{ label: "Account" }, { label: "Plan" }, { label: "Websites", num: 1 }, { label: "Members", num: 1 }, { label: "Events this month" }, { label: "Claude runs", num: 1 }, { label: "Created" }],
-      o.accounts.map((a) => [
-        `<a href="#/admin" data-account="${a.id}">${esc(a.name)}</a>`,
-        `${esc(a.plan)}${Object.keys(a.overrides).length ? ` <span class="chip">+${Object.keys(a.overrides).length} override${Object.keys(a.overrides).length > 1 ? "s" : ""}</span>` : ""}`,
-        num(a.sites),
-        num(a.members),
-        usageCell(a),
-        num(a.usage.ai_runs),
-        new Date(a.created_at).toLocaleDateString(),
-      ])
-    )}
-    <div id="account-detail"></div>
-
-    <h2>Create an account</h2>
-    <form class="card row" id="new-account">
-      <label class="field">Name <input name="name" required placeholder="Bolt Bikes"></label>
-      <label class="field">Owner's email <input name="owner_email" type="email" required></label>
-      <label class="field narrow">Plan <select name="plan">${o.plans.map((p) => `<option ${p.is_default ? "selected" : ""}>${esc(p.key)}</option>`).join("")}</select></label>
-      <button class="primary" type="submit">Create</button>
-    </form>
-    <div id="new-account-result"></div>
-
-    <h2>Plan templates</h2>
-    <p class="hint">Changing a template changes every account on it, except limits an account overrides. Empty means no limit.</p>
-    <div class="table-wrap"><table><thead><tr><th>Plan</th>${LIMIT_KEYS.map((k) => `<th>${esc(labels[k])}</th>`).join("")}<th>Default</th><th></th></tr></thead><tbody>
-      ${o.plans
-        .map(
-          (p) => `<tr data-plan="${esc(p.key)}"><td><input name="name" value="${esc(p.name)}" aria-label="Name"><br><code>${esc(p.key)}</code></td>
-            ${LIMIT_KEYS.map((k) => `<td>${limitInput(k, p.limits[k])}</td>`).join("")}
-            <td><input type="radio" name="default-plan" value="${esc(p.key)}" ${p.is_default ? "checked" : ""} aria-label="Default plan"></td>
-            <td><button data-save-plan="${esc(p.key)}">Save</button></td></tr>`
-        )
-        .join("")}
-    </tbody></table></div>
-    <p class="hint">New accounts (sign-ups and accounts created without a plan) get the default plan.</p>`;
-
-  view.querySelectorAll("[data-account]").forEach((a) =>
-    a.addEventListener("click", (e) => {
-      e.preventDefault();
-      showAccount(Number(a.dataset.account), o);
-    })
-  );
-  view.querySelectorAll("[data-save-plan]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      const row = b.closest("tr");
-      const limits = Object.fromEntries(LIMIT_KEYS.map((k) => [k, row.querySelector(`[name=${k}]`).value === "" ? null : Number(row.querySelector(`[name=${k}]`).value)]));
-      await api(`/operator/plans/${b.dataset.savePlan}`, { method: "PUT", body: JSON.stringify({ name: row.querySelector("[name=name]").value, limits }) });
-      toast(`Saved ${b.dataset.savePlan}`);
-      renderAdmin();
-    })
-  );
-  view.querySelectorAll("[name=default-plan]").forEach((r) =>
-    r.addEventListener("change", async () => {
-      await post("/operator/plans/default", { key: r.value });
-      toast(`New accounts now get ${r.value}`);
-    })
-  );
-  onSubmit(view.querySelector("#new-account"), async (fd) => {
-    const r = await post("/operator/accounts", { name: fd.get("name"), owner_email: fd.get("owner_email"), plan: fd.get("plan") });
-    const link = `${location.origin}/#/invite/${r.invite_token}`;
-    await renderAdmin();
-    view.querySelector("#new-account-result").innerHTML = `<div class="card"><p>Send this link to <strong>${esc(r.owner_email)}</strong>: it makes them the account's owner. It works once and expires in 7 days.${r.has_login ? " They already have a login, so they'll sign in with it to accept." : ""}</p>
-      <div class="copy-row"><pre class="snippet">${esc(link)}</pre><button data-copy="${esc(link)}">Copy</button></div></div>`;
-    view.querySelector("#new-account-result [data-copy]").addEventListener("click", async (e) => (await copyText(e.target.dataset.copy)) && toast("Copied"));
-  });
-}
-
-async function showAccount(id, o) {
-  const d = await api(`/operator/accounts/${id}`);
-  const a = d.account;
-  const plan = o.plans.find((p) => p.key === a.plan);
-  const labels = Object.fromEntries(o.limits);
-  const box = view.querySelector("#account-detail");
-  box.innerHTML = `
-    <div class="card">
-      <h2>${esc(a.name)}</h2>
-      <h3>People</h3>
-      ${table(
-        [{ label: "Person" }, { label: "Role" }, { label: "Two-step" }, { label: "Last sign-in" }],
-        d.people.map((u) => [`${esc(u.name || u.email)}<br><span class="hint">${esc(u.email)}</span>${u.is_operator ? ` <span class="chip">operator</span>` : ""}`, esc(u.role), u.totp_enabled ? "on" : "off", esc(ago(u.last_login_at))]),
-        "Nobody yet."
-      )}
-      ${d.invites.length ? `<p class="hint">Pending invites: ${d.invites.map((i) => `${esc(i.email)} (${esc(i.role)})`).join(", ")}</p>` : ""}
-      <h3>Websites</h3>
-      ${table(
-        [{ label: "Website" }, { label: "Collecting from" }, { label: "Status" }],
-        d.sites.map((s) => [`${esc(s.name)} <code>${esc(s.slug)}</code>`, esc(s.origins.join(", ") || "–"), s.collecting ? `<span class="delta good">● collecting</span>` : `<span class="hint">last event ${esc(ago(s.last_event_at))}</span>`]),
-        "No websites."
-      )}
-      <h3>Plan and limits</h3>
-      <form id="account-plan" class="stack">
-        <label class="field narrow">Plan <select name="plan">${o.plans.map((p) => `<option ${p.key === a.plan ? "selected" : ""}>${esc(p.key)}</option>`).join("")}</select></label>
-        <div class="table-wrap"><table><thead><tr><th>Limit</th><th>From the plan</th><th>For this account</th><th>Used this month</th></tr></thead><tbody>
-        ${LIMIT_KEYS.map((k) => {
-          const has = Object.prototype.hasOwnProperty.call(a.overrides, k);
-          const mode = !has ? "inherit" : a.overrides[k] == null ? "none" : "custom";
-          const used = { monthly_events: a.usage.events, monthly_ai_runs: a.usage.ai_runs, max_sites: a.sites, max_members: a.members }[k];
-          return `<tr data-limit="${k}"><td>${esc(labels[k])}</td><td>${plan.limits[k] == null ? "no limit" : num(plan.limits[k])}</td>
-            <td><select name="mode" aria-label="${esc(labels[k])}"><option value="inherit" ${mode === "inherit" ? "selected" : ""}>Same as plan</option><option value="none" ${mode === "none" ? "selected" : ""}>No limit</option><option value="custom" ${mode === "custom" ? "selected" : ""}>Custom</option></select>
-              ${limitInput("value", has ? a.overrides[k] : null, "")}</td><td>${used == null ? "–" : num(used)}</td></tr>`;
-        }).join("")}
-        </tbody></table></div>
-        <div><button type="submit">Save plan and limits</button></div>
-      </form>
-    </div>`;
-  box.scrollIntoView({ behavior: "smooth", block: "start" });
-  onSubmit(box.querySelector("#account-plan"), async (fd) => {
-    if (fd.get("plan") !== a.plan) await post(`/operator/accounts/${id}/plan`, { plan: fd.get("plan") });
-    const overrides = {};
-    box.querySelectorAll("[data-limit]").forEach((row) => {
-      const mode = row.querySelector("[name=mode]").value;
-      const value = row.querySelector("[name=value]").value;
-      if (mode === "none") overrides[row.dataset.limit] = null;
-      if (mode === "custom" && value !== "") overrides[row.dataset.limit] = Number(value);
-    });
-    await post(`/operator/accounts/${id}/overrides`, { overrides });
-    toast("Saved");
-    const fresh = await api("/operator/overview");
-    showAccount(id, fresh);
-  });
-}
-
 // Decides between the sign-in screens and the app.
 async function bootPublic() {
   document.body.classList.add("public");
@@ -2224,6 +2186,7 @@ async function renderConnect() {
 
 const routes = {
   connect: renderConnect,
+  home: renderHome,
   start: renderStart,
   insights: renderInsights,
   kpis: renderKpis,
@@ -2233,7 +2196,6 @@ const routes = {
   account: renderAccount,
   team: renderTeam,
   plan: renderPlan,
-  admin: renderAdmin,
 };
 
 function renderNoSites() {
@@ -2250,7 +2212,7 @@ function renderNoSites() {
 }
 
 // Pages about the account rather than one website.
-const ACCOUNT_PAGES = ["account", "team", "plan", "admin", "connect"];
+const ACCOUNT_PAGES = ["account", "team", "plan", "connect"];
 
 async function route() {
   if (!PUBLIC && (!auth || !auth.user || auth.step)) return boot();
@@ -2270,7 +2232,8 @@ async function route() {
     }
   }
   // Land on Setup until data is arriving, on Insights after.
-  const name = page.split(/[/?]/)[0] || (project && project.collection.active ? "insights" : "start");
+  // Every website opens on its home: what needs attention now, setup first while it's unfinished.
+  const name = page.split(/[/?]/)[0] || (PUBLIC ? "insights" : "home");
   if (!location.hash || location.hash === "#/") history.replaceState(null, "", `#/${name}`);
   const render = routes[name] || renderInsights;
   if (!PUBLIC && project && !ACCOUNT_PAGES.includes(name) && name !== "start") loadChecklist();

@@ -9,23 +9,77 @@
     "checkout_conversion": {
       "name": "Checkout conversion",
       "description": "Share of sessions reaching checkout that complete payment",
-      "conversion": { "from": { "pageview": "/checkout" }, "to": { "pageview": "/checkout/success" } },
+      "conversion": {
+        "from": {
+          "pageview": "{{BASE}}/checkout"
+        },
+        "to": {
+          "pageview": "{{BASE}}/checkout/success"
+        }
+      },
       "goal": "increase",
       "target": "55%"
     },
     "signup_completion": {
       "name": "Signup completion",
       "description": "Share of sessions that start the signup form and finish it",
-      "conversion": { "from": { "form_start": "/signup" }, "to": { "event": "signup_completed" } },
+      "conversion": {
+        "from": {
+          "form_start": "{{BASE}}/signup"
+        },
+        "to": {
+          "event": "signup_completed"
+        }
+      },
       "goal": "increase",
       "target": "60%"
     },
     "js_errors": {
       "name": "Sessions with errors",
       "description": "Share of sessions with any exception, console error, failed request or missing file",
-      "session_rate": { "error": "*" },
+      "session_rate": {
+        "error": "*"
+      },
       "goal": "decrease",
       "target": "1%"
+    }
+  },
+  "funnels": {
+    "purchase": {
+      "name": "From a product to a purchase",
+      "description": "A shoe's page, into the cart, through checkout to payment",
+      "steps": [
+        {
+          "pageview": "{{BASE}}/products/:id"
+        },
+        {
+          "event": "add_to_cart"
+        },
+        {
+          "pageview": "{{BASE}}/cart"
+        },
+        {
+          "pageview": "{{BASE}}/checkout"
+        },
+        {
+          "event": "purchase"
+        }
+      ]
+    },
+    "signup": {
+      "name": "Stride+ sign-up",
+      "description": "The pricing page, the sign-up form, an account",
+      "steps": [
+        {
+          "pageview": "{{BASE}}/pricing"
+        },
+        {
+          "pageview": "{{BASE}}/signup"
+        },
+        {
+          "event": "signup_completed"
+        }
+      ]
     }
   }
 }

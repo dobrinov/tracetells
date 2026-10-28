@@ -457,6 +457,10 @@ async fn run() -> Result<()> {
             for k in &c.kpis {
                 println!("  {:<24} {} ({})", k.key, k.name, k.definition.describe());
             }
+            for f in &c.funnels {
+                let steps: Vec<String> = f.steps.iter().map(trace_core::funnel::label).collect();
+                println!("  funnel {:<17} {} ({})", f.key, f.name, steps.join(" → "));
+            }
             for w in &parsed.warnings {
                 println!("warning: {w}");
             }

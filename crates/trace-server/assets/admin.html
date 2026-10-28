@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trace admin</title>
+    <script>
+      // Apply the saved theme before the first paint; "system" follows the OS.
+      try {
+        var t = localStorage.getItem("trace_theme");
+        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="/assets/style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2310141d'/%3E%3Crect x='9.2' y='26.4' width='11.2' height='11.2' rx='3.6' fill='%2345c75b'/%3E%3Crect x='18.8' y='23.2' width='17.6' height='17.6' rx='4.8' fill='%232a9ba3' stroke='%2310141d' stroke-width='2.1'/%3E%3Crect x='31.2' y='20' width='24' height='24' rx='6.4' fill='%234a6cff' stroke='%2310141d' stroke-width='2.1'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body class="admin">
+    <header class="top">
+      <div class="brand">
+        <svg class="logo" viewBox="2 15.5 60 33" aria-hidden="true">
+          <rect x="3.5" y="25" width="14" height="14" rx="4.5" fill="#45c75b" />
+          <rect x="13.5" y="21" width="22" height="22" rx="6" fill="#2a9ba3" class="ring" />
+          <rect x="30.5" y="17" width="30" height="30" rx="8" fill="#4a6cff" class="ring" />
+        </svg>
+        <span>Trace admin</span>
+      </div>
+      <nav id="nav" hidden>
+        <a href="#/overview" data-view="overview">Overview</a>
+        <a href="#/accounts" data-view="accounts">Accounts</a>
+        <a href="#/people" data-view="people">People</a>
+        <a href="#/websites" data-view="websites">Websites</a>
+        <a href="#/plans" data-view="plans">Plans</a>
+      </nav>
+      <a class="me" href="/" id="back">Back to Trace</a>
+    </header>
+    <main id="view" aria-live="polite"></main>
+    <div class="toast" id="toast" role="status" hidden></div>
+    <script src="/assets/admin.js"></script>
+  </body>
+</html>
