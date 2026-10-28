@@ -20,6 +20,15 @@ const INSTRUCTIONS: &str = "\
 Trace is privacy-first web analytics for improving a website's UX. It studies aggregated behaviour \
 patterns (never individual people) and turns them into improvement insights tied to the team's KPIs.
 
+Setting up (new account or website), all of it can be done here:
+a. add_site if the account has no website for this codebase yet (list_sites shows them).
+b. get_install_snippet, and add the script tag to the app's HTML in this codebase: every page, before </head>.
+c. Write trace.json in the repository (KPIs and the custom events the code sends with trace.track), check_config it, \
+then push_config to apply it.
+d. Look for screens that show customer data (account pages, admin tools, order details) and mark them with \
+data-trace-mask, or add privacy rules with add_privacy_rule. Show the person what you changed.
+e. Deploy, then get_setup_status until events arrive.
+
 A typical loop:
 0. If the account has several websites, list_sites and pass `site` to the other tools.
 1. get_overview to see KPIs against their targets and how many insights are waiting.
@@ -48,6 +57,11 @@ pub struct Context<'a> {
     pub role: Role,
     /// A read-only token: reads work, changes are refused.
     pub read_only: bool,
+    /// Where this server is reached, for install snippets.
+    pub origin: String,
+    /// The running server, so privacy rule changes reach its collectors at
+    /// once. None for `trace mcp`, which runs in its own process.
+    pub state: Option<&'a crate::api::AppState>,
 }
 
 /// The website a tool call is about: the `site` argument, or the account's only website.
@@ -62,7 +76,7 @@ async fn site_for(ctx: &Context<'_>, args: &Value) -> anyhow::Result<Project> {
             .ok_or_else(|| anyhow::anyhow!("no website {slug:?} in this account; websites: {}", names())),
         None => match sites.as_slice() {
             [only] => Ok(only.clone()),
-            [] => anyhow::bail!("this account has no websites yet"),
+            [] => anyhow::bail!("this account has no websites yet; add one with add_site"),
             _ => anyhow::bail!("this account has several websites; pass `site` as one of: {}", names()),
         },
     }
@@ -135,7 +149,7 @@ pub async fn handle(ctx: &Context<'_>, msg: &Value) -> Option<Value> {
 }
 
 fn tool(name: &str, title: &str, description: &str, mut properties: Value, required: &[&str], read_only: bool) -> Value {
-    if !matches!(name, "list_sites" | "check_config") {
+    if !matches!(name, "list_sites" | "check_config" | "add_site") {
         properties["site"] = json!({
             "type": "string",
             "description": "The website's identifier (from list_sites); can be left out when the account has one website",
@@ -282,10 +296,71 @@ pub fn tools() -> Vec<Value> {
         tool(
             "get_privacy_rules",
             "Privacy rules",
-            "The privacy protections in force: what is never collected, and the workspace's own rules (masked elements, redacted patterns, ignored pages, dropped properties). Read-only; admins change rules in the dashboard.",
+            "The privacy protections in force: what is never collected, and the website's own rules (masked elements, redacted patterns, ignored pages, dropped properties), with ids for remove_privacy_rule.",
             json!({}),
             &[],
             true,
+        ),
+        tool(
+            "add_site",
+            "Add a website",
+            "Add a website to the account (admins; within the plan's limit) and get its install snippet. Use one website per product or domain; staging can share production's.",
+            json!({ "name": { "type": "string", "description": "What to call it, e.g. \"shop.example.com\"" } }),
+            &["name"],
+            false,
+        ),
+        tool(
+            "get_install_snippet",
+            "Install snippet",
+            "The script tag to add to the website's pages, with where it goes, how single-page apps, custom events and consent work, and how to keep customer data out.",
+            json!({ "consent": { "type": "string", "enum": ["none", "banner", "required"], "description": "none (default): collect from the first page; banner: Trace's own small consent bar; required: wait for your consent tool to call trace.consent(true)" } }),
+            &[],
+            true,
+        ),
+        tool(
+            "get_setup_status",
+            "Setup status",
+            "Whether events are arriving and from which sites, how many KPIs are defined, and the setup checklist. Use it after deploying the snippet.",
+            json!({}),
+            &[],
+            true,
+        ),
+        tool(
+            "push_config",
+            "Apply trace.json",
+            "Apply a trace.json (KPIs and the event catalogue) to the website (admins). KPIs are matched by key, so editing one keeps its history; ones missing from the file are archived. Keep the file in the repository as the source of truth; check_config first.",
+            json!({ "config": { "description": "The trace.json contents, as a string or an object" } }),
+            &["config"],
+            false,
+        ),
+        tool(
+            "add_privacy_rule",
+            "Add a privacy rule",
+            "Keep more out of what Trace collects (admins): mask_selector (no text read inside matching elements, e.g. \".account-summary\"), redact_pattern (a regular expression replaced everywhere, e.g. \"ORD-\\\\d+\" with \"[order]\"), ignore_path (nothing recorded on these pages, e.g. \"/admin/*\") or drop_prop (a custom-event property never stored). Prefer data-trace-mask in the code when you can edit it.",
+            json!({
+                "kind": { "type": "string", "enum": ["mask_selector", "redact_pattern", "ignore_path", "drop_prop"] },
+                "pattern": { "type": "string" },
+                "replacement": { "type": "string", "description": "For redact_pattern, e.g. \"[order]\"" },
+                "note": { "type": "string", "description": "Why, for the people reading the Privacy page" }
+            }),
+            &["kind", "pattern"],
+            false,
+        ),
+        tool(
+            "remove_privacy_rule",
+            "Remove a privacy rule",
+            "Remove one of the website's own privacy rules by id (from get_privacy_rules). The built-in protections can't be removed. Only do this when the person asks.",
+            json!({ "id": { "type": "integer" } }),
+            &["id"],
+            false,
+        ),
+        tool(
+            "confirm_privacy_review",
+            "Confirm the privacy review",
+            "Record that the person has checked what Trace collects on their pages (the last setup step). Only call it when the person says they've reviewed it, never on your own judgement.",
+            json!({}),
+            &[],
+            false,
         ),
     ]
 }
@@ -297,6 +372,19 @@ enum ToolOutput {
 
 fn arg_days(args: &Value) -> u32 {
     args.get("days").and_then(Value::as_u64).map(|d| d.clamp(1, 365) as u32).unwrap_or(14)
+}
+
+/// The script tag for a website, served with its privacy rules built in.
+fn snippet(ctx: &Context, write_key: &str, consent: Option<&str>) -> String {
+    let consent = consent.map(|c| format!(r#" data-consent="{c}""#)).unwrap_or_default();
+    format!(r#"<script src="{}/d.js?k={write_key}" data-key="{write_key}"{consent} defer></script>"#, ctx.origin)
+}
+
+async fn rules_changed(ctx: &Context<'_>, site: i64) -> anyhow::Result<()> {
+    if let Some(state) = ctx.state {
+        crate::api::reload_rules(state, site).await?;
+    }
+    Ok(())
 }
 
 fn arg_id(args: &Value) -> anyhow::Result<i64> {
@@ -350,6 +438,18 @@ async fn call(ctx: &Context<'_>, name: &str, args: &Value) -> anyhow::Result<Too
             out.push(json!({ "site": s.slug, "name": s.name, "collecting": c.active, "sites": c.sources.iter().map(|o| &o.origin).collect::<Vec<_>>() }));
         }
         return Ok(ToolOutput::Json(json!({ "websites": out })));
+    }
+    if name == "add_site" {
+        need(ctx, Role::Admin)?;
+        let site_name = args.get("name").and_then(Value::as_str).ok_or_else(|| anyhow::anyhow!("`name` is required, e.g. \"shop.example.com\""))?;
+        let site = db::create_site(pool, ctx.account_id, site_name).await?;
+        trace_core::auth::audit(pool, ctx.account_id, &ctx.actor, "site.added", &format!("{} ({})", site.name, site.slug)).await?;
+        return Ok(ToolOutput::Json(json!({
+            "site": site.slug,
+            "name": site.name,
+            "snippet": snippet(ctx, &site.write_key, None),
+            "next": "Add the snippet to every page of the app, before </head>; get_install_snippet has variants for single-page apps and consent. Then write trace.json and push_config.",
+        })));
     }
     let site = if name == "check_config" { None } else { Some(site_for(ctx, args).await?) };
     let p = site.as_ref().map(|s| s.id).unwrap_or_default();
@@ -504,12 +604,88 @@ async fn call(ctx: &Context<'_>, name: &str, args: &Value) -> anyhow::Result<Too
                 Err(errors) => ToolOutput::Json(json!({ "valid": false, "errors": errors })),
             }
         }
+        "get_install_snippet" => {
+            let project = site.clone().expect("a website tool");
+            let consent = match args.get("consent").and_then(Value::as_str).unwrap_or("none") {
+                "none" => None,
+                c @ ("banner" | "required") => Some(c),
+                other => anyhow::bail!("`consent` is none, banner or required, not {other:?}"),
+            };
+            let tag = snippet(ctx, &project.write_key, consent);
+            ToolOutput::Json(json!({
+                "site": project.slug,
+                "snippet": tag,
+                "where": "In the HTML every page shares (layout, template, index.html), before </head>. One copy per page.",
+                "single_page_apps": "Nothing extra: route changes (history API, hash routes) count as pageviews. Add data-routes=\"/products/:slug, /docs/*\" to the tag to group dynamic URLs; numeric and UUID segments become :id on their own.",
+                "custom_events": "trace.track(\"signup\", { plan: \"pro\" }) from code, or data-trace-event=\"signup\" on an element. Declare each event in trace.json. If code can call trace.track before the script loads, put this stub before the tag: <script>window.trace=window.trace||{q:[]};[\"track\",\"identify\",\"page\",\"init\",\"consent\"].forEach(function(m){trace[m]=trace[m]||function(){trace.q.push([m,arguments])}})</script>",
+                "consent": "consent: banner shows a small bar and records nothing before the visitor says yes; required waits for your own consent tool to call trace.consent(true). Use one where the rules that apply to the site require consent for analytics.",
+                "privacy": "Put data-trace-mask on any element that shows customer data; no text is read inside it. Never pass emails to identify().",
+                "check": "After deploying, get_setup_status shows when events arrive.",
+            }))
+        }
+        "get_setup_status" => {
+            let project = site.clone().expect("a website tool");
+            let collection = db::collection(pool, p).await?;
+            ToolOutput::Json(json!({
+                "site": project.slug,
+                "collecting": collection.active,
+                "last_event_at": collection.last_event_at,
+                "sending_from": collection.sources.iter().map(|s| &s.origin).collect::<Vec<_>>(),
+                "kpis": kpi::list(pool, p).await?.len(),
+                "checklist": trace_core::onboarding::checklist(pool, &project).await?,
+            }))
+        }
+        "push_config" => {
+            need(ctx, Role::Admin)?;
+            let text = match args.get("config") {
+                Some(Value::String(s)) => s.clone(),
+                Some(v @ Value::Object(_)) => v.to_string(),
+                _ => anyhow::bail!("`config` is required: the contents of trace.json"),
+            };
+            let parsed = config::parse(&text).map_err(|errors| anyhow::anyhow!("trace.json has problems:\n{}", errors.join("\n")))?;
+            let report = config::apply(pool, p, &parsed, "mcp").await?;
+            let detail = format!("mcp: {} created, {} updated, {} archived", report.created.len(), report.updated.len(), report.archived.len());
+            trace_core::auth::audit_site(pool, ctx.account_id, Some(p), &ctx.actor, "config.pushed", &detail).await?;
+            ToolOutput::Json(json!({
+                "applied": report,
+                "warnings": parsed.warnings,
+                "note": "Keep trace.json in the repository as the source of truth, and push it again whenever it changes (CI can run `trace push`).",
+            }))
+        }
+        "add_privacy_rule" => {
+            need(ctx, Role::Admin)?;
+            let kind: privacy::RuleKind = args
+                .get("kind")
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow::anyhow!("`kind` is required"))?
+                .parse()?;
+            let pattern = args.get("pattern").and_then(Value::as_str).ok_or_else(|| anyhow::anyhow!("`pattern` is required"))?;
+            let replacement = args.get("replacement").and_then(Value::as_str);
+            let note = args.get("note").and_then(Value::as_str).unwrap_or("");
+            let rule = privacy::add_rule(pool, p, kind, pattern, replacement, note, &ctx.actor).await?;
+            rules_changed(ctx, p).await?;
+            trace_core::auth::audit_site(pool, ctx.account_id, Some(p), &ctx.actor, "privacy.rule_added", &format!("{} {}", kind.as_str(), pattern.trim())).await?;
+            ToolOutput::Json(json!({ "id": rule, "message": "Applied on the server now; browsers pick it up within the hour as their copy of the collector refreshes." }))
+        }
+        "remove_privacy_rule" => {
+            need(ctx, Role::Admin)?;
+            let rule = privacy::delete_rule(pool, p, arg_id(args)?).await?.ok_or_else(|| anyhow::anyhow!("no privacy rule with that id"))?;
+            rules_changed(ctx, p).await?;
+            trace_core::auth::audit_site(pool, ctx.account_id, Some(p), &ctx.actor, "privacy.rule_removed", &format!("{} {}", rule.kind.as_str(), rule.pattern)).await?;
+            ToolOutput::Json(json!({ "removed": rule.id }))
+        }
+        "confirm_privacy_review" => {
+            need(ctx, Role::Admin)?;
+            trace_core::onboarding::confirm_privacy_review(pool, p, &ctx.actor).await?;
+            trace_core::auth::audit_site(pool, ctx.account_id, Some(p), &ctx.actor, "onboarding.privacy_reviewed", "via MCP, on the person's word").await?;
+            ToolOutput::Json(json!({ "message": "Recorded that the privacy review is done." }))
+        }
         "get_privacy_rules" => ToolOutput::Json(json!({
             "always_on": crate::api::BUILT_IN,
             "workspace_rules": privacy::list_rules(pool, p).await?
                 .into_iter()
                 .filter(|r| r.enabled)
-                .map(|r| json!({ "kind": r.kind, "pattern": r.pattern, "replacement": r.replacement, "note": r.label }))
+                .map(|r| json!({ "id": r.id, "kind": r.kind, "pattern": r.pattern, "replacement": r.replacement, "note": r.label }))
                 .collect::<Vec<_>>(),
         })),
         other => anyhow::bail!("unknown tool {other:?}"),
@@ -658,7 +834,7 @@ mod tests {
         let pool = db::connect(&path).await.unwrap();
         let (acme, _) = db::create_account_with_site(&pool, "Acme", None).await.unwrap();
         let (bolt, _) = db::create_account_with_site(&pool, "Bolt", None).await.unwrap();
-        let ctx = Context { pool: &pool, account_id: acme.id, claude: None, actor: "test".into(), role: Role::User, read_only: true };
+        let ctx = Context { pool: &pool, account_id: acme.id, claude: None, actor: "test".into(), role: Role::User, read_only: true, origin: "http://localhost".into(), state: None };
         let call = |name: &str, args: Value| json!({ "jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": { "name": name, "arguments": args } });
 
         let init = handle(&ctx, &json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "2025-06-18" } })).await.unwrap();
@@ -700,13 +876,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn agents_set_a_website_up() {
+        let path = trace_core::db::test_target("mcp-setup").await;
+        let pool = db::connect(&path).await.unwrap();
+        let acme = db::create_account(&pool, "Acme", None).await.unwrap();
+        let ctx = Context { pool: &pool, account_id: acme.id, claude: None, actor: "agent".into(), role: Role::Admin, read_only: false, origin: "https://trace.example".into(), state: None };
+        let call = |name: &str, args: Value| json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": name, "arguments": args } });
+        let ok = |r: Value| {
+            assert_ne!(r["result"]["isError"], true, "{r}");
+            r["result"]["structuredContent"].clone()
+        };
+
+        let none = handle(&ctx, &call("get_setup_status", json!({}))).await.unwrap();
+        assert!(none["result"]["content"][0]["text"].as_str().unwrap().contains("add_site"));
+        let added = ok(handle(&ctx, &call("add_site", json!({ "name": "shop.example.com" }))).await.unwrap());
+        let snippet = added["snippet"].as_str().unwrap();
+        assert!(snippet.starts_with(r#"<script src="https://trace.example/d.js?k="#) && snippet.ends_with("defer></script>"), "{snippet}");
+        let consent = ok(handle(&ctx, &call("get_install_snippet", json!({ "consent": "banner" }))).await.unwrap());
+        assert!(consent["snippet"].as_str().unwrap().contains(r#"data-consent="banner""#));
+
+        let config = json!({ "kpis": { "checkout": { "conversion": { "from": { "pageview": "/checkout" }, "to": { "event": "purchase" } }, "goal": "increase" } }, "events": { "purchase": "An order was placed" } });
+        let pushed = ok(handle(&ctx, &call("push_config", json!({ "config": config }))).await.unwrap());
+        assert_eq!(pushed["applied"]["created"].as_array().unwrap().len(), 1, "{pushed}");
+        let bad = handle(&ctx, &call("push_config", json!({ "config": "{\"kpis\": 3}" }))).await.unwrap();
+        assert_eq!(bad["result"]["isError"], true);
+
+        let rule = ok(handle(&ctx, &call("add_privacy_rule", json!({ "kind": "mask_selector", "pattern": ".account-summary", "note": "balances" }))).await.unwrap());
+        let rules = ok(handle(&ctx, &call("get_privacy_rules", json!({}))).await.unwrap());
+        assert_eq!(rules["workspace_rules"][0]["id"], rule["id"]);
+        ok(handle(&ctx, &call("remove_privacy_rule", json!({ "id": rule["id"] }))).await.unwrap());
+        let status = ok(handle(&ctx, &call("get_setup_status", json!({}))).await.unwrap());
+        assert_eq!((status["collecting"].as_bool(), status["kpis"].as_i64()), (Some(false), Some(1)));
+
+        // People who aren't admins, and read-only tokens, can't change setup.
+        for reader in [Context { role: Role::User, actor: "user".into(), origin: String::new(), ..ctx }, Context { read_only: true, ..ctx }] {
+            let denied = handle(&reader, &call("add_site", json!({ "name": "other" }))).await.unwrap();
+            assert_eq!(denied["result"]["isError"], true);
+        }
+        trace_core::db::drop_test_target(&path).await;
+    }
+
+    #[tokio::test]
     async fn agents_analyse_and_save_insights() {
         let path = trace_core::db::test_target("mcp").await;
         let pool = db::connect(&path).await.unwrap();
         let (acme, site) = db::create_account_with_site(&pool, "Acme", None).await.unwrap();
         let parsed = trace_core::config::parse(r#"{"kpis":{"checkout":{"conversion":{"from":{"pageview":"/checkout"},"to":{"event":"purchase"}},"goal":"increase"}}}"#).unwrap();
         trace_core::config::apply(&pool, site.id, &parsed, "test").await.unwrap();
-        let ctx = Context { pool: &pool, account_id: acme.id, claude: None, actor: "agent".into(), role: Role::User, read_only: false };
+        let ctx = Context { pool: &pool, account_id: acme.id, claude: None, actor: "agent".into(), role: Role::User, read_only: false, origin: "http://localhost".into(), state: None };
         let call = |args: Value| json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": { "name": "add_insights", "arguments": args } });
         let insight = |title: &str, kpi: &str| json!({
             "title": title, "problem": "People click Pay now repeatedly", "evidence": ["18.2% of checkout sessions rage-click it"],

@@ -150,7 +150,19 @@ trace push --server https://trace.example.com --token "$TRACE_ADMIN_TOKEN"
 
 ## MCP: use Trace from your coding agent
 
-Trace is also an MCP server, and your coding agent is its analyst. An agent such as Claude Code or Cursor runs the whole loop with its own model: it reads the aggregated behaviour summary and the KPIs, saves the improvements it finds as insights, fetches one as a task prompt, implements it and marks it released, after which Trace measures the impact. Like the dashboard, it only exposes aggregated patterns, never individual sessions, and nothing goes to a model you didn't choose.
+Trace is also an MCP server, and your coding agent can run all of it: setting a website up, and then being its analyst.
+
+**Connect** (no token to copy):
+
+```sh
+claude mcp add --transport http trace https://trace.example.com/mcp
+```
+
+Then run `/mcp` in Claude Code, choose **trace** and **Authenticate**. Your browser opens Trace: sign in (with two-step verification if it's on) and approve. Other clients use `{"mcpServers": {"trace": {"url": "https://trace.example.com/mcp"}}}` and sign in the same way. This is the MCP authorization flow (OAuth 2.1 with PKCE and dynamic client registration): `/mcp` answers a request without a token with `401` and a `WWW-Authenticate` header that points to `/.well-known/oauth-protected-resource`. You can approve read-only access. The connection becomes a token named after the app, such as "Claude Code (signed in 2026-10-28)", that acts as you. It's listed under **Account**, where you can revoke it.
+
+**Set up** a website from the codebase: `add_site`, `get_install_snippet` (the tag, where it goes, single-page apps, consent and masking), `check_config` then `push_config` for `trace.json`, `add_privacy_rule`, and `get_setup_status` until events arrive. Ask it something like *"Set up Trace for this project: add the snippet to every page, write trace.json with KPIs that matter here and push it, and mask screens with customer data."*
+
+**Analyse and fix.** The agent runs the whole loop with its own model: it reads the aggregated behaviour summary and the KPIs, saves the improvements it finds as insights, fetches one as a task prompt, implements it and marks it released, after which Trace measures the impact. Like the dashboard, it only exposes aggregated patterns, never individual sessions, and nothing goes to a model you didn't choose.
 
 The **`analyse_website`** prompt gives the agent the analyst's brief: read `get_overview`, `get_behaviour_summary`, `list_kpis` and `list_insights` (skipping what exists and learning from dismissal reasons), pick up to five problems, and save them with `add_insights`. In Claude Code it's the slash command `/mcp__trace__analyse_website`. Saving (with `add_insights`, even an empty list when nothing was worth saving) records the analysis, and Trace counts new sessions from then.
 
@@ -173,22 +185,22 @@ The **`analyse_website`** prompt gives the agent the analyst's brief: read `get_
 | `add_insights` | Save insights the agent found: problem, evidence, proposal, acceptance criteria, pages, KPI key, confidence and a fingerprint. Known insights, including dismissed ones, are skipped; one invalid item saves nothing |
 | `update_insight_status` | Select, start, release or dismiss an insight |
 | `run_analysis`, `evaluate_releases` | Trace's own analysis (built-in checks, or Claude when the server has an API key); measure released ones |
-| `check_config` | Validate a `trace.json` being edited |
-| `get_privacy_rules` | What's protected (read-only) |
+| `add_site`, `get_install_snippet`, `get_setup_status` | Add a website (admins), get its snippet with instructions, see whether events arrive and what's left to set up |
+| `check_config`, `push_config` | Validate a `trace.json`; apply it (admins) |
+| `get_privacy_rules`, `add_privacy_rule`, `remove_privacy_rule` | What's protected, with rule ids; add or remove the website's own rules (admins) |
+| `confirm_privacy_review` | Record the person's privacy review, only on their word |
 | `list_sites` | The account's websites |
 
-Every tool except `list_sites` and `check_config` takes a `site` (the website's short name, e.g. `stride`). It can be left out when the account has a single website. Read-only tokens can only use the reading tools, so an agent that analyses needs a token that isn't read-only.
+Every tool except `list_sites`, `add_site` and `check_config` takes a `site` (the website's short name, e.g. `stride`). It can be left out when the account has a single website. Read-only tokens can only use the reading tools, so an agent that analyses needs a token that isn't read-only.
 
-Agents can't change privacy rules or people, which stay in the dashboard, or KPIs, which stay in `trace.json`. Saved insights, status changes and analysis runs appear in the activity log under the token's name.
+An agent acts with your role: setup tools need an admin. Agents can't manage people, tokens or the account, and can't remove websites; those stay in the dashboard. KPIs stay defined in `trace.json`, which `push_config` applies. Everything an agent changes appears in the activity log under its token's name.
 
-**Remote** (any server; Streamable HTTP, authenticated with a personal API token from **Account**):
+**With a token instead** (CI, scripts, clients without sign-in): create a personal API token under **Account** and send it as a header:
 
 ```sh
 claude mcp add --transport http trace https://trace.example.com/mcp \
     --header "Authorization: Bearer trc_..."
 ```
-
-Other clients: `{"mcpServers": {"trace": {"url": "https://trace.example.com/mcp", "headers": {"Authorization": "Bearer trc_..."}}}}`
 
 **Local** (on the machine with the database; stdio):
 

@@ -10,6 +10,7 @@ pub mod insights;
 pub mod ingest;
 pub mod kpi;
 pub mod model;
+pub mod oauth;
 pub mod onboarding;
 pub mod plans;
 pub mod privacy;

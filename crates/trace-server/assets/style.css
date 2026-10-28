@@ -1502,3 +1502,10 @@ ul.checklist li::before {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+
+/* Connecting an MCP client */
+.connect { max-width: 560px; margin: 48px auto; }
+.connect h1 { margin-bottom: 12px; }
+.connect .actions { display: flex; gap: 12px; margin-top: 20px; }
+/* Prose meant to be pasted (prompts) wraps instead of scrolling. */
+.snippet.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }

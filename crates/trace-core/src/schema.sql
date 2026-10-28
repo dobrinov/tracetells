@@ -248,6 +248,27 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   revoked_at INTEGER
 );
 
+-- MCP clients that registered themselves to sign people in (OAuth dynamic
+-- client registration). Registering grants nothing on its own.
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  redirect_uris TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+-- One-time codes from a person approving a client; traded for an API token.
+CREATE TABLE IF NOT EXISTS oauth_codes (
+  code_hash TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL,
+  redirect_uri TEXT NOT NULL,
+  code_challenge TEXT NOT NULL,
+  user_id INTEGER NOT NULL,
+  account_id INTEGER NOT NULL,
+  read_only INTEGER NOT NULL DEFAULT 0,
+  expires_at INTEGER NOT NULL
+);
+
 -- Who changed what: team, security settings, API tokens, privacy rules.
 CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY,

@@ -667,8 +667,13 @@ function setupSnippets() {
       code: `${stub}\n<script>\n  trace.init({ key: "${key}", routes: ["/products/:slug"]${consentInit} });\n</script>\n<script src="${src}" async></script>`,
     },
   };
-  const mcpCommand = `claude mcp add --transport http trace ${location.origin}/mcp \\\n    --header "Authorization: Bearer YOUR_API_TOKEN"`;
-  const mcpJson = JSON.stringify({ mcpServers: { trace: { url: `${location.origin}/mcp`, headers: { Authorization: "Bearer YOUR_API_TOKEN" } } } }, null, 2);
+  // No token to paste: the client opens Trace in the browser to sign in and approve.
+  const mcpCommand = `claude mcp add --transport http trace ${location.origin}/mcp`;
+  const mcpJson = JSON.stringify({ mcpServers: { trace: { url: `${location.origin}/mcp` } } }, null, 2);
+  const setupPrompt =
+    `Set up Trace (${location.origin}) for this project with the trace MCP tools: use the website "${project.slug}", ` +
+    `add its install snippet to every page, write trace.json with KPIs for what matters in this product and push it, ` +
+    `and mark screens that show customer data with data-trace-mask. Show me every change before you make it.`;
   const custom = `<button data-trace-event="add_to_cart">Add to cart</button>   <!-- no JavaScript needed -->
 
 trace.track("purchase", { plan: "pro" });\ntrace.identify(currentUser.id);      // optional: tie sessions to your user id\ntrace.page("/checkout/:step");       // optional: name the current route yourself\n                                        // (set pageviews: "manual" to turn off automatic pageviews)`;
@@ -693,7 +698,7 @@ trace.track("purchase", { plan: "pro" });\ntrace.identify(currentUser.id);      
     null,
     2
   );
-  return { installs, mcpCommand, mcpJson, custom, push, analysisHook };
+  return { installs, mcpCommand, mcpJson, setupPrompt, custom, push, analysisHook };
 }
 
 // A task a coding agent can follow to install the collector.
@@ -715,7 +720,7 @@ It asks visitors for consent first (data-consent="banner"): a small bar with All
 
 async function renderSetup() {
   const runs = await api("/runs");
-  const { installs, mcpCommand, mcpJson, custom, analysisHook } = setupSnippets();
+  const { installs, mcpCommand, mcpJson, setupPrompt, custom, analysisHook } = setupSnippets();
   let installTab = store("trace_install") || "site";
   if (!installs[installTab]) installTab = "site";
   view.innerHTML = `
@@ -742,11 +747,13 @@ async function renderSetup() {
     <div class="copy-row"><pre class="snippet">${esc(custom)}</pre><button data-copy="${esc(custom)}">Copy</button></div>
 
     <h2>4. Connect your coding agent (MCP)</h2>
-    <p class="hint">Your coding agent is the analyst: Claude Code, Cursor or any MCP client reads Trace's aggregated summary and your KPIs with its own model, saves the improvements it finds as insights, fetches one as a task, and marks it released once it ships. Agents only see aggregated patterns, like this dashboard. Create a personal API token under <a href="#/account">Account</a> (not read-only, so it can save insights), then:</p>
+    <p class="hint">Your coding agent can do everything on this page from your codebase: add the snippet, write and push trace.json, add privacy rules, then analyse the behaviour, save insights and mark them released when they ship. It sees only aggregated patterns, like this dashboard. Add Trace to Claude Code:</p>
     <div class="copy-row"><pre class="snippet">${esc(mcpCommand)}</pre><button data-copy="${esc(mcpCommand)}">Copy</button></div>
-    <p class="hint">Other MCP clients:</p>
+    <p class="hint">Then run <code>/mcp</code> in Claude Code, choose <strong>trace</strong> and <strong>Authenticate</strong>. Your browser opens Trace, where you approve it: no token to copy. Other MCP clients (Cursor and others) sign in the same way with:</p>
     <div class="copy-row"><pre class="snippet">${esc(mcpJson)}</pre><button data-copy="${esc(mcpJson)}">Copy</button></div>
-    <p class="hint">Then ask it to analyse: in Claude Code run <code>/mcp__trace__analyse_website</code> (Trace's analysis prompt); in other clients pick the <strong>analyse_website</strong> prompt, or ask "Analyse my site with Trace and save the insights".</p>
+    <p class="hint">Ask it to set things up:</p>
+    <div class="copy-row"><pre class="snippet wrap">${esc(setupPrompt)}</pre><button data-copy="${esc(setupPrompt)}">Copy</button></div>
+    <p class="hint">And to analyse: run <code>/mcp__trace__analyse_website</code> in Claude Code, or pick the <strong>analyse_website</strong> prompt in other clients. Connected apps appear under <a href="#/account">Account</a>, where you can disconnect them. CI and scripts use a personal API token from there instead.</p>
     <h3>Get told when it's time to analyse</h3>
     <p class="hint">Trace says a website is worth analysing once it has 100 new sessions since the last analysis (30 after a week); the Insights page shows it too. To hear it from Claude Code each time you start it, add this to <code>~/.claude/settings.json</code> and put your token in the <code>TRACE_TOKEN</code> environment variable (in your shell profile, not in the file). It prints nothing until there's something to analyse.</p>
     <div class="copy-row"><pre class="snippet">${esc(analysisHook)}</pre><button data-copy="${esc(analysisHook)}">Copy</button></div>
@@ -883,7 +890,7 @@ async function renderStart() {
   const current = steps.find((x) => x.key === asked) || firstOpen;
   const index = steps.indexOf(current);
   const next = steps[index + 1];
-  const { installs, mcpCommand } = setupSnippets();
+  const { installs, mcpCommand, setupPrompt } = setupSnippets();
   let installTab = store("trace_install") || "site";
   if (!installs[installTab]) installTab = "site";
 
@@ -934,13 +941,14 @@ async function renderStart() {
       <div class="copy-row"><pre class="snippet">${esc(push)}</pre><button data-copy="${esc(push)}">Copy</button></div>`;
     },
     agent: () => `
-      <h1>Connect your coding agent</h1>
-      <p class="sub">Your coding agent is the analyst. Claude Code, Cursor or any MCP client reads Trace's aggregated summary and your KPIs with its own model, saves what it finds as insights, takes one as a task and marks it released once it ships. Agents see only aggregated patterns, like this dashboard.</p>
+      <h1>Let your coding agent set it up</h1>
+      <p class="sub">Connect Claude Code, Cursor or any MCP client once, and it does the rest from your codebase: it adds the snippet, writes your KPIs, keeps customer data out, and later analyses the behaviour and fixes what it finds. It sees only aggregated patterns, like this dashboard.</p>
       <ol class="steps">
-        <li>Create a personal API token under <a href="#/account">Account</a>, not read-only, so the agent can save insights.</li>
-        <li>Add Trace to your agent:<div class="copy-row" style="margin-top: 8px"><pre class="snippet">${esc(mcpCommand)}</pre><button class="primary" data-copy="${esc(mcpCommand)}">Copy</button></div></li>
-        <li>Ask it to analyse: in Claude Code run <code>/mcp__trace__analyse_website</code>, or ask "Analyse my site with Trace and save the insights". This step ticks off once the token is used.</li>
-      </ol>`,
+        <li>In your project's folder, add Trace to Claude Code:<div class="copy-row" style="margin-top: 8px"><pre class="snippet">${esc(mcpCommand)}</pre><button class="primary" data-copy="${esc(mcpCommand)}">Copy</button></div></li>
+        <li>In Claude Code, run <code>/mcp</code>, choose <strong>trace</strong>, then <strong>Authenticate</strong>. Your browser opens Trace: approve it there. No token to copy.</li>
+        <li>Ask it to set things up:<div class="copy-row" style="margin-top: 8px"><pre class="snippet wrap">${esc(setupPrompt)}</pre><button data-copy="${esc(setupPrompt)}">Copy</button></div></li>
+      </ol>
+      <p class="hint">This step ticks off once your agent connects. Other MCP clients sign in the same way with <code>${esc(location.origin)}/mcp</code> (see Setup). Rather do it by hand? The next steps show how.</p>`,
     team: () => `
       <h1>Invite your team</h1>
       <p class="sub">Optional. Users work with insights and analysis; admins also manage the team, websites, security and privacy rules. You can require two-step verification for everyone.</p>
@@ -1895,7 +1903,44 @@ async function boot() {
   route();
 }
 
+// An MCP client (Claude Code, Cursor, ...) sent the person here to sign in and
+// approve it; approving sends them back to the client with a one-time code.
+async function renderConnect() {
+  const req = Object.fromEntries(new URLSearchParams(location.hash.split("?")[1] || ""));
+  let info;
+  try {
+    info = await api(`/account/connect?client_id=${encodeURIComponent(req.client_id || "")}&redirect_uri=${encodeURIComponent(req.redirect_uri || "")}`);
+  } catch (e) {
+    view.innerHTML = `<div class="empty"><h1>This connection request isn't valid</h1><p>${esc(e.message)}</p></div>`;
+    return;
+  }
+  const name = esc(info.client_name);
+  const changes = can("admin")
+    ? "add websites, push your KPIs, set privacy rules, save insights and mark them released"
+    : "save insights and mark them released";
+  view.innerHTML = `<div class="connect">
+    <h1>Connect ${name} to Trace</h1>
+    <p>${name} is asking to work with Trace as you${info.account ? ` in <strong>${esc(info.account)}</strong>` : ""}, with your role (${esc(info.role)}). It will be able to read your websites' aggregated behaviour, KPIs and insights, and ${changes}.</p>
+    <p class="hint">It can't see individual visitors: Trace has none to show. It can't manage people or tokens. You can disconnect it any time under Account.</p>
+    <label class="check-row"><input type="checkbox" id="connect-read-only"> Read only: it can look, but can't change anything</label>
+    <p class="hint">Only allow it if you started this from ${name} yourself. Afterwards you go back to <code>${esc(info.back_to)}</code>.</p>
+    <div class="actions"><button class="primary" id="connect-allow">Allow</button><button class="quiet" id="connect-cancel">Cancel</button></div>
+  </div>`;
+  const answer = async (approve) => {
+    try {
+      const r = await post("/account/connect", { ...req, read_only: view.querySelector("#connect-read-only").checked, approve });
+      view.innerHTML = `<div class="empty"><h1>${approve ? `${name} is connected` : "Cancelled"}</h1><p>${approve ? `You can go back to ${name}.` : "Nothing was connected."}</p></div>`;
+      location.href = r.redirect;
+    } catch (e) {
+      toast(e.message, true);
+    }
+  };
+  view.querySelector("#connect-allow").addEventListener("click", () => answer(true));
+  view.querySelector("#connect-cancel").addEventListener("click", () => answer(false));
+}
+
 const routes = {
+  connect: renderConnect,
   start: renderStart,
   insights: renderInsights,
   kpis: renderKpis,
@@ -1922,7 +1967,7 @@ function renderNoSites() {
 }
 
 // Pages about the account rather than one website.
-const ACCOUNT_PAGES = ["account", "team", "plan", "admin"];
+const ACCOUNT_PAGES = ["account", "team", "plan", "admin", "connect"];
 
 async function route() {
   if (!auth || !auth.user || auth.step) return boot();
@@ -1937,7 +1982,7 @@ async function route() {
     }
   }
   // Land on Setup until data is arriving, on Insights after.
-  const name = page.split("/")[0] || (project && project.collection.active ? "insights" : "start");
+  const name = page.split(/[/?]/)[0] || (project && project.collection.active ? "insights" : "start");
   if (!location.hash || location.hash === "#/") history.replaceState(null, "", `#/${name}`);
   const render = routes[name] || renderInsights;
   if (project && !ACCOUNT_PAGES.includes(name) && name !== "start") loadChecklist();

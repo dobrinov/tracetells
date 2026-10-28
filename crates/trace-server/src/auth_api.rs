@@ -71,6 +71,10 @@ impl Principal {
             Self::LegacyToken { .. } => "TRACE_ADMIN_TOKEN".into(),
         }
     }
+    /// The signed-in person, when the caller is one (not a token).
+    pub fn session(&self) -> Option<&Session> {
+        self.user()
+    }
     fn user(&self) -> Option<&Session> {
         match self {
             Self::User(s) => Some(s),

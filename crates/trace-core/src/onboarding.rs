@@ -50,10 +50,11 @@ pub async fn checklist(pool: &Pool, site: &Project) -> Result<Checklist> {
     let step = |key, done, optional| Step { key, done, optional };
     let steps = vec![
         step("website", true, false),
+        // Early, because a connected agent can do the next three steps itself.
+        step("agent", used_tokens > 0, false),
         step("install", last_event_at.is_some(), false),
         step("privacy", reviewed_at.is_some() || rules > 0, false),
         step("kpis", kpis > 0, false),
-        step("agent", used_tokens > 0, false),
         step("team", people > 1 || invites > 0, true),
     ];
     let required: Vec<&Step> = steps.iter().filter(|s| !s.optional).collect();
@@ -77,6 +78,10 @@ pub async fn confirm_privacy_review(pool: &Pool, site_id: i64, by: &str) -> Resu
 mod tests {
     use super::*;
     use crate::db;
+
+    fn done(c: &Checklist, key: &str) -> bool {
+        c.steps.iter().any(|s| s.key == key && s.done)
+    }
 
     fn keys_done(c: &Checklist) -> Vec<&'static str> {
         c.steps.iter().filter(|s| s.done).map(|s| s.key).collect()
@@ -109,18 +114,18 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        assert!(!checklist(&pool, &site).await.unwrap().steps[4].done, "an unused token doesn't count");
+        assert!(!done(&checklist(&pool, &site).await.unwrap(), "agent"), "an unused token doesn't count");
         sqlx::query("UPDATE api_tokens SET last_used_at = 2").execute(&pool).await.unwrap();
-        assert_eq!(keys_done(&checklist(&pool, &site).await.unwrap()), ["website", "install", "kpis", "agent"]);
+        assert_eq!(keys_done(&checklist(&pool, &site).await.unwrap()), ["website", "agent", "install", "kpis"]);
 
         confirm_privacy_review(&pool, site.id, "a@acme.example").await.unwrap();
         let solo = checklist(&pool, &site).await.unwrap();
         assert!(solo.complete, "the team step is optional");
-        assert!(!solo.steps[5].done);
-        assert!(!checklist(&pool, &docs).await.unwrap().steps[2].done, "the review belongs to one website");
+        assert!(!done(&solo, "team"));
+        assert!(!done(&checklist(&pool, &docs).await.unwrap(), "privacy"), "the review belongs to one website");
 
         crate::privacy::add_rule(&pool, docs.id, crate::privacy::RuleKind::DropProp, "customer_ref", None, "", "test").await.unwrap();
-        assert!(checklist(&pool, &docs).await.unwrap().steps[2].done, "a custom rule counts as reviewed");
+        assert!(done(&checklist(&pool, &docs).await.unwrap(), "privacy"), "a custom rule counts as reviewed");
         crate::db::drop_test_target(&path).await;
     }
 }

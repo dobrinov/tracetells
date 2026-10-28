@@ -30,6 +30,8 @@ pub struct AppState {
     pub limiter: crate::guard::Counter,
     /// Collector batches per visitor address and per website.
     pub collect_limits: crate::guard::Counter,
+    /// The address people and MCP clients reach this server at (`TRACE_PUBLIC_URL`).
+    pub public_url: Option<String>,
     /// Mark the session cookie Secure (the dashboard is served over HTTPS).
     pub secure_cookies: bool,
     /// Self-service sign-up creates accounts on the default plan.
@@ -60,6 +62,7 @@ impl AppState {
             setup_code: Mutex::new(None),
             limiter: Default::default(),
             collect_limits: Default::default(),
+            public_url: None,
             secure_cookies: false,
             allow_signup: false,
             contact_url: None,
@@ -107,6 +110,7 @@ pub fn router(state: AppStateRef) -> Router {
         .route("/onboarding", get(get_onboarding))
         .route("/onboarding/privacy-reviewed", post(confirm_privacy_review))
         .merge(crate::auth_api::routes())
+        .merge(crate::oauth::api_routes())
         .merge(crate::operator::routes())
         .layer(middleware::from_fn_with_state(state.clone(), crate::auth_api::authorize));
 
@@ -117,6 +121,7 @@ pub fn router(state: AppStateRef) -> Router {
         .nest("/api", api)
         .route("/mcp", post(mcp_http).get(|| async { (StatusCode::METHOD_NOT_ALLOWED, "this MCP endpoint takes POST requests") }))
         .merge(collector)
+        .merge(crate::oauth::routes())
         .with_state(state)
         .layer(middleware::from_fn(|req, next| crate::guard::security_headers(&DASHBOARD_CSP, req, next)))
         // Brotli or gzip, whichever the client accepts: the collector goes from ~32 KB to ~6 KB on the wire.
@@ -720,9 +725,8 @@ async fn mcp_http(State(state): State<AppStateRef>, headers: HeaderMap, body: By
         None => None,
     };
     let Some(principal) = principal else {
-        let mut res = (StatusCode::UNAUTHORIZED, Json(json!({ "error": "send a personal API token (create one under Account) as `Authorization: Bearer trc_...`" }))).into_response();
-        res.headers_mut().insert(header::WWW_AUTHENTICATE, header::HeaderValue::from_static("Bearer"));
-        return res;
+        // Points the client at the sign-in, so it can open it for the person.
+        return crate::oauth::challenge(&state, &headers, token.is_some());
     };
     let ctx = crate::mcp::Context {
         pool: &state.pool,
@@ -731,6 +735,8 @@ async fn mcp_http(State(state): State<AppStateRef>, headers: HeaderMap, body: By
         actor: format!("mcp: {}", principal.actor()),
         role: principal.role(),
         read_only: principal.read_only(),
+        origin: crate::oauth::origin(&state, &headers),
+        state: Some(&state),
     };
     let replies = match serde_json::from_slice::<Value>(&body) {
         Ok(Value::Array(batch)) => {
@@ -1091,6 +1097,80 @@ mod isolation_tests {
     }
 
     #[tokio::test]
+    async fn mcp_clients_sign_people_in() {
+        let (app, state, path) = app().await;
+        let (acme, _) = db::create_account_with_site(&state.pool, "Acme", None).await.unwrap();
+        let owner = person(&state, acme.id, "a@acme.example", Role::Owner).await;
+        let raw = |req: Request| {
+            let app = app.clone();
+            async move { app.oneshot(req).await.unwrap() }
+        };
+        let mcp = |auth: Option<String>| {
+            let mut b = Request::builder().method("POST").uri("/mcp").header(header::CONTENT_TYPE, "application/json");
+            if let Some(a) = auth {
+                b = b.header(header::AUTHORIZATION, a);
+            }
+            b.body(axum::body::Body::from(json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": "list_sites", "arguments": {} } }).to_string())).unwrap()
+        };
+
+        // Without a token, /mcp says where to sign in.
+        let res = raw(mcp(None)).await;
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        let challenge = res.headers()[header::WWW_AUTHENTICATE].to_str().unwrap().to_string();
+        assert!(challenge.contains("resource_metadata=\"http://localhost/.well-known/oauth-protected-resource\""), "{challenge}");
+        let get = |uri: &str| Request::builder().uri(uri).header(header::HOST, "localhost").body(axum::body::Body::empty()).unwrap();
+        let (_, meta) = send(&app, get("/.well-known/oauth-authorization-server")).await;
+        assert_eq!((meta["token_endpoint"].as_str(), meta["code_challenge_methods_supported"][0].as_str()), (Some("http://localhost/oauth/token"), Some("S256")));
+
+        // The client registers itself.
+        let cb = "http://127.0.0.1:53412/callback";
+        let (status, reg) = send(&app, json_req("POST", "/oauth/register", ("x-none", "1"), json!({ "client_name": "Claude Code", "redirect_uris": [cb] }))).await;
+        assert_eq!(status, StatusCode::CREATED, "{reg}");
+        let client_id = reg["client_id"].as_str().unwrap().to_string();
+        let (status, _) = send(&app, json_req("POST", "/oauth/register", ("x-none", "1"), json!({ "redirect_uris": ["http://evil.example/cb"] }))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        // Authorizing hands over to the dashboard's Connect screen; a wrong redirect is never followed.
+        let (verifier, challenge) = ("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+        let q = format!("response_type=code&client_id={client_id}&redirect_uri=http%3A%2F%2F127.0.0.1%3A53412%2Fcallback&code_challenge={challenge}&code_challenge_method=S256&state=xyz");
+        let res = raw(get(&format!("/oauth/authorize?{q}"))).await;
+        assert_eq!(res.headers()[header::LOCATION].to_str().unwrap(), format!("/#/connect?{q}"));
+        let res = raw(get(&format!("/oauth/authorize?{}", q.replace("53412", "9999")))).await;
+        assert!(res.status() == StatusCode::BAD_REQUEST && res.headers().get(header::LOCATION).is_none());
+
+        // Only a signed-in person approves; a token can't.
+        let approval = json!({ "client_id": client_id, "redirect_uri": cb, "code_challenge": challenge, "code_challenge_method": "S256", "state": "xyz", "approve": true });
+        let (_, described) = send(&app, json_req("GET", &format!("/api/account/connect?client_id={client_id}&redirect_uri={}", "http%3A%2F%2F127.0.0.1%3A53412%2Fcallback"), ("cookie", &owner), json!({}))).await;
+        assert_eq!((described["client_name"].as_str(), described["back_to"].as_str()), (Some("Claude Code"), Some("127.0.0.1:53412")));
+        let (status, approved) = send(&app, json_req("POST", "/api/account/connect", ("cookie", &owner), approval.clone())).await;
+        assert_eq!(status, StatusCode::OK, "{approved}");
+        let redirect = approved["redirect"].as_str().unwrap();
+        assert!(redirect.starts_with("http://127.0.0.1:53412/callback?code=") && redirect.ends_with("&state=xyz"), "{redirect}");
+        let code = redirect.split("code=").nth(1).unwrap().split('&').next().unwrap().to_string();
+
+        // The code becomes a token once, with the verifier.
+        let exchange = |verifier: &str| {
+            Request::builder().method("POST").uri("/oauth/token").header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(axum::body::Body::from(format!("grant_type=authorization_code&code={code}&client_id={client_id}&redirect_uri=http%3A%2F%2F127.0.0.1%3A53412%2Fcallback&code_verifier={verifier}")))
+                .unwrap()
+        };
+        let (status, tok) = send(&app, exchange(verifier)).await;
+        assert_eq!(status, StatusCode::OK, "{tok}");
+        let access = tok["access_token"].as_str().unwrap().to_string();
+        let (status, again) = send(&app, exchange(verifier)).await;
+        assert_eq!((status, again["error"].as_str()), (StatusCode::BAD_REQUEST, Some("invalid_grant")));
+
+        // The token works on /mcp and shows under Account.
+        let res = raw(mcp(Some(format!("Bearer {access}")))).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let (status, _) = send(&app, json_req("POST", "/api/account/connect", ("authorization", &format!("Bearer {access}")), approval)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "a token can't approve another connection");
+        let tokens = auth::list_api_tokens(&state.pool, acme.id, None).await.unwrap();
+        assert!(tokens.iter().any(|t| t.name.starts_with("Claude Code (signed in ")), "{:?}", tokens.iter().map(|t| &t.name).collect::<Vec<_>>());
+        trace_core::db::drop_test_target(&path).await;
+    }
+
+    #[tokio::test]
     async fn deploys_mark_insights_released_at_their_time() {
         let (app, state, path) = app().await;
         let (acme, shop) = db::create_account_with_site(&state.pool, "Acme", None).await.unwrap();
@@ -1290,15 +1370,15 @@ mod isolation_tests {
         };
         let (status, before) = checklist(user.clone()).await;
         assert_eq!(status, StatusCode::OK, "users can read the checklist");
-        assert_eq!(before["steps"][2]["key"], "privacy");
-        assert_eq!(before["steps"][2]["done"], false);
+        assert_eq!(before["steps"][3]["key"], "privacy");
+        assert_eq!(before["steps"][3]["done"], false);
 
         let (status, _) = send(&app, json_req("POST", "/api/sites/acme/onboarding/privacy-reviewed", ("cookie", &user), json!({}))).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
         let (status, _) = send(&app, json_req("POST", "/api/sites/acme/onboarding/privacy-reviewed", ("cookie", &admin), json!({}))).await;
         assert_eq!(status, StatusCode::NO_CONTENT);
         let (_, after) = checklist(user).await;
-        assert_eq!(after["steps"][2]["done"], true);
+        assert_eq!(after["steps"][3]["done"], true);
         let logged: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'onboarding.privacy_reviewed' AND project_id = $1")
             .bind(site.id)
             .fetch_one(&state.pool)

@@ -4,6 +4,7 @@ mod auth_api;
 mod demo;
 mod guard;
 mod mcp;
+mod oauth;
 mod operator;
 mod setup;
 
@@ -341,6 +342,7 @@ async fn run() -> Result<()> {
             state.admin_token = admin_token;
             state.setup_code = std::sync::Mutex::new(setup_code);
             state.secure_cookies = public_url.starts_with("https://");
+            state.public_url = Some(public_url.clone());
             state.allow_signup = allow_signup;
             state.contact_url = contact_url;
             state.terms_url = terms_url;
@@ -451,6 +453,8 @@ async fn run() -> Result<()> {
                 // Whoever can run this can already read the database file.
                 role: trace_core::auth::Role::Admin,
                 read_only: false,
+                origin: std::env::var("TRACE_PUBLIC_URL").unwrap_or_else(|_| "http://127.0.0.1:4319".into()).trim_end_matches('/').to_string(),
+                state: None,
             };
             mcp::serve_stdio(ctx).await?;
         }
