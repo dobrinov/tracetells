@@ -1,0 +1,71 @@
+name: CI
+
+# Every push and pull request: the tests on both databases Trace supports, the
+# linter, and a syntax check of the browser code. The deploy script builds
+# whatever is on main, so this is what stands between a commit and production.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Tests (${{ matrix.database }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Each Postgres test creates and drops its own database on this server.
+      - name: Test
+        run: cargo test --workspace --locked
+        env:
+          TRACE_TEST_POSTGRES: ${{ matrix.database == 'postgres' && 'postgres://postgres:postgres@localhost:5432/postgres' || '' }}
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # Warnings fail the build. Two lints are allowed on purpose: row tuples
+      # from sqlx read clearer inline than as named types, and the dashboard's
+      # site lookup returns a full HTTP response as its error.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings -A clippy::type_complexity -A clippy::result_large_err
+      # The collector ships as written, with no build step, so a syntax error
+      # would reach every website. The dashboard is served the same way.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Browser code parses
+        run: |
+          node --check crates/trace-server/assets/d.js
+          node --check crates/trace-server/assets/app.js

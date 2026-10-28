@@ -46,7 +46,7 @@ Maintainers then review valid proposals against [`openspec/config.yaml`](openspe
 - **No cost to visitors.** Does the collector get bigger or do more work? Handlers stay passive and real work happens when the browser is idle.
 - **Fits the model.** KPIs and events live in `trace.json`; the community edition stays one binary on SQLite.
 
-Accepted changes are applied with `/opsx:apply` and archived into `openspec/specs/` when they ship. If you'd like to build your own accepted proposal, say so on the issue.
+Accepted changes are applied with `/opsx:apply` and archived into `openspec/specs/` when they ship. If you'd like to build your own accepted proposal, say so on the issue. The code is formatted by hand, so match the style around your change and don't run `cargo fmt`; [CLAUDE.md](CLAUDE.md) has the other conventions.
 
 ## Not ready for a proposal?
 

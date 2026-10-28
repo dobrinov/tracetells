@@ -921,6 +921,20 @@ async fn test_privacy(State(state): State<AppStateRef>, Extension(CurrentSite(si
 mod tests {
     use super::*;
 
+    /// The homepage and README promise 8.3 KB with brotli and 9.4 KB with gzip.
+    /// Anything that would round past those fails here: raise a budget only
+    /// together with those claims, so they stay true.
+    const BROTLI_BUDGET: usize = 8_349;
+    const GZIP_BUDGET: usize = 9_449;
+
+    #[test]
+    fn the_collector_stays_small() {
+        let c = build_collector(None);
+        println!("collector on the wire: {} bytes brotli, {} bytes gzip", c.brotli.len(), c.gzip.len());
+        assert!(c.brotli.len() <= BROTLI_BUDGET, "brotli {} > {BROTLI_BUDGET}: update the size claims if this is intended", c.brotli.len());
+        assert!(c.gzip.len() <= GZIP_BUDGET, "gzip {} > {GZIP_BUDGET}: update the size claims if this is intended", c.gzip.len());
+    }
+
     #[test]
     fn stripping_keeps_all_code_lines() {
         let src = "/*! header\n * more\n */\n(function () {\n  // a comment\n\n  var url = \"https://x\"; // trailing stays\n  /* one-line block */\n  return 1;\n})();\n";
