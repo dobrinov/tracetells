@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::Pool;
 
 use crate::model::Project;
 use crate::util::now_ms;
@@ -24,24 +24,24 @@ pub struct Checklist {
     pub complete: bool,
 }
 
-pub async fn checklist(pool: &SqlitePool, site: &Project) -> Result<Checklist> {
+pub async fn checklist(pool: &Pool, site: &Project) -> Result<Checklist> {
     let (last_event_at, reviewed_at): (Option<i64>, Option<i64>) =
-        sqlx::query_as("SELECT last_event_at, privacy_reviewed_at FROM projects WHERE id = ?")
+        sqlx::query_as("SELECT last_event_at, privacy_reviewed_at FROM projects WHERE id = $1")
             .bind(site.id)
             .fetch_one(pool)
             .await?;
-    let rules: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM privacy_rules WHERE project_id = ?").bind(site.id).fetch_one(pool).await?;
+    let rules: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM privacy_rules WHERE project_id = $1").bind(site.id).fetch_one(pool).await?;
     let kpis: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM kpis WHERE project_id = ? AND archived_at IS NULL").bind(site.id).fetch_one(pool).await?;
+        sqlx::query_scalar("SELECT COUNT(*) FROM kpis WHERE project_id = $1 AND archived_at IS NULL").bind(site.id).fetch_one(pool).await?;
     let used_tokens: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM api_tokens WHERE account_id = ? AND revoked_at IS NULL AND last_used_at IS NOT NULL",
+        "SELECT COUNT(*) FROM api_tokens WHERE account_id = $1 AND revoked_at IS NULL AND last_used_at IS NOT NULL",
     )
     .bind(site.account_id)
     .fetch_one(pool)
     .await?;
-    let people: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE account_id = ?").bind(site.account_id).fetch_one(pool).await?;
+    let people: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE account_id = $1").bind(site.account_id).fetch_one(pool).await?;
     let invites: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM invites WHERE account_id = ? AND accepted_at IS NULL AND expires_at > ?")
+        sqlx::query_scalar("SELECT COUNT(*) FROM invites WHERE account_id = $1 AND accepted_at IS NULL AND expires_at > $2")
             .bind(site.account_id)
             .bind(now_ms())
             .fetch_one(pool)
@@ -63,8 +63,8 @@ pub async fn checklist(pool: &SqlitePool, site: &Project) -> Result<Checklist> {
 }
 
 /// Records that someone looked at what this website protects.
-pub async fn confirm_privacy_review(pool: &SqlitePool, site_id: i64, by: &str) -> Result<()> {
-    sqlx::query("UPDATE projects SET privacy_reviewed_at = ?, privacy_reviewed_by = ? WHERE id = ?")
+pub async fn confirm_privacy_review(pool: &Pool, site_id: i64, by: &str) -> Result<()> {
+    sqlx::query("UPDATE projects SET privacy_reviewed_at = $1, privacy_reviewed_by = $2 WHERE id = $3")
         .bind(now_ms())
         .bind(by)
         .bind(site_id)
@@ -84,8 +84,8 @@ mod tests {
 
     #[tokio::test]
     async fn steps_follow_what_trace_observes() {
-        let path = std::env::temp_dir().join(format!("trace-onboarding-{}.db", crate::util::new_key()));
-        let pool = db::connect(path.to_str().unwrap()).await.unwrap();
+        let path = crate::db::test_target("onboarding").await;
+        let pool = db::connect(&path).await.unwrap();
         let (account, site) = db::create_account_with_site(&pool, "Acme", None).await.unwrap();
         let docs = db::create_site(&pool, account.id, "Docs").await.unwrap();
 
@@ -93,18 +93,18 @@ mod tests {
         assert_eq!(keys_done(&fresh), ["website"]);
         assert_eq!((fresh.done, fresh.total, fresh.complete), (1, 5, false));
 
-        sqlx::query("UPDATE projects SET last_event_at = 1 WHERE id = ?").bind(site.id).execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO kpis (project_id, key, name, definition, direction, created_at) VALUES (?, 'k', 'K', '{}', 'increase', 1)")
+        sqlx::query("UPDATE projects SET last_event_at = 1 WHERE id = $1").bind(site.id).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO kpis (project_id, key, name, definition, direction, created_at) VALUES ($1, 'k', 'K', '{}', 'increase', 1)")
             .bind(site.id)
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO users (account_id, email, name, password_hash, role, created_at) VALUES (?, 'a@acme.example', '', 'x', 'owner', 1)")
+        sqlx::query("INSERT INTO users (account_id, email, name, password_hash, role, created_at) VALUES ($1, 'a@acme.example', '', 'x', 'owner', 1)")
             .bind(account.id)
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO api_tokens (account_id, name, token_hash, prefix, created_at) VALUES (?, 't', 'h', 'p', 1)")
+        sqlx::query("INSERT INTO api_tokens (account_id, name, token_hash, prefix, created_at) VALUES ($1, 't', 'h', 'p', 1)")
             .bind(account.id)
             .execute(&pool)
             .await
@@ -121,6 +121,6 @@ mod tests {
 
         crate::privacy::add_rule(&pool, docs.id, crate::privacy::RuleKind::DropProp, "customer_ref", None, "", "test").await.unwrap();
         assert!(checklist(&pool, &docs).await.unwrap().steps[2].done, "a custom rule counts as reviewed");
-        let _ = std::fs::remove_file(path);
+        crate::db::drop_test_target(&path).await;
     }
 }

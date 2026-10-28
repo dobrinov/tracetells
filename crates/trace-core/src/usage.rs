@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::Pool;
 
 use crate::util::now_ms;
 
@@ -32,9 +32,9 @@ pub struct Usage {
     pub ai_runs: i64,
 }
 
-pub async fn get(pool: &SqlitePool, account_id: i64, month: &str) -> Result<Usage> {
+pub async fn get(pool: &Pool, account_id: i64, month: &str) -> Result<Usage> {
     let row: Option<(i64, i64, i64)> =
-        sqlx::query_as("SELECT events, events_dropped, ai_runs FROM usage WHERE account_id = ? AND month = ?")
+        sqlx::query_as("SELECT events, events_dropped, ai_runs FROM usage WHERE account_id = $1 AND month = $2")
             .bind(account_id)
             .bind(month)
             .fetch_optional(pool)
@@ -43,13 +43,13 @@ pub async fn get(pool: &SqlitePool, account_id: i64, month: &str) -> Result<Usag
     Ok(Usage { month: month.to_string(), events, events_dropped, ai_runs })
 }
 
-pub async fn add_events(pool: &SqlitePool, account_id: i64, kept: i64, dropped: i64) -> Result<()> {
+pub async fn add_events(pool: &Pool, account_id: i64, kept: i64, dropped: i64) -> Result<()> {
     if kept == 0 && dropped == 0 {
         return Ok(());
     }
     sqlx::query(
-        "INSERT INTO usage (account_id, month, events, events_dropped) VALUES (?, ?, ?, ?)
-         ON CONFLICT(account_id, month) DO UPDATE SET events = events + excluded.events, events_dropped = events_dropped + excluded.events_dropped",
+        "INSERT INTO usage (account_id, month, events, events_dropped) VALUES ($1, $2, $3, $4)
+         ON CONFLICT(account_id, month) DO UPDATE SET events = usage.events + excluded.events, events_dropped = usage.events_dropped + excluded.events_dropped",
     )
     .bind(account_id)
     .bind(this_month())
@@ -62,11 +62,11 @@ pub async fn add_events(pool: &SqlitePool, account_id: i64, kept: i64, dropped: 
 
 /// Takes one Claude analysis run if the limit allows it. Returns false, and
 /// counts nothing, when the month's runs are used up.
-pub async fn take_ai_run(pool: &SqlitePool, account_id: i64, limit: Option<i64>) -> Result<bool> {
+pub async fn take_ai_run(pool: &Pool, account_id: i64, limit: Option<i64>) -> Result<bool> {
     let month = this_month();
-    sqlx::query("INSERT OR IGNORE INTO usage (account_id, month) VALUES (?, ?)").bind(account_id).bind(&month).execute(pool).await?;
+    sqlx::query("INSERT INTO usage (account_id, month) VALUES ($1, $2) ON CONFLICT DO NOTHING").bind(account_id).bind(&month).execute(pool).await?;
     // One statement, so two runs at once can't both take the last one.
-    let r = sqlx::query("UPDATE usage SET ai_runs = ai_runs + 1 WHERE account_id = ? AND month = ? AND (? IS NULL OR ai_runs < ?)")
+    let r = sqlx::query("UPDATE usage SET ai_runs = ai_runs + 1 WHERE account_id = $1 AND month = $2 AND ($3 IS NULL OR ai_runs < $4)")
         .bind(account_id)
         .bind(&month)
         .bind(limit)
@@ -77,8 +77,8 @@ pub async fn take_ai_run(pool: &SqlitePool, account_id: i64, limit: Option<i64>)
 }
 
 /// Gives back a run taken with [`take_ai_run`] that ended up not using Claude.
-pub async fn refund_ai_run(pool: &SqlitePool, account_id: i64) -> Result<()> {
-    sqlx::query("UPDATE usage SET ai_runs = MAX(ai_runs - 1, 0) WHERE account_id = ? AND month = ?")
+pub async fn refund_ai_run(pool: &Pool, account_id: i64) -> Result<()> {
+    sqlx::query("UPDATE usage SET ai_runs = CASE WHEN ai_runs > 0 THEN ai_runs - 1 ELSE 0 END WHERE account_id = $1 AND month = $2")
         .bind(account_id)
         .bind(this_month())
         .execute(pool)

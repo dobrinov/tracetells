@@ -109,7 +109,7 @@ pub const SITE_HEADER: &str = "x-trace-site";
 
 /// Picks the website for a request: the one named, or the account's only one.
 /// Another account's website is "not found", so accounts can't probe each other.
-pub async fn resolve_site(pool: &trace_core::SqlitePool, account_id: i64, slug: Option<&str>) -> Result<(trace_core::model::Project, bool), Response> {
+pub async fn resolve_site(pool: &trace_core::Pool, account_id: i64, slug: Option<&str>) -> Result<(trace_core::model::Project, bool), Response> {
     let sites = db::sites(pool, account_id).await.map_err(|e| ApiError::from(e).into_response())?;
     let list = || sites.iter().map(|s| json!({ "slug": s.slug, "name": s.name })).collect::<Vec<_>>();
     match slug.filter(|s| !s.is_empty()) {

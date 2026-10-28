@@ -14,7 +14,8 @@ use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD, HEXLOWER};
 use hmac::{Hmac, Mac};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use sqlx::SqlitePool;
+use crate::Pool;
+use crate::db::Flag;
 use subtle::ConstantTimeEq;
 
 use crate::util::{DAY_MS, now_ms};
@@ -207,23 +208,23 @@ fn normalize_recovery(code: &str) -> String {
 
 // ---- users -----------------------------------------------------------------
 
-type UserRow = (i64, i64, String, String, String, Option<i64>, i64, Option<i64>, bool);
+type UserRow = (i64, i64, String, String, String, Option<i64>, i64, Option<i64>, Flag);
 const USER_COLS: &str = "id, account_id, email, name, role, totp_enabled_at, created_at, last_login_at, is_operator";
 
 fn user_from((id, account_id, email, name, role, totp, created_at, last_login_at, is_operator): UserRow) -> Result<User> {
-    Ok(User { id, account_id, email, name, role: role.parse()?, totp_enabled: totp.is_some(), created_at, last_login_at, is_operator })
+    Ok(User { id, account_id, email, name, role: role.parse()?, totp_enabled: totp.is_some(), created_at, last_login_at, is_operator: is_operator.0 })
 }
 
 /// People on the whole server; zero means the server still needs its first account.
-pub async fn total_users(pool: &SqlitePool) -> Result<i64> {
+pub async fn total_users(pool: &Pool) -> Result<i64> {
     Ok(sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(pool).await?)
 }
 
-pub async fn user_count(pool: &SqlitePool, account_id: i64) -> Result<i64> {
-    Ok(sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE account_id = ?").bind(account_id).fetch_one(pool).await?)
+pub async fn user_count(pool: &Pool, account_id: i64) -> Result<i64> {
+    Ok(sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE account_id = $1").bind(account_id).fetch_one(pool).await?)
 }
 
-pub async fn create_user(pool: &SqlitePool, account_id: i64, email: &str, name: &str, password: &str, role: Role) -> Result<User> {
+pub async fn create_user(pool: &Pool, account_id: i64, email: &str, name: &str, password: &str, role: Role) -> Result<User> {
     let email = normalize_email(email)?;
     check_new_password(password)?;
     // Emails identify one person on the whole server, so signing in never asks which account.
@@ -231,7 +232,7 @@ pub async fn create_user(pool: &SqlitePool, account_id: i64, email: &str, name: 
         bail!("{email} is already in use");
     }
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO users (account_id, email, name, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+        "INSERT INTO users (account_id, email, name, password_hash, role, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
     )
     .bind(account_id)
     .bind(&email)
@@ -244,8 +245,8 @@ pub async fn create_user(pool: &SqlitePool, account_id: i64, email: &str, name: 
     get_user(pool, account_id, id).await?.context("user was just created")
 }
 
-pub async fn get_user(pool: &SqlitePool, account_id: i64, id: i64) -> Result<Option<User>> {
-    let row: Option<UserRow> = sqlx::query_as(&format!("SELECT {USER_COLS} FROM users WHERE account_id = ? AND id = ?"))
+pub async fn get_user(pool: &Pool, account_id: i64, id: i64) -> Result<Option<User>> {
+    let row: Option<UserRow> = sqlx::query_as(&format!("SELECT {USER_COLS} FROM users WHERE account_id = $1 AND id = $2"))
         .bind(account_id)
         .bind(id)
         .fetch_optional(pool)
@@ -254,18 +255,18 @@ pub async fn get_user(pool: &SqlitePool, account_id: i64, id: i64) -> Result<Opt
 }
 
 /// A person by email, in any account.
-pub async fn find_user(pool: &SqlitePool, email: &str) -> Result<Option<User>> {
+pub async fn find_user(pool: &Pool, email: &str) -> Result<Option<User>> {
     let Ok(email) = normalize_email(email) else { return Ok(None) };
-    let row: Option<UserRow> = sqlx::query_as(&format!("SELECT {USER_COLS} FROM users WHERE email = ?"))
+    let row: Option<UserRow> = sqlx::query_as(&format!("SELECT {USER_COLS} FROM users WHERE email = $1"))
         .bind(email)
         .fetch_optional(pool)
         .await?;
     row.map(user_from).transpose()
 }
 
-pub async fn list_users(pool: &SqlitePool, account_id: i64) -> Result<Vec<User>> {
+pub async fn list_users(pool: &Pool, account_id: i64) -> Result<Vec<User>> {
     let rows: Vec<UserRow> = sqlx::query_as(&format!(
-        "SELECT {USER_COLS} FROM users WHERE account_id = ? ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, email"
+        "SELECT {USER_COLS} FROM users WHERE account_id = $1 ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, email"
     ))
     .bind(account_id)
     .fetch_all(pool)
@@ -274,9 +275,9 @@ pub async fn list_users(pool: &SqlitePool, account_id: i64) -> Result<Vec<User>>
 }
 
 /// Checks email and password. Spends the same time whether or not the user exists.
-pub async fn authenticate(pool: &SqlitePool, email: &str, password: &str) -> Result<Option<User>> {
+pub async fn authenticate(pool: &Pool, email: &str, password: &str) -> Result<Option<User>> {
     let row: Option<(i64, i64, String)> = match normalize_email(email) {
-        Ok(e) => sqlx::query_as("SELECT id, account_id, password_hash FROM users WHERE email = ?")
+        Ok(e) => sqlx::query_as("SELECT id, account_id, password_hash FROM users WHERE email = $1")
             .bind(e)
             .fetch_optional(pool)
             .await?,
@@ -292,18 +293,18 @@ pub async fn authenticate(pool: &SqlitePool, email: &str, password: &str) -> Res
     get_user(pool, account_id, id).await
 }
 
-pub async fn set_password(pool: &SqlitePool, user_id: i64, password: &str) -> Result<()> {
+pub async fn set_password(pool: &Pool, user_id: i64, password: &str) -> Result<()> {
     check_new_password(password)?;
-    sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?").bind(hash_password(password)?).bind(user_id).execute(pool).await?;
+    sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2").bind(hash_password(password)?).bind(user_id).execute(pool).await?;
     Ok(())
 }
 
-pub async fn password_matches(pool: &SqlitePool, user_id: i64, password: &str) -> Result<bool> {
-    let hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = ?").bind(user_id).fetch_one(pool).await?;
+pub async fn password_matches(pool: &Pool, user_id: i64, password: &str) -> Result<bool> {
+    let hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1").bind(user_id).fetch_one(pool).await?;
     Ok(verify_password(password, &hash))
 }
 
-pub async fn set_role(pool: &SqlitePool, account_id: i64, user_id: i64, role: Role) -> Result<()> {
+pub async fn set_role(pool: &Pool, account_id: i64, user_id: i64, role: Role) -> Result<()> {
     if role == Role::Owner {
         bail!("there is one owner per workspace");
     }
@@ -311,25 +312,25 @@ pub async fn set_role(pool: &SqlitePool, account_id: i64, user_id: i64, role: Ro
     if current.role == Role::Owner {
         bail!("the owner's role can't be changed");
     }
-    sqlx::query("UPDATE users SET role = ? WHERE id = ?").bind(role.as_str()).bind(user_id).execute(pool).await?;
+    sqlx::query("UPDATE users SET role = $1 WHERE id = $2").bind(role.as_str()).bind(user_id).execute(pool).await?;
     Ok(())
 }
 
-pub async fn remove_user(pool: &SqlitePool, account_id: i64, user_id: i64) -> Result<User> {
+pub async fn remove_user(pool: &Pool, account_id: i64, user_id: i64) -> Result<User> {
     let user = get_user(pool, account_id, user_id).await?.context("no such user")?;
     if user.role == Role::Owner {
         bail!("the owner can't be removed");
     }
     let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE created_by = ? AND revoked_at IS NULL")
+    sqlx::query("UPDATE api_tokens SET revoked_at = $1 WHERE created_by = $2 AND revoked_at IS NULL")
         .bind(now_ms())
         .bind(user_id)
         .execute(&mut *tx)
         .await?;
     for sql in [
-        "DELETE FROM auth_sessions WHERE user_id = ?",
-        "DELETE FROM recovery_codes WHERE user_id = ?",
-        "DELETE FROM users WHERE id = ?",
+        "DELETE FROM auth_sessions WHERE user_id = $1",
+        "DELETE FROM recovery_codes WHERE user_id = $1",
+        "DELETE FROM users WHERE id = $1",
     ] {
         sqlx::query(sql).bind(user_id).execute(&mut *tx).await?;
     }
@@ -349,32 +350,32 @@ pub struct Session {
 
 /// Starts a session and returns the cookie value. `mfa_ok` is false while a
 /// second factor is still due.
-pub async fn create_session(pool: &SqlitePool, user_id: i64, mfa_ok: bool, user_agent: Option<&str>) -> Result<String> {
+pub async fn create_session(pool: &Pool, user_id: i64, mfa_ok: bool, user_agent: Option<&str>) -> Result<String> {
     let token = random_token(32);
     let now = now_ms();
     sqlx::query(
-        "INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at, last_seen_at, mfa_ok, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at, last_seen_at, mfa_ok, user_agent) VALUES ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(sha256_hex(&token))
     .bind(user_id)
     .bind(now)
     .bind(now + SESSION_DAYS * DAY_MS)
     .bind(now)
-    .bind(mfa_ok)
+    .bind(Flag(mfa_ok))
     .bind(user_agent.map(|u| crate::util::truncate(u, 300)))
     .execute(pool)
     .await?;
     if mfa_ok {
-        sqlx::query("UPDATE users SET last_login_at = ? WHERE id = ?").bind(now).bind(user_id).execute(pool).await?;
+        sqlx::query("UPDATE users SET last_login_at = $1 WHERE id = $2").bind(now).bind(user_id).execute(pool).await?;
     }
     Ok(token)
 }
 
-pub async fn session(pool: &SqlitePool, token: &str) -> Result<Option<Session>> {
+pub async fn session(pool: &Pool, token: &str) -> Result<Option<Session>> {
     let token_hash = sha256_hex(token);
-    let row: Option<(i64, i64, bool, i64, i64)> = sqlx::query_as(
+    let row: Option<(i64, i64, Flag, i64, i64)> = sqlx::query_as(
         "SELECT s.user_id, u.account_id, s.mfa_ok, s.expires_at, s.last_seen_at FROM auth_sessions s JOIN users u ON u.id = s.user_id
-         WHERE s.token_hash = ?",
+         WHERE s.token_hash = $1",
     )
     .bind(&token_hash)
     .fetch_optional(pool)
@@ -386,26 +387,26 @@ pub async fn session(pool: &SqlitePool, token: &str) -> Result<Option<Session>> 
         return Ok(None);
     }
     if now - last_seen_at > 60_000 {
-        sqlx::query("UPDATE auth_sessions SET last_seen_at = ? WHERE token_hash = ?").bind(now).bind(&token_hash).execute(pool).await?;
+        sqlx::query("UPDATE auth_sessions SET last_seen_at = $1 WHERE token_hash = $2").bind(now).bind(&token_hash).execute(pool).await?;
     }
     let Some(user) = get_user(pool, account_id, user_id).await? else { return Ok(None) };
-    Ok(Some(Session { token_hash, user, mfa_ok }))
+    Ok(Some(Session { token_hash, user, mfa_ok: mfa_ok.0 }))
 }
 
-pub async fn mark_mfa_passed(pool: &SqlitePool, s: &Session) -> Result<()> {
-    sqlx::query("UPDATE auth_sessions SET mfa_ok = 1 WHERE token_hash = ?").bind(&s.token_hash).execute(pool).await?;
-    sqlx::query("UPDATE users SET last_login_at = ? WHERE id = ?").bind(now_ms()).bind(s.user.id).execute(pool).await?;
+pub async fn mark_mfa_passed(pool: &Pool, s: &Session) -> Result<()> {
+    sqlx::query("UPDATE auth_sessions SET mfa_ok = 1 WHERE token_hash = $1").bind(&s.token_hash).execute(pool).await?;
+    sqlx::query("UPDATE users SET last_login_at = $1 WHERE id = $2").bind(now_ms()).bind(s.user.id).execute(pool).await?;
     Ok(())
 }
 
-pub async fn end_session(pool: &SqlitePool, token: &str) -> Result<()> {
-    sqlx::query("DELETE FROM auth_sessions WHERE token_hash = ?").bind(sha256_hex(token)).execute(pool).await?;
+pub async fn end_session(pool: &Pool, token: &str) -> Result<()> {
+    sqlx::query("DELETE FROM auth_sessions WHERE token_hash = $1").bind(sha256_hex(token)).execute(pool).await?;
     Ok(())
 }
 
 /// Signs a user out everywhere, optionally keeping the current session.
-pub async fn end_user_sessions(pool: &SqlitePool, user_id: i64, keep_token_hash: Option<&str>) -> Result<()> {
-    sqlx::query("DELETE FROM auth_sessions WHERE user_id = ? AND token_hash <> ?")
+pub async fn end_user_sessions(pool: &Pool, user_id: i64, keep_token_hash: Option<&str>) -> Result<()> {
+    sqlx::query("DELETE FROM auth_sessions WHERE user_id = $1 AND token_hash <> $2")
         .bind(user_id)
         .bind(keep_token_hash.unwrap_or(""))
         .execute(pool)
@@ -423,23 +424,23 @@ pub struct Enrollment {
 
 /// Generates a new secret, kept pending until the user proves they can
 /// produce codes with it.
-pub async fn begin_totp(pool: &SqlitePool, user: &User, issuer: &str) -> Result<Enrollment> {
+pub async fn begin_totp(pool: &Pool, user: &User, issuer: &str) -> Result<Enrollment> {
     let secret = new_totp_secret();
-    sqlx::query("UPDATE users SET totp_pending_secret = ? WHERE id = ?").bind(&secret).bind(user.id).execute(pool).await?;
+    sqlx::query("UPDATE users SET totp_pending_secret = $1 WHERE id = $2").bind(&secret).bind(user.id).execute(pool).await?;
     let uri = otpauth_uri(issuer, &user.email, &secret);
     Ok(Enrollment { qr_svg: qr_svg(&uri)?, uri, secret })
 }
 
 /// Activates the pending secret if `code` matches it, and returns fresh recovery codes.
-pub async fn confirm_totp(pool: &SqlitePool, user_id: i64, code: &str) -> Result<Vec<String>> {
-    let pending: Option<String> = sqlx::query_scalar("SELECT totp_pending_secret FROM users WHERE id = ?")
+pub async fn confirm_totp(pool: &Pool, user_id: i64, code: &str) -> Result<Vec<String>> {
+    let pending: Option<String> = sqlx::query_scalar("SELECT totp_pending_secret FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_one(pool)
         .await?;
     let secret = pending.context("start setting up the authenticator app first")?;
     let step = totp_match(&secret, code, now_ms()).context("that code doesn't match; check the time on your phone and try the newest code")?;
     sqlx::query(
-        "UPDATE users SET totp_secret = ?, totp_pending_secret = NULL, totp_enabled_at = ?, totp_last_step = ? WHERE id = ?",
+        "UPDATE users SET totp_secret = $1, totp_pending_secret = NULL, totp_enabled_at = $2, totp_last_step = $3 WHERE id = $4",
     )
     .bind(&secret)
     .bind(now_ms())
@@ -450,30 +451,30 @@ pub async fn confirm_totp(pool: &SqlitePool, user_id: i64, code: &str) -> Result
     replace_recovery_codes(pool, user_id).await
 }
 
-pub async fn replace_recovery_codes(pool: &SqlitePool, user_id: i64) -> Result<Vec<String>> {
+pub async fn replace_recovery_codes(pool: &Pool, user_id: i64) -> Result<Vec<String>> {
     let codes = new_recovery_codes();
     let mut tx = pool.begin().await?;
-    sqlx::query("DELETE FROM recovery_codes WHERE user_id = ?").bind(user_id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM recovery_codes WHERE user_id = $1").bind(user_id).execute(&mut *tx).await?;
     for c in &codes {
-        sqlx::query("INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)").bind(user_id).bind(sha256_hex(c)).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO recovery_codes (user_id, code_hash) VALUES ($1, $2)").bind(user_id).bind(sha256_hex(c)).execute(&mut *tx).await?;
     }
     tx.commit().await?;
     Ok(codes)
 }
 
-pub async fn recovery_codes_left(pool: &SqlitePool, user_id: i64) -> Result<i64> {
-    Ok(sqlx::query_scalar("SELECT COUNT(*) FROM recovery_codes WHERE user_id = ? AND used_at IS NULL")
+pub async fn recovery_codes_left(pool: &Pool, user_id: i64) -> Result<i64> {
+    Ok(sqlx::query_scalar("SELECT COUNT(*) FROM recovery_codes WHERE user_id = $1 AND used_at IS NULL")
         .bind(user_id)
         .fetch_one(pool)
         .await?)
 }
 
-pub async fn disable_totp(pool: &SqlitePool, user_id: i64) -> Result<()> {
-    sqlx::query("UPDATE users SET totp_secret = NULL, totp_pending_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL WHERE id = ?")
+pub async fn disable_totp(pool: &Pool, user_id: i64) -> Result<()> {
+    sqlx::query("UPDATE users SET totp_secret = NULL, totp_pending_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL WHERE id = $1")
         .bind(user_id)
         .execute(pool)
         .await?;
-    sqlx::query("DELETE FROM recovery_codes WHERE user_id = ?").bind(user_id).execute(pool).await?;
+    sqlx::query("DELETE FROM recovery_codes WHERE user_id = $1").bind(user_id).execute(pool).await?;
     Ok(())
 }
 
@@ -484,18 +485,18 @@ pub enum SecondFactor {
 }
 
 /// Checks an authenticator code (each code works once) or an unused recovery code.
-pub async fn verify_second_factor(pool: &SqlitePool, user_id: i64, code: &str) -> Result<Option<SecondFactor>> {
+pub async fn verify_second_factor(pool: &Pool, user_id: i64, code: &str) -> Result<Option<SecondFactor>> {
     let (secret, last_step): (Option<String>, Option<i64>) =
-        sqlx::query_as("SELECT totp_secret, totp_last_step FROM users WHERE id = ?").bind(user_id).fetch_one(pool).await?;
+        sqlx::query_as("SELECT totp_secret, totp_last_step FROM users WHERE id = $1").bind(user_id).fetch_one(pool).await?;
     let Some(secret) = secret else { return Ok(None) };
     if let Some(step) = totp_match(&secret, code, now_ms()) {
         if last_step.is_some_and(|l| step <= l) {
             return Ok(None); // replayed code
         }
-        sqlx::query("UPDATE users SET totp_last_step = ? WHERE id = ?").bind(step).bind(user_id).execute(pool).await?;
+        sqlx::query("UPDATE users SET totp_last_step = $1 WHERE id = $2").bind(step).bind(user_id).execute(pool).await?;
         return Ok(Some(SecondFactor::Totp));
     }
-    let used = sqlx::query("UPDATE recovery_codes SET used_at = ? WHERE user_id = ? AND code_hash = ? AND used_at IS NULL")
+    let used = sqlx::query("UPDATE recovery_codes SET used_at = $1 WHERE user_id = $2 AND code_hash = $3 AND used_at IS NULL")
         .bind(now_ms())
         .bind(user_id)
         .bind(sha256_hex(&normalize_recovery(code)))
@@ -504,12 +505,13 @@ pub async fn verify_second_factor(pool: &SqlitePool, user_id: i64, code: &str) -
     Ok((used.rows_affected() == 1).then_some(SecondFactor::RecoveryCode))
 }
 
-pub async fn require_mfa(pool: &SqlitePool, account_id: i64) -> Result<bool> {
-    Ok(sqlx::query_scalar("SELECT require_mfa FROM accounts WHERE id = ?").bind(account_id).fetch_one(pool).await?)
+pub async fn require_mfa(pool: &Pool, account_id: i64) -> Result<bool> {
+    let on: Flag = sqlx::query_scalar("SELECT require_mfa FROM accounts WHERE id = $1").bind(account_id).fetch_one(pool).await?;
+    Ok(on.0)
 }
 
-pub async fn set_require_mfa(pool: &SqlitePool, account_id: i64, on: bool) -> Result<()> {
-    sqlx::query("UPDATE accounts SET require_mfa = ? WHERE id = ?").bind(on).bind(account_id).execute(pool).await?;
+pub async fn set_require_mfa(pool: &Pool, account_id: i64, on: bool) -> Result<()> {
+    sqlx::query("UPDATE accounts SET require_mfa = $1 WHERE id = $2").bind(Flag(on)).bind(account_id).execute(pool).await?;
     Ok(())
 }
 
@@ -526,7 +528,7 @@ pub struct Invite {
 
 /// Creates an invite and returns it with the secret for its link.
 /// Invites someone. `invited_by` is None for an operator creating an account's owner.
-pub async fn create_invite(pool: &SqlitePool, account_id: i64, email: &str, role: Role, invited_by: Option<i64>) -> Result<(Invite, String)> {
+pub async fn create_invite(pool: &Pool, account_id: i64, email: &str, role: Role, invited_by: Option<i64>) -> Result<(Invite, String)> {
     let email = normalize_email(email)?;
     if role == Role::Owner && invited_by.is_some() {
         bail!("invite people as admin or user");
@@ -537,7 +539,7 @@ pub async fn create_invite(pool: &SqlitePool, account_id: i64, email: &str, role
     let max = crate::plans::for_account(pool, account_id).await?.effective.max_members;
     if let Some(max) = max {
         let pending: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM invites WHERE account_id = ? AND accepted_at IS NULL AND expires_at > ? AND email <> ?",
+            "SELECT COUNT(*) FROM invites WHERE account_id = $1 AND accepted_at IS NULL AND expires_at > $2 AND email <> $3",
         )
         .bind(account_id)
         .bind(now_ms())
@@ -550,9 +552,9 @@ pub async fn create_invite(pool: &SqlitePool, account_id: i64, email: &str, role
     }
     let token = random_token(24);
     let now = now_ms();
-    sqlx::query("DELETE FROM invites WHERE account_id = ? AND email = ? AND accepted_at IS NULL").bind(account_id).bind(&email).execute(pool).await?;
+    sqlx::query("DELETE FROM invites WHERE account_id = $1 AND email = $2 AND accepted_at IS NULL").bind(account_id).bind(&email).execute(pool).await?;
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO invites (account_id, token_hash, email, role, invited_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        "INSERT INTO invites (account_id, token_hash, email, role, invited_by, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
     )
     .bind(account_id)
     .bind(sha256_hex(&token))
@@ -566,9 +568,9 @@ pub async fn create_invite(pool: &SqlitePool, account_id: i64, email: &str, role
     Ok((Invite { id, email, role, created_at: now, expires_at: now + INVITE_DAYS * DAY_MS }, token))
 }
 
-pub async fn pending_invites(pool: &SqlitePool, account_id: i64) -> Result<Vec<Invite>> {
+pub async fn pending_invites(pool: &Pool, account_id: i64) -> Result<Vec<Invite>> {
     let rows: Vec<(i64, String, String, i64, i64)> = sqlx::query_as(
-        "SELECT id, email, role, created_at, expires_at FROM invites WHERE account_id = ? AND accepted_at IS NULL AND expires_at > ? ORDER BY created_at DESC",
+        "SELECT id, email, role, created_at, expires_at FROM invites WHERE account_id = $1 AND accepted_at IS NULL AND expires_at > $2 ORDER BY created_at DESC",
     )
     .bind(account_id)
     .bind(now_ms())
@@ -579,16 +581,16 @@ pub async fn pending_invites(pool: &SqlitePool, account_id: i64) -> Result<Vec<I
         .collect()
 }
 
-pub async fn revoke_invite(pool: &SqlitePool, account_id: i64, id: i64) -> Result<bool> {
-    let r = sqlx::query("DELETE FROM invites WHERE account_id = ? AND id = ? AND accepted_at IS NULL").bind(account_id).bind(id).execute(pool).await?;
+pub async fn revoke_invite(pool: &Pool, account_id: i64, id: i64) -> Result<bool> {
+    let r = sqlx::query("DELETE FROM invites WHERE account_id = $1 AND id = $2 AND accepted_at IS NULL").bind(account_id).bind(id).execute(pool).await?;
     Ok(r.rows_affected() > 0)
 }
 
 /// A valid invite by its link's secret, with the account it is for.
-pub async fn find_invite(pool: &SqlitePool, token: &str) -> Result<Option<(i64, Invite)>> {
+pub async fn find_invite(pool: &Pool, token: &str) -> Result<Option<(i64, Invite)>> {
     let row: Option<(i64, i64, String, String, i64, i64)> = sqlx::query_as(
         "SELECT account_id, id, email, role, created_at, expires_at FROM invites
-         WHERE token_hash = ? AND accepted_at IS NULL AND expires_at > ?",
+         WHERE token_hash = $1 AND accepted_at IS NULL AND expires_at > $2",
     )
     .bind(sha256_hex(token))
     .bind(now_ms())
@@ -598,10 +600,10 @@ pub async fn find_invite(pool: &SqlitePool, token: &str) -> Result<Option<(i64, 
         .transpose()
 }
 
-pub async fn accept_invite(pool: &SqlitePool, token: &str, name: &str, password: &str) -> Result<User> {
+pub async fn accept_invite(pool: &Pool, token: &str, name: &str, password: &str) -> Result<User> {
     let (account_id, invite) = find_invite(pool, token).await?.context("this invite link has expired or was already used")?;
     let user = create_user(pool, account_id, &invite.email, name, password, invite.role).await?;
-    sqlx::query("UPDATE invites SET accepted_at = ? WHERE id = ?").bind(now_ms()).bind(invite.id).execute(pool).await?;
+    sqlx::query("UPDATE invites SET accepted_at = $1 WHERE id = $2").bind(now_ms()).bind(invite.id).execute(pool).await?;
     Ok(user)
 }
 
@@ -640,7 +642,7 @@ impl TokenAuth {
     }
 }
 
-pub async fn create_api_token(pool: &SqlitePool, account_id: i64, owner: &User, name: &str, read_only: bool) -> Result<(ApiToken, String)> {
+pub async fn create_api_token(pool: &Pool, account_id: i64, owner: &User, name: &str, read_only: bool) -> Result<(ApiToken, String)> {
     let name = name.trim();
     if name.is_empty() {
         bail!("give the token a name, e.g. \"Claude Code\" or \"GitHub Actions\"");
@@ -649,14 +651,14 @@ pub async fn create_api_token(pool: &SqlitePool, account_id: i64, owner: &User, 
     let prefix = token[..10].to_string();
     let now = now_ms();
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO api_tokens (account_id, name, token_hash, prefix, created_by, read_only, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        "INSERT INTO api_tokens (account_id, name, token_hash, prefix, created_by, read_only, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
     )
     .bind(account_id)
     .bind(name)
     .bind(sha256_hex(&token))
     .bind(&prefix)
     .bind(owner.id)
-    .bind(read_only)
+    .bind(Flag(read_only))
     .bind(now)
     .fetch_one(pool)
     .await?;
@@ -674,11 +676,11 @@ pub async fn create_api_token(pool: &SqlitePool, account_id: i64, owner: &User, 
 }
 
 /// Active tokens: one person's (`owner`), or everyone's for admins (`None`).
-pub async fn list_api_tokens(pool: &SqlitePool, account_id: i64, owner: Option<i64>) -> Result<Vec<ApiToken>> {
-    let rows: Vec<(i64, String, String, bool, i64, String, i64, Option<i64>)> = sqlx::query_as(
+pub async fn list_api_tokens(pool: &Pool, account_id: i64, owner: Option<i64>) -> Result<Vec<ApiToken>> {
+    let rows: Vec<(i64, String, String, Flag, i64, String, i64, Option<i64>)> = sqlx::query_as(
         "SELECT t.id, t.name, t.prefix, t.read_only, u.id, u.email, t.created_at, t.last_used_at
          FROM api_tokens t JOIN users u ON u.id = t.created_by
-         WHERE t.account_id = ? AND t.revoked_at IS NULL AND (?2 IS NULL OR u.id = ?2)
+         WHERE t.account_id = $1 AND t.revoked_at IS NULL AND ($2 IS NULL OR u.id = $2)
          ORDER BY t.created_at DESC",
     )
     .bind(account_id)
@@ -691,7 +693,7 @@ pub async fn list_api_tokens(pool: &SqlitePool, account_id: i64, owner: Option<i
             id,
             name,
             prefix,
-            read_only,
+            read_only: read_only.0,
             owner_id,
             owner_email,
             created_at,
@@ -701,9 +703,9 @@ pub async fn list_api_tokens(pool: &SqlitePool, account_id: i64, owner: Option<i
 }
 
 /// Revokes a token; with `owner`, only if it belongs to that person.
-pub async fn revoke_api_token(pool: &SqlitePool, account_id: i64, id: i64, owner: Option<i64>) -> Result<bool> {
+pub async fn revoke_api_token(pool: &Pool, account_id: i64, id: i64, owner: Option<i64>) -> Result<bool> {
     let r = sqlx::query(
-        "UPDATE api_tokens SET revoked_at = ?1 WHERE account_id = ?2 AND id = ?3 AND revoked_at IS NULL AND (?4 IS NULL OR created_by = ?4)",
+        "UPDATE api_tokens SET revoked_at = $1 WHERE account_id = $2 AND id = $3 AND revoked_at IS NULL AND ($4 IS NULL OR created_by = $4)",
     )
     .bind(now_ms())
     .bind(account_id)
@@ -715,12 +717,12 @@ pub async fn revoke_api_token(pool: &SqlitePool, account_id: i64, id: i64, owner
 }
 
 /// The token and its owner, if the token is valid and its owner still has an account.
-pub async fn verify_api_token(pool: &SqlitePool, token: &str) -> Result<Option<TokenAuth>> {
+pub async fn verify_api_token(pool: &Pool, token: &str) -> Result<Option<TokenAuth>> {
     if !token.starts_with("trc_") {
         return Ok(None);
     }
-    let row: Option<(i64, i64, String, bool, i64, Option<i64>)> = sqlx::query_as(
-        "SELECT id, account_id, name, read_only, created_by, last_used_at FROM api_tokens WHERE token_hash = ? AND revoked_at IS NULL",
+    let row: Option<(i64, i64, String, Flag, i64, Option<i64>)> = sqlx::query_as(
+        "SELECT id, account_id, name, read_only, created_by, last_used_at FROM api_tokens WHERE token_hash = $1 AND revoked_at IS NULL",
     )
     .bind(sha256_hex(token))
     .fetch_optional(pool)
@@ -729,23 +731,23 @@ pub async fn verify_api_token(pool: &SqlitePool, token: &str) -> Result<Option<T
     let Some(user) = get_user(pool, account_id, owner).await? else { return Ok(None) };
     let now = now_ms();
     if last_used.is_none_or(|t| now - t > 60_000) {
-        sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?").bind(now).bind(id).execute(pool).await?;
+        sqlx::query("UPDATE api_tokens SET last_used_at = $1 WHERE id = $2").bind(now).bind(id).execute(pool).await?;
     }
-    Ok(Some(TokenAuth { id, name, read_only, user }))
+    Ok(Some(TokenAuth { id, name, read_only: read_only.0, user }))
 }
 
 // ---- operators -------------------------------------------------------------------
 
 /// Grants or removes operator rights. Only the `trace operator` command calls this.
-pub async fn set_operator(pool: &SqlitePool, email: &str, on: bool) -> Result<User> {
+pub async fn set_operator(pool: &Pool, email: &str, on: bool) -> Result<User> {
     let user = find_user(pool, email).await?.with_context(|| format!("no person with the email {email}"))?;
-    sqlx::query("UPDATE users SET is_operator = ? WHERE id = ?").bind(on).bind(user.id).execute(pool).await?;
+    sqlx::query("UPDATE users SET is_operator = $1 WHERE id = $2").bind(Flag(on)).bind(user.id).execute(pool).await?;
     let action = if on { "operator.granted" } else { "operator.revoked" };
     audit(pool, user.account_id, "cli", action, &user.email).await?;
     Ok(User { is_operator: on, ..user })
 }
 
-pub async fn operators(pool: &SqlitePool) -> Result<Vec<User>> {
+pub async fn operators(pool: &Pool) -> Result<Vec<User>> {
     let rows: Vec<UserRow> = sqlx::query_as(&format!("SELECT {USER_COLS} FROM users WHERE is_operator = 1 ORDER BY email")).fetch_all(pool).await?;
     rows.into_iter().map(user_from).collect()
 }
@@ -753,13 +755,13 @@ pub async fn operators(pool: &SqlitePool) -> Result<Vec<User>> {
 // ---- audit log -------------------------------------------------------------------
 
 /// Records who changed what: team, security settings, tokens and privacy rules.
-pub async fn audit(pool: &SqlitePool, account_id: i64, actor: &str, action: &str, detail: &str) -> Result<()> {
+pub async fn audit(pool: &Pool, account_id: i64, actor: &str, action: &str, detail: &str) -> Result<()> {
     audit_site(pool, account_id, None, actor, action, detail).await
 }
 
 /// [`audit`] for an entry about one website.
-pub async fn audit_site(pool: &SqlitePool, account_id: i64, project_id: Option<i64>, actor: &str, action: &str, detail: &str) -> Result<()> {
-    sqlx::query("INSERT INTO audit_log (account_id, project_id, actor, action, detail, at) VALUES (?, ?, ?, ?, ?, ?)")
+pub async fn audit_site(pool: &Pool, account_id: i64, project_id: Option<i64>, actor: &str, action: &str, detail: &str) -> Result<()> {
+    sqlx::query("INSERT INTO audit_log (account_id, project_id, actor, action, detail, at) VALUES ($1, $2, $3, $4, $5, $6)")
         .bind(account_id)
         .bind(project_id)
         .bind(actor)
@@ -779,9 +781,9 @@ pub struct AuditEntry {
     pub at: i64,
 }
 
-pub async fn audit_log(pool: &SqlitePool, account_id: i64, limit: i64) -> Result<Vec<AuditEntry>> {
+pub async fn audit_log(pool: &Pool, account_id: i64, limit: i64) -> Result<Vec<AuditEntry>> {
     let rows: Vec<(String, String, String, i64)> =
-        sqlx::query_as("SELECT actor, action, detail, at FROM audit_log WHERE account_id = ? ORDER BY id DESC LIMIT ?")
+        sqlx::query_as("SELECT actor, action, detail, at FROM audit_log WHERE account_id = $1 ORDER BY id DESC LIMIT $2")
             .bind(account_id)
             .bind(limit)
             .fetch_all(pool)
@@ -815,8 +817,8 @@ mod tests {
 
     #[tokio::test]
     async fn invite_session_and_second_factor_flow() {
-        let path = std::env::temp_dir().join(format!("trace-auth-{}.db", crate::util::new_key()));
-        let pool = crate::db::connect(path.to_str().unwrap()).await.unwrap();
+        let path = crate::db::test_target("auth").await;
+        let pool = crate::db::connect(&path).await.unwrap();
         let p = crate::db::create_account(&pool, "Acme", None).await.unwrap().id;
 
         let owner = create_user(&pool, p, "Owner@Example.com", "Olu", "a long enough password", Role::Owner).await.unwrap();
@@ -871,19 +873,19 @@ mod tests {
 
         assert!(set_operator(&pool, "owner@example.com", true).await.unwrap().is_operator);
         assert_eq!(operators(&pool).await.unwrap().len(), 1);
-        let _ = std::fs::remove_file(path);
+        crate::db::drop_test_target(&path).await;
     }
 
     #[tokio::test]
     async fn member_limit_counts_pending_invites() {
-        let path = std::env::temp_dir().join(format!("trace-limit-{}.db", crate::util::new_key()));
-        let pool = crate::db::connect(path.to_str().unwrap()).await.unwrap();
+        let path = crate::db::test_target("limit").await;
+        let pool = crate::db::connect(&path).await.unwrap();
         let a = crate::db::create_account(&pool, "Free one", Some("free")).await.unwrap().id; // 3 members
         let owner = create_user(&pool, a, "o@x.example", "", "a long enough password", Role::Owner).await.unwrap();
         create_user(&pool, a, "u@x.example", "", "a long enough password", Role::User).await.unwrap();
         create_invite(&pool, a, "p@x.example", Role::User, Some(owner.id)).await.unwrap();
         let refused = create_invite(&pool, a, "q@x.example", Role::User, Some(owner.id)).await.unwrap_err();
         assert!(refused.to_string().contains("3 members"), "{refused}");
-        let _ = std::fs::remove_file(path);
+        crate::db::drop_test_target(&path).await;
     }
 }

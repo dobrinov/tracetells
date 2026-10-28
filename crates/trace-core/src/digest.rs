@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::Pool;
 
 use crate::kpi;
 use crate::util::{DAY_MS, now_ms};
@@ -128,25 +128,25 @@ impl Digest {
     }
 }
 
-pub async fn build(pool: &SqlitePool, project_id: i64, days: u32) -> Result<Digest> {
+pub async fn build(pool: &Pool, project_id: i64, days: u32) -> Result<Digest> {
     let to = now_ms();
     let from = to - days as i64 * DAY_MS;
     let p = project_id;
 
     let (sessions, visitors): (i64, i64) = sqlx::query_as(
-        "SELECT COUNT(*), COUNT(DISTINCT visitor_id) FROM sessions WHERE project_id = ? AND started_at >= ? AND started_at < ?",
+        "SELECT COUNT(*), COUNT(DISTINCT visitor_id) FROM sessions WHERE project_id = $1 AND started_at >= $2 AND started_at < $3",
     )
     .bind(p).bind(from).bind(to)
     .fetch_one(pool).await?;
     let (events, pageviews): (i64, i64) = sqlx::query_as(
-        "SELECT COUNT(*), COALESCE(SUM(type = 'pageview'), 0) FROM events WHERE project_id = ? AND ts >= ? AND ts < ?",
+        "SELECT COUNT(*), COUNT(CASE WHEN type = 'pageview' THEN 1 END) FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3",
     )
     .bind(p).bind(from).bind(to)
     .fetch_one(pool).await?;
 
     let devices = sqlx::query_as::<_, (String, i64)>(
         "SELECT COALESCE(device, 'unknown'), COUNT(*) FROM sessions
-         WHERE project_id = ? AND started_at >= ? AND started_at < ? GROUP BY 1 ORDER BY 2 DESC",
+         WHERE project_id = $1 AND started_at >= $2 AND started_at < $3 GROUP BY 1 ORDER BY 2 DESC",
     )
     .bind(p).bind(from).bind(to)
     .fetch_all(pool).await?
@@ -156,9 +156,9 @@ pub async fn build(pool: &SqlitePool, project_id: i64, days: u32) -> Result<Dige
 
     let exits: HashMap<String, i64> = sqlx::query_as::<_, (String, i64)>(
         "SELECT path, COUNT(*) FROM (
-           SELECT path, MAX(ts) FROM events
-           WHERE project_id = ? AND type = 'pageview' AND ts >= ? AND ts < ? GROUP BY session_id
-         ) GROUP BY path",
+           SELECT path, ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY ts DESC, id DESC) AS nth FROM events
+           WHERE project_id = $1 AND type = 'pageview' AND ts >= $2 AND ts < $3
+         ) AS last_views WHERE nth = 1 AND path IS NOT NULL GROUP BY path",
     )
     .bind(p).bind(from).bind(to)
     .fetch_all(pool).await?
@@ -169,7 +169,7 @@ pub async fn build(pool: &SqlitePool, project_id: i64, days: u32) -> Result<Dige
         "SELECT path,
            AVG(CASE WHEN type = 'scroll' THEN value END),
            AVG(CASE WHEN type = 'leave' THEN value END) / 1000.0
-         FROM events WHERE project_id = ? AND type IN ('scroll', 'leave') AND ts >= ? AND ts < ?
+         FROM events WHERE project_id = $1 AND type IN ('scroll', 'leave') AND ts >= $2 AND ts < $3
          GROUP BY path",
     )
     .bind(p).bind(from).bind(to)
@@ -180,7 +180,7 @@ pub async fn build(pool: &SqlitePool, project_id: i64, days: u32) -> Result<Dige
 
     let pages = sqlx::query_as::<_, (String, i64, i64)>(
         "SELECT path, COUNT(*), COUNT(DISTINCT session_id) FROM events
-         WHERE project_id = ? AND type = 'pageview' AND ts >= ? AND ts < ? AND path IS NOT NULL
+         WHERE project_id = $1 AND type = 'pageview' AND ts >= $2 AND ts < $3 AND path IS NOT NULL
          GROUP BY path ORDER BY 2 DESC LIMIT 25",
     )
     .bind(p).bind(from).bind(to)
@@ -204,8 +204,8 @@ pub async fn build(pool: &SqlitePool, project_id: i64, days: u32) -> Result<Dige
     let transitions = sqlx::query_as::<_, (String, String, i64)>(
         "SELECT prev, path, COUNT(*) FROM (
            SELECT path, LAG(path) OVER (PARTITION BY session_id ORDER BY ts) AS prev FROM events
-           WHERE project_id = ? AND type = 'pageview' AND ts >= ? AND ts < ?
-         ) WHERE prev IS NOT NULL AND prev <> path GROUP BY prev, path ORDER BY 3 DESC LIMIT 25",
+           WHERE project_id = $1 AND type = 'pageview' AND ts >= $2 AND ts < $3
+         ) AS steps WHERE prev IS NOT NULL AND prev <> path GROUP BY prev, path ORDER BY 3 DESC LIMIT 25",
     )
     .bind(p).bind(from).bind(to)
     .fetch_all(pool).await?
@@ -216,7 +216,7 @@ pub async fn build(pool: &SqlitePool, project_id: i64, days: u32) -> Result<Dige
     let clicks = |kind: &'static str| {
         sqlx::query_as::<_, (String, String, Option<String>, i64, i64)>(
             "SELECT COALESCE(path, ''), COALESCE(selector, ''), MAX(text), COUNT(*), COUNT(DISTINCT session_id) FROM events
-             WHERE project_id = ? AND type = ? AND ts >= ? AND ts < ?
+             WHERE project_id = $1 AND type = $2 AND ts >= $3 AND ts < $4
              GROUP BY path, selector ORDER BY 5 DESC, 4 DESC LIMIT 15",
         )
         .bind(p).bind(kind).bind(from).bind(to)
@@ -229,7 +229,7 @@ pub async fn build(pool: &SqlitePool, project_id: i64, days: u32) -> Result<Dige
     let errors = sqlx::query_as::<_, (String, String, Option<String>, String, i64, i64)>(
         "SELECT COALESCE(name, 'exception'), COALESCE(text, 'Unknown error'), MAX(selector), COALESCE(path, ''),
            COUNT(*), COUNT(DISTINCT session_id) FROM events
-         WHERE project_id = ? AND type = 'error' AND ts >= ? AND ts < ?
+         WHERE project_id = $1 AND type = 'error' AND ts >= $2 AND ts < $3
          GROUP BY 1, text, path ORDER BY 6 DESC, 5 DESC LIMIT 20",
     )
     .bind(p).bind(from).bind(to)
@@ -242,7 +242,7 @@ pub async fn build(pool: &SqlitePool, project_id: i64, days: u32) -> Result<Dige
         "SELECT COALESCE(path, ''), COALESCE(selector, ''),
            COUNT(DISTINCT CASE WHEN type = 'form_start' THEN session_id END),
            COUNT(DISTINCT CASE WHEN type = 'submit' THEN session_id END)
-         FROM events WHERE project_id = ? AND type IN ('form_start', 'submit') AND ts >= ? AND ts < ?
+         FROM events WHERE project_id = $1 AND type IN ('form_start', 'submit') AND ts >= $2 AND ts < $3
          GROUP BY path, selector ORDER BY 3 DESC LIMIT 15",
     )
     .bind(p).bind(from).bind(to)
@@ -261,7 +261,7 @@ pub async fn build(pool: &SqlitePool, project_id: i64, days: u32) -> Result<Dige
     let mut catalogue = crate::config::events(pool, p).await?;
     let mut custom_events: Vec<EventStat> = sqlx::query_as::<_, (String, i64, i64)>(
         "SELECT name, COUNT(*), COUNT(DISTINCT session_id) FROM events
-         WHERE project_id = ? AND type = 'custom' AND name IS NOT NULL AND ts >= ? AND ts < ?
+         WHERE project_id = $1 AND type = 'custom' AND name IS NOT NULL AND ts >= $2 AND ts < $3
          GROUP BY name ORDER BY 2 DESC LIMIT 25",
     )
     .bind(p).bind(from).bind(to)

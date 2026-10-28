@@ -28,7 +28,7 @@ use std::collections::{BTreeMap, HashMap};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use sqlx::SqlitePool;
+use crate::Pool;
 
 use crate::ingest::EVENT_TYPES;
 use crate::model::{Direction, EventMatch, KpiDefinition};
@@ -286,14 +286,14 @@ type StoredKpi = (i64, Option<String>, String, String, String, String, Option<f6
 
 /// Applies a config: upserts KPIs by key, archives KPIs no longer in it,
 /// replaces the event catalogue and records the sync.
-pub async fn apply(pool: &SqlitePool, project_id: i64, parsed: &Parsed, source: &str) -> Result<SyncReport> {
+pub async fn apply(pool: &Pool, project_id: i64, parsed: &Parsed, source: &str) -> Result<SyncReport> {
     let config = &parsed.config;
     let mut report = SyncReport { warnings: parsed.warnings.clone(), events: config.events.len(), ..Default::default() };
     let now = now_ms();
     let mut tx = pool.begin().await?;
 
     let stored: Vec<StoredKpi> = sqlx::query_as(
-        "SELECT id, key, name, description, definition, direction, target, archived_at FROM kpis WHERE project_id = ?",
+        "SELECT id, key, name, description, definition, direction, target, archived_at FROM kpis WHERE project_id = $1",
     )
     .bind(project_id)
     .fetch_all(&mut *tx)
@@ -315,13 +315,13 @@ pub async fn apply(pool: &SqlitePool, project_id: i64, parsed: &Parsed, source: 
                     continue;
                 }
                 sqlx::query(
-                    "UPDATE kpis SET name = ?, description = ?, definition = ?, direction = ?, target = ?, archived_at = NULL WHERE id = ?",
+                    "UPDATE kpis SET name = $1, description = $2, definition = $3, direction = $4, target = $5, archived_at = NULL WHERE id = $6",
                 )
                 .bind(&spec.name)
                 .bind(&spec.description)
                 .bind(&definition)
                 .bind(spec.direction.as_str())
-                .bind(spec.target)
+                .bind(crate::db::Real(spec.target))
                 .bind(id)
                 .execute(&mut *tx)
                 .await?;
@@ -330,7 +330,7 @@ pub async fn apply(pool: &SqlitePool, project_id: i64, parsed: &Parsed, source: 
             None => {
                 sqlx::query(
                     "INSERT INTO kpis (project_id, key, name, description, definition, direction, target, created_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
                 )
                 .bind(project_id)
                 .bind(&spec.key)
@@ -338,7 +338,7 @@ pub async fn apply(pool: &SqlitePool, project_id: i64, parsed: &Parsed, source: 
                 .bind(&spec.description)
                 .bind(&definition)
                 .bind(spec.direction.as_str())
-                .bind(spec.target)
+                .bind(crate::db::Real(spec.target))
                 .bind(now)
                 .execute(&mut *tx)
                 .await?;
@@ -351,14 +351,14 @@ pub async fn apply(pool: &SqlitePool, project_id: i64, parsed: &Parsed, source: 
     for (id, key, name, .., archived_at) in &stored {
         let in_config = key.as_deref().is_some_and(|k| config.kpis.iter().any(|s| s.key == k));
         if !in_config && archived_at.is_none() {
-            sqlx::query("UPDATE kpis SET archived_at = ? WHERE id = ?").bind(now).bind(id).execute(&mut *tx).await?;
+            sqlx::query("UPDATE kpis SET archived_at = $1 WHERE id = $2").bind(now).bind(id).execute(&mut *tx).await?;
             report.archived.push(key.clone().unwrap_or_else(|| name.clone()));
         }
     }
 
-    sqlx::query("DELETE FROM event_definitions WHERE project_id = ?").bind(project_id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM event_definitions WHERE project_id = $1").bind(project_id).execute(&mut *tx).await?;
     for (name, description) in &config.events {
-        sqlx::query("INSERT INTO event_definitions (project_id, name, description) VALUES (?, ?, ?)")
+        sqlx::query("INSERT INTO event_definitions (project_id, name, description) VALUES ($1, $2, $3)")
             .bind(project_id)
             .bind(name)
             .bind(description)
@@ -367,7 +367,7 @@ pub async fn apply(pool: &SqlitePool, project_id: i64, parsed: &Parsed, source: 
     }
 
     sqlx::query(
-        "UPDATE projects SET name = COALESCE(?, name), config = ?, config_synced_at = ?, config_source = ? WHERE id = ?",
+        "UPDATE projects SET name = COALESCE($1, name), config = $2, config_synced_at = $3, config_source = $4 WHERE id = $5",
     )
     .bind(config.product.as_deref())
     .bind(serde_json::to_string(config)?)
@@ -381,9 +381,9 @@ pub async fn apply(pool: &SqlitePool, project_id: i64, parsed: &Parsed, source: 
 }
 
 /// When and from where the config was last synced.
-pub async fn last_sync(pool: &SqlitePool, project_id: i64) -> Result<Option<(i64, String)>> {
+pub async fn last_sync(pool: &Pool, project_id: i64) -> Result<Option<(i64, String)>> {
     let row: Option<(Option<i64>, Option<String>)> =
-        sqlx::query_as("SELECT config_synced_at, config_source FROM projects WHERE id = ?")
+        sqlx::query_as("SELECT config_synced_at, config_source FROM projects WHERE id = $1")
             .bind(project_id)
             .fetch_optional(pool)
             .await?;
@@ -391,9 +391,9 @@ pub async fn last_sync(pool: &SqlitePool, project_id: i64) -> Result<Option<(i64
 }
 
 /// The declared event catalogue.
-pub async fn events(pool: &SqlitePool, project_id: i64) -> Result<BTreeMap<String, String>> {
+pub async fn events(pool: &Pool, project_id: i64) -> Result<BTreeMap<String, String>> {
     let rows: Vec<(String, String)> =
-        sqlx::query_as("SELECT name, description FROM event_definitions WHERE project_id = ? ORDER BY name")
+        sqlx::query_as("SELECT name, description FROM event_definitions WHERE project_id = $1 ORDER BY name")
             .bind(project_id)
             .fetch_all(pool)
             .await?;
@@ -422,11 +422,11 @@ pub struct TrackingHealth {
 
 /// Declared custom events and whether they arrived in the last `days`, plus
 /// events that arrive without being declared.
-pub async fn tracking_health(pool: &SqlitePool, project_id: i64, days: i64) -> Result<TrackingHealth> {
+pub async fn tracking_health(pool: &Pool, project_id: i64, days: i64) -> Result<TrackingHealth> {
     let since = now_ms() - days * crate::util::DAY_MS;
     let seen: Vec<(String, i64, i64, i64)> = sqlx::query_as(
         "SELECT name, COUNT(*), COUNT(DISTINCT session_id), MAX(ts) FROM events
-         WHERE project_id = ? AND type = 'custom' AND name IS NOT NULL AND ts >= ? GROUP BY name ORDER BY 2 DESC",
+         WHERE project_id = $1 AND type = 'custom' AND name IS NOT NULL AND ts >= $2 GROUP BY name ORDER BY 2 DESC",
     )
     .bind(project_id)
     .bind(since)
@@ -519,8 +519,8 @@ mod tests {
 
     #[tokio::test]
     async fn apply_upserts_by_key_and_archives_removed_kpis() {
-        let path = std::env::temp_dir().join(format!("trace-config-{}.db", crate::util::new_key()));
-        let pool = crate::db::connect(path.to_str().unwrap()).await.unwrap();
+        let path = crate::db::test_target("config").await;
+        let pool = crate::db::connect(&path).await.unwrap();
         let (_, project) = crate::db::create_account_with_site(&pool, "Stride", None).await.unwrap();
 
         let first = apply(&pool, project.id, &parse(STRIDE).unwrap(), "test").await.unwrap();
@@ -543,6 +543,6 @@ mod tests {
         assert_eq!((js.id, js.target), (id_before, Some(0.02)), "editing keeps the KPI's id");
         assert_eq!(crate::db::project(&pool, project.id).await.unwrap().name, "Stride");
         assert_eq!(events(&pool, project.id).await.unwrap().len(), 2);
-        let _ = std::fs::remove_file(path);
+        crate::db::drop_test_target(&path).await;
     }
 }

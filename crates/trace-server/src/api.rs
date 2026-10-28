@@ -13,14 +13,14 @@ use serde_json::{Value, json};
 use trace_agent::{ClaudeConfig, Engine};
 use trace_core::model::InsightStatus;
 use trace_core::privacy::{self, HostRules, RuleKind};
-use trace_core::{SqlitePool, config, db, digest, evaluate, insights, ingest, kpi};
+use trace_core::{Pool, config, db, digest, evaluate, insights, ingest, kpi};
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::auth_api::{CurrentSite, SITE_HEADER};
 
 pub struct AppState {
-    pub pool: SqlitePool,
+    pub pool: Pool,
     /// Deprecated shared token; personal API tokens replace it.
     pub admin_token: Option<String>,
     pub claude: Option<ClaudeConfig>,
@@ -46,7 +46,7 @@ pub struct AppState {
 pub type AppStateRef = Arc<AppState>;
 
 impl AppState {
-    pub fn new(pool: SqlitePool, claude: Option<ClaudeConfig>) -> Self {
+    pub fn new(pool: Pool, claude: Option<ClaudeConfig>) -> Self {
         Self {
             pool,
             admin_token: None,
@@ -552,7 +552,7 @@ async fn run_evaluate(State(state): State<AppStateRef>, Extension(CurrentSite(si
 async fn list_runs(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>) -> ApiResult<Json<Value>> {
     let rows: Vec<(i64, String, Option<String>, i64, Option<i64>, i64, Option<String>)> = sqlx::query_as(
         "SELECT id, engine, model, started_at, finished_at, insights_created, error FROM analysis_runs
-         WHERE project_id = ? ORDER BY id DESC LIMIT 20",
+         WHERE project_id = $1 ORDER BY id DESC LIMIT 20",
     )
     .bind(site.id)
     .fetch_all(&state.pool)
@@ -756,9 +756,9 @@ mod isolation_tests {
         ("GET", "onboarding"), ("POST", "onboarding/privacy-reviewed"),
     ];
 
-    async fn app() -> (tower::util::MapRequest<Router, fn(Request) -> Request>, AppStateRef, std::path::PathBuf) {
-        let path = std::env::temp_dir().join(format!("trace-api-{}.db", trace_core::util::new_key()));
-        let pool = db::connect(path.to_str().unwrap()).await.unwrap();
+    async fn app() -> (tower::util::MapRequest<Router, fn(Request) -> Request>, AppStateRef, String) {
+        let path = trace_core::db::test_target("api").await;
+        let pool = db::connect(&path).await.unwrap();
         let state = Arc::new(AppState::new(pool, None));
         let router = router(state.clone());
         (tower::Layer::layer(&tower::util::MapRequestLayer::new(route_site_paths as fn(Request) -> Request), router), state, path)
@@ -799,7 +799,7 @@ mod isolation_tests {
         // Their own website works under the same paths.
         let (status, _) = call(&app, "GET", &format!("/api/sites/{}/project", bolt_site.slug), &bolt_admin).await;
         assert_eq!(status, StatusCode::OK);
-        let _ = std::fs::remove_file(path);
+        trace_core::db::drop_test_target(&path).await;
     }
 
     #[tokio::test]
@@ -820,7 +820,7 @@ mod isolation_tests {
         assert_eq!(status, StatusCode::BAD_REQUEST, "two websites: say which");
         let (status, _) = call(&app, "GET", "/api/sites/docs/kpis", &owner).await;
         assert_eq!(status, StatusCode::OK);
-        let _ = std::fs::remove_file(path);
+        trace_core::db::drop_test_target(&path).await;
     }
 
     async fn send<S>(app: &S, req: Request) -> (StatusCode, Value)
@@ -858,7 +858,7 @@ mod isolation_tests {
         }
         let (status, _) = send(&app, json_req("GET", "/api/sites/acme/kpis", ("authorization", &bearer), json!({}))).await;
         assert_eq!(status, StatusCode::OK, "reads still work");
-        let _ = std::fs::remove_file(path);
+        trace_core::db::drop_test_target(&path).await;
     }
 
     #[tokio::test]
@@ -869,10 +869,10 @@ mod isolation_tests {
         assert_eq!(status, StatusCode::FORBIDDEN);
         assert!(body["error"].as_str().unwrap().contains("by invitation"));
         assert!(db::accounts(&state.pool).await.unwrap().is_empty());
-        let _ = std::fs::remove_file(path);
+        trace_core::db::drop_test_target(&path).await;
 
-        let path = std::env::temp_dir().join(format!("trace-signup-{}.db", trace_core::util::new_key()));
-        let pool = db::connect(path.to_str().unwrap()).await.unwrap();
+        let path = trace_core::db::test_target("signup").await;
+        let pool = db::connect(&path).await.unwrap();
         trace_core::plans::set_default(&pool, "free").await.unwrap();
         let mut st = AppState::new(pool, None);
         st.allow_signup = true;
@@ -884,7 +884,7 @@ mod isolation_tests {
         let account = body["account"]["id"].as_i64().unwrap();
         assert_eq!(trace_core::plans::for_account(&state.pool, account).await.unwrap().plan.key, "free");
         assert_eq!(db::sites(&state.pool, account).await.unwrap()[0].slug, "newco", "with a first website");
-        let _ = std::fs::remove_file(path);
+        trace_core::db::drop_test_target(&path).await;
     }
 
     #[tokio::test]
@@ -893,7 +893,7 @@ mod isolation_tests {
         let (acme, shop) = db::create_account_with_site(&state.pool, "Shop", None).await.unwrap();
         let docs = db::create_site(&state.pool, acme.id, "Docs").await.unwrap();
         for site in [shop.id, docs.id] {
-            sqlx::query("INSERT INTO events (project_id, session_id, ts, type) VALUES (?, 's', 1, 'pageview')").bind(site).execute(&state.pool).await.unwrap();
+            sqlx::query("INSERT INTO events (project_id, session_id, ts, type) VALUES ($1, 's', 1, 'pageview')").bind(site).execute(&state.pool).await.unwrap();
         }
         let admin = person(&state, acme.id, "a@acme.example", Role::Admin).await;
         let (status, _) = send(&app, json_req("DELETE", "/api/sites/docs", ("cookie", &admin), json!({ "confirm": "nope" }))).await;
@@ -902,7 +902,7 @@ mod isolation_tests {
         assert_eq!(status, StatusCode::NO_CONTENT);
         let left: Vec<i64> = sqlx::query_scalar("SELECT DISTINCT project_id FROM events").fetch_all(&state.pool).await.unwrap();
         assert_eq!(left, [shop.id]);
-        let _ = std::fs::remove_file(path);
+        trace_core::db::drop_test_target(&path).await;
     }
 
     #[tokio::test]
@@ -932,7 +932,7 @@ mod isolation_tests {
             }
             let _ = std::fs::remove_file(f);
         }
-        let _ = std::fs::remove_file(path);
+        trace_core::db::drop_test_target(&path).await;
     }
 
     #[tokio::test]
@@ -948,18 +948,18 @@ mod isolation_tests {
             let req = Request::builder().method("POST").uri("/v1/collect").body(axum::body::Body::from(batch(n).to_string())).unwrap();
             assert_eq!(app.clone().oneshot(req).await.unwrap().status(), StatusCode::NO_CONTENT);
         }
-        let stored: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events WHERE project_id = ?").bind(shop.id).fetch_one(&state.pool).await.unwrap();
+        let stored: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events WHERE project_id = $1").bind(shop.id).fetch_one(&state.pool).await.unwrap();
         assert_eq!(stored, 5);
         let u = trace_core::usage::get(&state.pool, acme.id, &trace_core::usage::this_month()).await.unwrap();
         assert_eq!((u.events, u.events_dropped), (5, 4));
-        let _ = std::fs::remove_file(path);
+        trace_core::db::drop_test_target(&path).await;
     }
 
     #[tokio::test]
     async fn operator_area_is_for_operators_with_two_step() {
         let (app, state, path) = app().await;
         let (acme, shop) = db::create_account_with_site(&state.pool, "Acme", None).await.unwrap();
-        sqlx::query("INSERT INTO insights (project_id, title, problem, proposal, source, created_at, updated_at) VALUES (?, 'SECRET INSIGHT', 'p', 'x', 'test', 1, 1)")
+        sqlx::query("INSERT INTO insights (project_id, title, problem, proposal, source, created_at, updated_at) VALUES ($1, 'SECRET INSIGHT', 'p', 'x', 'test', 1, 1)")
             .bind(shop.id)
             .execute(&state.pool)
             .await
@@ -986,7 +986,7 @@ mod isolation_tests {
         let (_, token) = auth::create_api_token(&state.pool, acme.id, &user, "t", false).await.unwrap();
         let (status, _) = send(&app, json_req("GET", "/api/operator/overview", ("authorization", &format!("Bearer {token}")), json!({}))).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "never with a token");
-        let _ = std::fs::remove_file(path);
+        trace_core::db::drop_test_target(&path).await;
     }
 
     /// Another account's token, and its owner's session, against every route
@@ -1001,7 +1001,7 @@ mod isolation_tests {
         let (acme_token, _) = auth::create_api_token(&state.pool, acme.id, &acme_owner, "acme agent", false).await.unwrap();
         let (acme_invite, _) = auth::create_invite(&state.pool, acme.id, "new@acme.example", Role::User, Some(acme_owner.id)).await.unwrap();
         let acme_insight: i64 = sqlx::query_scalar(
-            "INSERT INTO insights (project_id, title, problem, proposal, source, created_at, updated_at) VALUES (?, 'ACME SECRET', 'p', 'x', 'test', 1, 1) RETURNING id",
+            "INSERT INTO insights (project_id, title, problem, proposal, source, created_at, updated_at) VALUES ($1, 'ACME SECRET', 'p', 'x', 'test', 1, 1) RETURNING id",
         )
         .bind(acme_site.id)
         .fetch_one(&state.pool)
@@ -1059,12 +1059,12 @@ mod isolation_tests {
         assert_eq!(db::sites(&state.pool, acme.id).await.unwrap().len(), 1, "{}", unchanged("websites"));
         assert_eq!(auth::list_users(&state.pool, acme.id).await.unwrap()[0].role, Role::Owner, "{}", unchanged("people"));
         assert_eq!(auth::pending_invites(&state.pool, acme.id).await.unwrap().len(), 1, "{}", unchanged("invites"));
-        let tokens: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM api_tokens WHERE account_id = ? AND revoked_at IS NULL").bind(acme.id).fetch_one(&state.pool).await.unwrap();
+        let tokens: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM api_tokens WHERE account_id = $1 AND revoked_at IS NULL").bind(acme.id).fetch_one(&state.pool).await.unwrap();
         assert_eq!(tokens, 1, "{}", unchanged("tokens"));
-        let insight: String = sqlx::query_scalar("SELECT status FROM insights WHERE id = ?").bind(acme_insight).fetch_one(&state.pool).await.unwrap();
+        let insight: String = sqlx::query_scalar("SELECT status FROM insights WHERE id = $1").bind(acme_insight).fetch_one(&state.pool).await.unwrap();
         assert_eq!(insight, "new", "{}", unchanged("insights"));
-        let rule: bool = sqlx::query_scalar("SELECT enabled FROM privacy_rules WHERE id = ?").bind(acme_rule).fetch_one(&state.pool).await.unwrap();
-        assert!(rule, "{}", unchanged("privacy rules"));
+        let rule: db::Flag = sqlx::query_scalar("SELECT enabled FROM privacy_rules WHERE id = $1").bind(acme_rule).fetch_one(&state.pool).await.unwrap();
+        assert!(rule.0, "{}", unchanged("privacy rules"));
 
         // Every MCP tool, pointed at Acme's website and ids.
         let rpc = |id: i64, method: &str, params: Value| {
@@ -1094,7 +1094,7 @@ mod isolation_tests {
             let (_, out) = send(&app, rpc(3, "tools/call", json!({ "name": name, "arguments": args }))).await;
             assert!(!out.to_string().contains("ACME"), "{name} through Bolt's website: {out}");
         }
-        let insight: String = sqlx::query_scalar("SELECT status FROM insights WHERE id = ?").bind(acme_insight).fetch_one(&state.pool).await.unwrap();
+        let insight: String = sqlx::query_scalar("SELECT status FROM insights WHERE id = $1").bind(acme_insight).fetch_one(&state.pool).await.unwrap();
         assert_eq!(insight, "new", "{}", unchanged("insights (MCP)"));
 
         // The collector: Acme's rules never reach Bolt's script, and a write key only writes its own website.
@@ -1110,9 +1110,9 @@ mod isolation_tests {
         let batch = json!({ "key": bolt_site.write_key, "project_id": acme_site.id, "sid": "s", "events": [{ "type": "pageview", "path": "/" }] });
         let req = Request::builder().method("POST").uri("/v1/collect").body(axum::body::Body::from(batch.to_string())).unwrap();
         assert_eq!(app.clone().oneshot(req).await.unwrap().status(), StatusCode::NO_CONTENT);
-        let acme_events: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events WHERE project_id = ?").bind(acme_site.id).fetch_one(&state.pool).await.unwrap();
+        let acme_events: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events WHERE project_id = $1").bind(acme_site.id).fetch_one(&state.pool).await.unwrap();
         assert_eq!(acme_events, 0);
-        let _ = std::fs::remove_file(path);
+        trace_core::db::drop_test_target(&path).await;
     }
 
     #[tokio::test]
@@ -1136,13 +1136,13 @@ mod isolation_tests {
         assert_eq!(status, StatusCode::NO_CONTENT);
         let (_, after) = checklist(user).await;
         assert_eq!(after["steps"][2]["done"], true);
-        let logged: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'onboarding.privacy_reviewed' AND project_id = ?")
+        let logged: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'onboarding.privacy_reviewed' AND project_id = $1")
             .bind(site.id)
             .fetch_one(&state.pool)
             .await
             .unwrap();
         assert_eq!(logged, 1);
-        let _ = std::fs::remove_file(path);
+        trace_core::db::drop_test_target(&path).await;
     }
 
     #[test]

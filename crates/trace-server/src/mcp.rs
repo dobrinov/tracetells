@@ -10,7 +10,7 @@ use trace_agent::{ClaudeConfig, Engine};
 use trace_core::auth::Role;
 use trace_core::model::InsightStatus;
 use trace_core::model::Project;
-use trace_core::{SqlitePool, config, db, digest, evaluate, insights, kpi, privacy};
+use trace_core::{Pool, config, db, digest, evaluate, insights, kpi, privacy};
 use serde_json::{Value, json};
 
 /// MCP versions this server speaks, newest first.
@@ -34,7 +34,7 @@ Use get_behaviour_summary for the data behind insights, and get_tracking_health 
 
 /// Who is calling, and what they may do.
 pub struct Context<'a> {
-    pub pool: &'a SqlitePool,
+    pub pool: &'a Pool,
     /// The caller's account: tools only ever see its websites.
     pub account_id: i64,
     pub claude: Option<&'a ClaudeConfig>,
@@ -457,8 +457,8 @@ mod tests {
 
     #[tokio::test]
     async fn handshake_tools_and_calls() {
-        let path = std::env::temp_dir().join(format!("trace-mcp-{}.db", trace_core::util::new_key()));
-        let pool = db::connect(path.to_str().unwrap()).await.unwrap();
+        let path = trace_core::db::test_target("mcp").await;
+        let pool = db::connect(&path).await.unwrap();
         let (acme, _) = db::create_account_with_site(&pool, "Acme", None).await.unwrap();
         let (bolt, _) = db::create_account_with_site(&pool, "Bolt", None).await.unwrap();
         let ctx = Context { pool: &pool, account_id: acme.id, claude: None, actor: "test".into(), role: Role::User, read_only: true };
@@ -499,6 +499,6 @@ mod tests {
         assert_eq!(bad["result"]["structuredContent"]["valid"], false);
         let unknown = handle(&ctx, &json!({ "jsonrpc": "2.0", "id": 6, "method": "nope" })).await.unwrap();
         assert_eq!(unknown["error"]["code"], -32601);
-        let _ = std::fs::remove_file(path);
+        trace_core::db::drop_test_target(&path).await;
     }
 }

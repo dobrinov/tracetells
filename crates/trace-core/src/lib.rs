@@ -18,4 +18,4 @@ pub mod retention;
 pub mod usage;
 pub mod util;
 
-pub use sqlx::SqlitePool;
+pub use sqlx::AnyPool as Pool;

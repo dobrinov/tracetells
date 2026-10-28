@@ -3,8 +3,9 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use sqlx::sqlite::SqliteRow;
-use sqlx::{Row, SqlitePool};
+use sqlx::any::AnyRow;
+use sqlx::Row;
+use crate::Pool;
 
 use crate::model::{Evaluation, Insight, InsightStatus, NewInsight};
 use crate::util::now_ms;
@@ -12,12 +13,12 @@ use crate::util::now_ms;
 const COLS: &str = "id, title, problem, evidence, proposal, acceptance_criteria, pages, kpi_id, expected_impact,
   confidence, status, dismiss_reason, source, fingerprint, created_at, updated_at, released_at";
 
-fn json_list(row: &SqliteRow, col: &str) -> Result<Vec<String>> {
+fn json_list(row: &AnyRow, col: &str) -> Result<Vec<String>> {
     let raw: String = row.try_get(col)?;
     Ok(serde_json::from_str(&raw).unwrap_or_default())
 }
 
-fn from_row(row: &SqliteRow) -> Result<Insight> {
+fn from_row(row: &AnyRow) -> Result<Insight> {
     Ok(Insight {
         id: row.try_get("id")?,
         title: row.try_get("title")?,
@@ -42,11 +43,11 @@ fn from_row(row: &SqliteRow) -> Result<Insight> {
 
 type EvalRow = (i64, i64, Option<f64>, Option<f64>, i64, i64, Option<f64>, String, String, f64, i64);
 
-async fn evaluations(pool: &SqlitePool, project_id: i64) -> Result<HashMap<i64, Evaluation>> {
+async fn evaluations(pool: &Pool, project_id: i64) -> Result<HashMap<i64, Evaluation>> {
     let rows: Vec<EvalRow> = sqlx::query_as(
         "SELECT e.insight_id, e.kpi_id, e.baseline, e.current, e.baseline_n, e.current_n, e.p_value,
                 e.verdict, e.summary, e.window_days, e.created_at
-         FROM evaluations e JOIN insights i ON i.id = e.insight_id WHERE i.project_id = ?",
+         FROM evaluations e JOIN insights i ON i.id = e.insight_id WHERE i.project_id = $1",
     )
     .bind(project_id)
     .fetch_all(pool)
@@ -73,10 +74,10 @@ async fn evaluations(pool: &SqlitePool, project_id: i64) -> Result<HashMap<i64, 
     Ok(out)
 }
 
-pub async fn list(pool: &SqlitePool, project_id: i64, status: Option<InsightStatus>) -> Result<Vec<Insight>> {
+pub async fn list(pool: &Pool, project_id: i64, status: Option<InsightStatus>) -> Result<Vec<Insight>> {
     let sql = match status {
-        Some(_) => format!("SELECT {COLS} FROM insights WHERE project_id = ? AND status = ? ORDER BY updated_at DESC, id DESC"),
-        None => format!("SELECT {COLS} FROM insights WHERE project_id = ? ORDER BY updated_at DESC, id DESC"),
+        Some(_) => format!("SELECT {COLS} FROM insights WHERE project_id = $1 AND status = $2 ORDER BY updated_at DESC, id DESC"),
+        None => format!("SELECT {COLS} FROM insights WHERE project_id = $1 ORDER BY updated_at DESC, id DESC"),
     };
     let mut q = sqlx::query(&sql).bind(project_id);
     if let Some(s) = status {
@@ -93,8 +94,8 @@ pub async fn list(pool: &SqlitePool, project_id: i64, status: Option<InsightStat
         .collect()
 }
 
-pub async fn get(pool: &SqlitePool, project_id: i64, id: i64) -> Result<Option<Insight>> {
-    let row = sqlx::query(&format!("SELECT {COLS} FROM insights WHERE project_id = ? AND id = ?"))
+pub async fn get(pool: &Pool, project_id: i64, id: i64) -> Result<Option<Insight>> {
+    let row = sqlx::query(&format!("SELECT {COLS} FROM insights WHERE project_id = $1 AND id = $2"))
         .bind(project_id)
         .bind(id)
         .fetch_optional(pool)
@@ -107,10 +108,10 @@ pub async fn get(pool: &SqlitePool, project_id: i64, id: i64) -> Result<Option<I
 
 /// Inserts an insight unless one with the same fingerprint or title already exists
 /// (in any status, so dismissed insights stay dismissed). Returns the new id.
-pub async fn insert(pool: &SqlitePool, project_id: i64, insight: &NewInsight) -> Result<Option<i64>> {
+pub async fn insert(pool: &Pool, project_id: i64, insight: &NewInsight) -> Result<Option<i64>> {
     let existing: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM insights WHERE project_id = ?
-           AND ((fingerprint IS NOT NULL AND fingerprint = ?) OR lower(trim(title)) = lower(trim(?)))
+        "SELECT id FROM insights WHERE project_id = $1
+           AND ((fingerprint IS NOT NULL AND fingerprint = $2) OR lower(trim(title)) = lower(trim($3)))
          LIMIT 1",
     )
     .bind(project_id)
@@ -125,7 +126,7 @@ pub async fn insert(pool: &SqlitePool, project_id: i64, insight: &NewInsight) ->
     let id = sqlx::query_scalar(
         "INSERT INTO insights (project_id, title, problem, evidence, proposal, acceptance_criteria, pages, kpi_id,
            expected_impact, confidence, status, source, fingerprint, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?) RETURNING id",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new', $11, $12, $13, $14) RETURNING id",
     )
     .bind(project_id)
     .bind(insight.title.trim())
@@ -147,7 +148,7 @@ pub async fn insert(pool: &SqlitePool, project_id: i64, insight: &NewInsight) ->
 }
 
 pub async fn set_status(
-    pool: &SqlitePool,
+    pool: &Pool,
     project_id: i64,
     id: i64,
     status: InsightStatus,
@@ -157,11 +158,11 @@ pub async fn set_status(
     let reason = reason.map(str::trim).filter(|r| !r.is_empty());
     sqlx::query(
         "UPDATE insights SET
-           status = ?1,
-           updated_at = ?2,
-           dismiss_reason = CASE WHEN ?1 = 'dismissed' THEN ?3 ELSE NULL END,
-           released_at = CASE WHEN ?1 = 'released' AND status <> 'released' THEN ?2 ELSE released_at END
-         WHERE project_id = ?4 AND id = ?5",
+           status = $1,
+           updated_at = $2,
+           dismiss_reason = CASE WHEN $1 = 'dismissed' THEN $3 ELSE NULL END,
+           released_at = CASE WHEN $1 = 'released' AND status <> 'released' THEN $2 ELSE released_at END
+         WHERE project_id = $4 AND id = $5",
     )
     .bind(status.as_str())
     .bind(now)
@@ -174,8 +175,8 @@ pub async fn set_status(
 }
 
 /// Links an insight to a different KPI (or none).
-pub async fn set_kpi(pool: &SqlitePool, project_id: i64, id: i64, kpi_id: Option<i64>) -> Result<Option<Insight>> {
-    sqlx::query("UPDATE insights SET kpi_id = ?, updated_at = ? WHERE project_id = ? AND id = ?")
+pub async fn set_kpi(pool: &Pool, project_id: i64, id: i64, kpi_id: Option<i64>) -> Result<Option<Insight>> {
+    sqlx::query("UPDATE insights SET kpi_id = $1, updated_at = $2 WHERE project_id = $3 AND id = $4")
         .bind(kpi_id)
         .bind(now_ms())
         .bind(project_id)

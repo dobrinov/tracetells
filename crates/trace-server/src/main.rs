@@ -4,6 +4,7 @@ mod auth_api;
 mod demo;
 mod mcp;
 mod operator;
+mod setup;
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -15,12 +16,12 @@ use clap::{Parser, Subcommand, ValueEnum};
 use trace_agent::{ClaudeConfig, Engine};
 use trace_core::model::{InsightStatus, Project};
 use trace_core::util::DAY_MS;
-use trace_core::{SqlitePool, config, db, evaluate, insights, kpi, prompt, retention};
+use trace_core::{Pool, config, db, evaluate, insights, kpi, prompt, retention};
 
 #[derive(Parser)]
 #[command(name = "trace", version, about = "Behaviour analytics for agents: collect, measure, suggest, evaluate.")]
 struct Cli {
-    /// SQLite database file.
+    /// Database: a SQLite file (the default) or a Postgres URL, e.g. postgres://trace@localhost/trace.
     #[arg(long, global = true, env = "TRACE_DB", default_value = "trace.db")]
     db: String,
     /// The website a command is about (its identifier). Can be left out when there is only one.
@@ -32,6 +33,17 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Set up this server: choose SQLite (for trying Trace and development) or
+    /// Postgres (recommended for production), create the tables and save the
+    /// choice to trace.env, which every command reads.
+    Init {
+        /// sqlite or postgres. Asked for when left out.
+        #[arg(long, value_enum)]
+        database: Option<setup::DatabaseKind>,
+        /// Replace a different database already saved in trace.env.
+        #[arg(long)]
+        force: bool,
+    },
     /// Run the collector endpoint, API and dashboard.
     Serve {
         #[arg(long, env = "TRACE_ADDR", default_value = "127.0.0.1:4318")]
@@ -217,8 +229,13 @@ impl From<EngineArg> for Engine {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    // trace.env is read before anything else, while the process has one thread.
+    setup::load_env_file();
+    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
+}
+
+async fn run() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,sqlx=warn".into()),
@@ -227,11 +244,18 @@ async fn main() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
-    let pool = db::connect(&cli.db).await.with_context(|| format!("opening {}", cli.db))?;
+    if let Command::Init { database, force } = cli.command {
+        // --db given explicitly (flag or environment) is used as the answer.
+        let explicit = std::env::args().any(|a| a == "--db" || a.starts_with("--db="))
+            || (std::env::var_os("TRACE_DB").is_some() && !setup::from_env_file("TRACE_DB"));
+        return setup::init(database, explicit.then(|| cli.db.clone()), force).await;
+    }
+    let pool = db::connect(&cli.db).await.with_context(|| format!("opening {}", db::describe(&cli.db)))?;
     let claude = ClaudeConfig::from_env();
     let site = cli.site.as_deref();
 
     match cli.command {
+        Command::Init { .. } => unreachable!("handled before opening the database"),
         Command::Serve { addr, admin_token, evaluate_every, retention_days, public_url, allow_signup, contact_url, demo_site, config: config_file } => {
             if let Some(path) = config_file {
                 let target = db::resolve_site(&pool, site).await.context("--config needs a website (--site)")?;
@@ -302,6 +326,10 @@ async fn main() -> Result<()> {
             // Website paths are rewritten before routing, so the rewrite wraps the whole router.
             let app = tower::Layer::layer(&tower::util::MapRequestLayer::new(api::route_site_paths), app);
             let listener = tokio::net::TcpListener::bind(addr).await?;
+            tracing::info!("Database: {}", db::describe(&cli.db));
+            if let Some(warning) = setup::sqlite_in_production(&cli.db, &addr, Some(&public_url)) {
+                tracing::warn!("{warning}");
+            }
             tracing::info!("Trace listening on http://{addr}");
             axum::serve(listener, axum::ServiceExt::<axum::extract::Request>::into_make_service_with_connect_info::<SocketAddr>(app))
                 .with_graceful_shutdown(async {
@@ -410,7 +438,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn all_sites(pool: &SqlitePool) -> Result<Vec<Project>> {
+async fn all_sites(pool: &Pool) -> Result<Vec<Project>> {
     let mut out = Vec::new();
     for a in db::accounts(pool).await? {
         out.extend(db::sites(pool, a.id).await?);
@@ -418,7 +446,7 @@ async fn all_sites(pool: &SqlitePool) -> Result<Vec<Project>> {
     Ok(out)
 }
 
-async fn evaluate_all(pool: &SqlitePool) -> Result<()> {
+async fn evaluate_all(pool: &Pool) -> Result<()> {
     for s in all_sites(pool).await? {
         evaluate::run(pool, s.id, evaluate::Options::default()).await?;
     }
@@ -426,7 +454,7 @@ async fn evaluate_all(pool: &SqlitePool) -> Result<()> {
 }
 
 /// An account by id or name, or the only account when there is one.
-async fn resolve_account(pool: &SqlitePool, which: Option<&str>) -> Result<db::Account> {
+async fn resolve_account(pool: &Pool, which: Option<&str>) -> Result<db::Account> {
     let accounts = db::accounts(pool).await?;
     let names = || accounts.iter().map(|a| format!("{} ({})", a.id, a.name)).collect::<Vec<_>>().join(", ");
     match which {
@@ -472,7 +500,7 @@ fn source_of(path: &Path) -> String {
     }
 }
 
-async fn apply_file(pool: &SqlitePool, project_id: i64, path: &Path) -> Result<config::SyncReport> {
+async fn apply_file(pool: &Pool, project_id: i64, path: &Path) -> Result<config::SyncReport> {
     let parsed = read_config(path)?;
     let report = config::apply(pool, project_id, &parsed, &source_of(path)).await?;
     tracing::info!(
@@ -529,7 +557,7 @@ fn print_report(r: &config::SyncReport) {
     }
 }
 
-pub async fn render_prompt(pool: &SqlitePool, project: &Project, insight: &trace_core::model::Insight) -> Result<String> {
+pub async fn render_prompt(pool: &Pool, project: &Project, insight: &trace_core::model::Insight) -> Result<String> {
     let kpi = match insight.kpi_id {
         Some(id) => kpi::get(pool, project.id, id).await?,
         None => None,
@@ -544,7 +572,7 @@ pub async fn render_prompt(pool: &SqlitePool, project: &Project, insight: &trace
     Ok(prompt::render(insight, &prompt::PromptContext { product: &project.name, kpi: kpi.as_ref(), kpi_value }))
 }
 
-async fn user_command(pool: &SqlitePool, action: UserAction) -> Result<()> {
+async fn user_command(pool: &Pool, action: UserAction) -> Result<()> {
     use trace_core::auth::{self, Role};
     let find = |email: String| async move { auth::find_user(pool, &email).await?.with_context(|| format!("no person with the email {email}")) };
     match action {
@@ -600,7 +628,7 @@ async fn user_command(pool: &SqlitePool, action: UserAction) -> Result<()> {
     Ok(())
 }
 
-async fn operator_command(pool: &SqlitePool, action: OperatorAction) -> Result<()> {
+async fn operator_command(pool: &Pool, action: OperatorAction) -> Result<()> {
     use trace_core::auth;
     match action {
         OperatorAction::Grant { email } => {
@@ -623,7 +651,7 @@ async fn operator_command(pool: &SqlitePool, action: OperatorAction) -> Result<(
     Ok(())
 }
 
-async fn site_command(pool: &SqlitePool, action: SiteAction) -> Result<()> {
+async fn site_command(pool: &Pool, action: SiteAction) -> Result<()> {
     match action {
         SiteAction::List { account } => {
             let accounts = match account {

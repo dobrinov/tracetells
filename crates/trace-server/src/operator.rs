@@ -62,7 +62,8 @@ async fn overview(State(state): State<AppStateRef>) -> ApiResult<Json<Value>> {
     for a in db::accounts(&state.pool).await? {
         accounts.push(account_summary(&state, &a).await?);
     }
-    Ok(Json(json!({ "plans": plans::list(&state.pool).await?, "accounts": accounts, "limits": plans::LIMITS })))
+    let database = if db::is_postgres(&state.pool) { "postgres" } else { "sqlite" };
+    Ok(Json(json!({ "plans": plans::list(&state.pool).await?, "accounts": accounts, "limits": plans::LIMITS, "database": database })))
 }
 
 async fn account_detail(State(state): State<AppStateRef>, Path(id): Path<i64>) -> ApiResult<Json<Value>> {

@@ -31,6 +31,30 @@ Open the dashboard at http://127.0.0.1:4318 and sign in with the password `1` (d
 
  Then open the Stride shop, instrumented with the collector, at http://127.0.0.1:4319. The shop has four planted problems: product images that look clickable but aren't, a "Pay now" button that takes 3 seconds with no feedback, a pricing toggle that throws, and a signup form that wipes itself on a bad phone number. Your clicks show up in the dashboard next to the simulated history.
 
+## Install on a server
+
+```sh
+cargo build --release
+./target/release/trace init     # choose where Trace keeps its data
+./target/release/trace serve    # prints a one-time link for creating the first account
+```
+
+`trace init` asks which database to use, checks that it works, creates Trace's tables and saves the choice as `TRACE_DB` in `trace.env`. Every `trace` command reads that file from the folder it runs in (or the file named by `TRACE_ENV_FILE`); real environment variables win over it.
+
+| | When | `TRACE_DB` |
+|---|---|---|
+| **SQLite** (the default) | Trying Trace, development, a few small websites. Nothing to install: one file next to the server. | `trace.db` |
+| **Postgres** (recommended for production) | A server other people rely on. Writes don't queue behind a single writer, and you get Postgres's backups and replication. Needs Postgres 10 or newer. | `postgres://trace:PASSWORD@localhost/trace` |
+
+For Postgres, create an empty database and a user that owns it first; Trace adds new columns itself on upgrade:
+
+```sh
+createuser trace --pwprompt && createdb trace --owner trace
+trace init --database postgres --db postgres://trace:PASSWORD@localhost/trace
+```
+
+Without a terminal (scripts, provisioning), pass `--database sqlite|postgres` and `--db`. `trace init` won't replace a different database already saved in `trace.env` unless you confirm or pass `--force`, and data isn't copied between the two: a new database starts empty. On start, `trace serve` logs which database it uses (never the password) and warns when a server reachable from outside runs on SQLite; the operator **Admin** area shows the same advice. With systemd, point `EnvironmentFile=` at `trace.env`. Back up SQLite with Litestream or `sqlite3 trace.db ".backup backup.db"`, and Postgres with its own tools.
+
 ## First run
 
 A new account opens on **Get started**, a checklist for its first website that ticks itself off as Trace sees each step happen:
@@ -278,7 +302,8 @@ Multi-page sites keep one session across page loads (30 minutes of inactivity st
 
 | Variable | Default | |
 |---|---|---|
-| `TRACE_DB` | `trace.db` | SQLite file |
+| `TRACE_DB` | `trace.db` | SQLite file, or a Postgres URL (see [Install on a server](#install-on-a-server)) |
+| `TRACE_ENV_FILE` | `trace.env` | Settings file every command reads; written by `trace init` |
 | `TRACE_ADDR` | `127.0.0.1:4318` | Listen address |
 | `TRACE_SITE` | – | Website for commands that work on one (its short name) |
 | `TRACE_CONFIG` | – | `trace.json` for `serve` to apply and watch (needs `--site`) |
@@ -300,6 +325,7 @@ On the first-party API, the analyst opts into server-side refusal fallbacks (`fa
 
 ```
 trace [--site S] ...
+           init [--database sqlite|postgres] [--db TARGET] [--force]   # choose the database, save it to trace.env
            serve [--config trace.json] [--demo-site ADDR] [--allow-signup] [--contact-url URL]
            check [FILE] | push [FILE] [--server URL --token T]
            analyze [--engine auto|claude|heuristics] [--days 14] [--max-insights 5] | evaluate
@@ -316,6 +342,8 @@ trace [--site S] ...
 `GET /d.js?k=WRITE_KEY` (collector) · `POST /v1/collect` (write key) · `POST /mcp` (MCP, API token) · with an API token: `GET /api/sites` · `GET /api/plan` · and per website, under `/api/sites/{site}`: `GET|POST /config` · `GET /kpis` · `GET /digest?days=14` · `GET /insights?status=` · `GET /insights/{id}/prompt` · `POST /insights/{id}/status` · `POST /insights/{id}/kpi` · `POST /analyze` · `POST /evaluate` · `GET /runs`
 
 ## Contributing
+
+Tests run on SQLite by default; `TRACE_TEST_POSTGRES=postgres://localhost/postgres cargo test` runs the same suite on Postgres, giving each test its own throwaway database on that server.
 
 Contributions come in as OpenSpec changes filed as GitHub issues. Explore the problem with `/opsx:explore`, draft the change with `/opsx:propose`, then run `scripts/openspec-issue.sh <change-id>` to validate it and open the issue. An automated check validates every proposal, and maintainers review it for privacy and site impact. See [CONTRIBUTING.md](CONTRIBUTING.md), and report security problems privately ([SECURITY.md](SECURITY.md)).
 

@@ -12,7 +12,7 @@ use axum::routing::get;
 use trace_core::model::{InsightStatus, NewInsight};
 use trace_core::util::{DAY_MS, now_ms};
 use trace_core::model::Project;
-use trace_core::{SqlitePool, config, db, insights, kpi};
+use trace_core::{Pool, config, db, insights, kpi};
 
 const SHOP_HTML: &str = include_str!("../assets/shop/index.html");
 const SHOP_JS: &str = include_str!("../assets/shop/shop.js");
@@ -56,13 +56,13 @@ const DEMO_PASSWORD: &str = "1";
 /// The demo's accounts: the operator's own on `owner` with two websites, a
 /// friend's on `friend` and a tester's on `free`, with one person per role.
 /// Returns the Stride shop, which gets the simulated traffic.
-async fn seed_accounts(pool: &SqlitePool) -> Result<Project> {
+async fn seed_accounts(pool: &Pool) -> Result<Project> {
     use trace_core::auth::{Role, hash_password, set_operator};
     let hash = hash_password(DEMO_PASSWORD)?;
     let add_user = |account: i64, email: &'static str, name: &'static str, role: Role| {
         let hash = hash.clone();
         async move {
-            sqlx::query("INSERT INTO users (account_id, email, name, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+            sqlx::query("INSERT INTO users (account_id, email, name, password_hash, role, created_at) VALUES ($1, $2, $3, $4, $5, $6)")
                 .bind(account)
                 .bind(email)
                 .bind(name)
@@ -151,7 +151,7 @@ impl Session {
     }
 }
 
-pub async fn seed(pool: &SqlitePool, sessions: usize) -> Result<()> {
+pub async fn seed(pool: &Pool, sessions: usize) -> Result<()> {
     let existing: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
         .fetch_one(pool)
         .await?;
@@ -268,7 +268,7 @@ pub async fn seed(pool: &SqlitePool, sessions: usize) -> Result<()> {
         };
         sqlx::query(
             "INSERT INTO sessions (id, project_id, visitor_id, started_at, last_seen_at, device, entry_path)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
         )
         .bind(&sid)
         .bind(project_id)
@@ -282,7 +282,7 @@ pub async fn seed(pool: &SqlitePool, sessions: usize) -> Result<()> {
         for (ts, e) in s.events {
             sqlx::query(
                 "INSERT INTO events (project_id, session_id, ts, type, path, selector, text, name, value)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
             )
             .bind(project_id)
             .bind(&sid)
@@ -292,7 +292,7 @@ pub async fn seed(pool: &SqlitePool, sessions: usize) -> Result<()> {
             .bind(&e.selector)
             .bind(&e.text)
             .bind(&e.name)
-            .bind(e.value)
+            .bind(trace_core::db::Real(e.value))
             .execute(&mut *tx)
             .await?;
             n_events += 1;
@@ -327,7 +327,7 @@ pub async fn seed(pool: &SqlitePool, sessions: usize) -> Result<()> {
     .await?
     .expect("fresh database");
     insights::set_status(pool, project_id, released, InsightStatus::Released, None).await?;
-    sqlx::query("UPDATE insights SET released_at = ? WHERE id = ?")
+    sqlx::query("UPDATE insights SET released_at = $1 WHERE id = $2")
         .bind(released_at)
         .bind(released)
         .execute(pool)

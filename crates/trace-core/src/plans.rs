@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::Pool;
 
 use crate::util::now_ms;
 
@@ -93,12 +93,12 @@ const BUILT_IN: &[(&str, &str, Limits)] = &[
 
 /// Adds missing built-in templates. On a server with no templates yet, makes
 /// `default_key` the default (falling back to `unlimited`).
-pub async fn seed(pool: &SqlitePool, default_key: Option<&str>) -> Result<()> {
+pub async fn seed(pool: &Pool, default_key: Option<&str>) -> Result<()> {
     let first_start: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM plans").fetch_one(pool).await?;
     for (key, name, l) in BUILT_IN {
         sqlx::query(
-            "INSERT OR IGNORE INTO plans (key, name, retention_days, max_sites, monthly_events, max_members, monthly_ai_runs, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO plans (key, name, retention_days, max_sites, monthly_events, max_members, monthly_ai_runs, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
         )
         .bind(key)
         .bind(name)
@@ -118,24 +118,24 @@ pub async fn seed(pool: &SqlitePool, default_key: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-type PlanRow = (i64, String, String, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, bool);
+type PlanRow = (i64, String, String, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, crate::db::Flag);
 const COLS: &str = "id, key, name, retention_days, max_sites, monthly_events, max_members, monthly_ai_runs, is_default";
 
 fn from_row((id, key, name, retention_days, max_sites, monthly_events, max_members, monthly_ai_runs, is_default): PlanRow) -> Plan {
-    Plan { id, key, name, is_default, limits: Limits { retention_days, max_sites, monthly_events, max_members, monthly_ai_runs } }
+    Plan { id, key, name, is_default: is_default.0, limits: Limits { retention_days, max_sites, monthly_events, max_members, monthly_ai_runs } }
 }
 
-pub async fn list(pool: &SqlitePool) -> Result<Vec<Plan>> {
+pub async fn list(pool: &Pool) -> Result<Vec<Plan>> {
     let rows: Vec<PlanRow> = sqlx::query_as(&format!("SELECT {COLS} FROM plans ORDER BY id")).fetch_all(pool).await?;
     Ok(rows.into_iter().map(from_row).collect())
 }
 
-pub async fn by_key(pool: &SqlitePool, key: &str) -> Result<Option<Plan>> {
-    let row: Option<PlanRow> = sqlx::query_as(&format!("SELECT {COLS} FROM plans WHERE key = ?")).bind(key).fetch_optional(pool).await?;
+pub async fn by_key(pool: &Pool, key: &str) -> Result<Option<Plan>> {
+    let row: Option<PlanRow> = sqlx::query_as(&format!("SELECT {COLS} FROM plans WHERE key = $1")).bind(key).fetch_optional(pool).await?;
     Ok(row.map(from_row))
 }
 
-pub async fn default_plan(pool: &SqlitePool) -> Result<Plan> {
+pub async fn default_plan(pool: &Pool) -> Result<Plan> {
     let row: Option<PlanRow> = sqlx::query_as(&format!("SELECT {COLS} FROM plans WHERE is_default = 1 LIMIT 1")).fetch_optional(pool).await?;
     match row {
         Some(r) => Ok(from_row(r)),
@@ -143,9 +143,9 @@ pub async fn default_plan(pool: &SqlitePool) -> Result<Plan> {
     }
 }
 
-pub async fn set_default(pool: &SqlitePool, key: &str) -> Result<()> {
+pub async fn set_default(pool: &Pool, key: &str) -> Result<()> {
     by_key(pool, key).await?.with_context(|| format!("no plan {key:?}"))?;
-    sqlx::query("UPDATE plans SET is_default = (key = ?)").bind(key).execute(pool).await?;
+    sqlx::query("UPDATE plans SET is_default = CASE WHEN key = $1 THEN 1 ELSE 0 END").bind(key).execute(pool).await?;
     Ok(())
 }
 
@@ -163,7 +163,7 @@ fn check_limits(l: &Limits) -> Result<()> {
     Ok(())
 }
 
-pub async fn create(pool: &SqlitePool, key: &str, name: &str, l: &Limits) -> Result<Plan> {
+pub async fn create(pool: &Pool, key: &str, name: &str, l: &Limits) -> Result<Plan> {
     check_key(key)?;
     check_limits(l)?;
     if by_key(pool, key).await?.is_some() {
@@ -171,7 +171,7 @@ pub async fn create(pool: &SqlitePool, key: &str, name: &str, l: &Limits) -> Res
     }
     sqlx::query(
         "INSERT INTO plans (key, name, retention_days, max_sites, monthly_events, max_members, monthly_ai_runs, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
     )
     .bind(key)
     .bind(name.trim())
@@ -186,10 +186,10 @@ pub async fn create(pool: &SqlitePool, key: &str, name: &str, l: &Limits) -> Res
     by_key(pool, key).await?.context("plan was just created")
 }
 
-pub async fn update(pool: &SqlitePool, key: &str, name: &str, l: &Limits) -> Result<Plan> {
+pub async fn update(pool: &Pool, key: &str, name: &str, l: &Limits) -> Result<Plan> {
     check_limits(l)?;
     let r = sqlx::query(
-        "UPDATE plans SET name = ?, retention_days = ?, max_sites = ?, monthly_events = ?, max_members = ?, monthly_ai_runs = ? WHERE key = ?",
+        "UPDATE plans SET name = $1, retention_days = $2, max_sites = $3, monthly_events = $4, max_members = $5, monthly_ai_runs = $6 WHERE key = $7",
     )
     .bind(name.trim())
     .bind(l.retention_days)
@@ -214,27 +214,27 @@ pub struct AccountPlan {
     pub effective: Limits,
 }
 
-pub async fn for_account(pool: &SqlitePool, account_id: i64) -> Result<AccountPlan> {
-    let (plan_id, overrides): (i64, String) = sqlx::query_as("SELECT plan_id, overrides FROM accounts WHERE id = ?")
+pub async fn for_account(pool: &Pool, account_id: i64) -> Result<AccountPlan> {
+    let (plan_id, overrides): (i64, String) = sqlx::query_as("SELECT plan_id, overrides FROM accounts WHERE id = $1")
         .bind(account_id)
         .fetch_one(pool)
         .await
         .context("no such account")?;
-    let row: PlanRow = sqlx::query_as(&format!("SELECT {COLS} FROM plans WHERE id = ?")).bind(plan_id).fetch_one(pool).await?;
+    let row: PlanRow = sqlx::query_as(&format!("SELECT {COLS} FROM plans WHERE id = $1")).bind(plan_id).fetch_one(pool).await?;
     let plan = from_row(row);
     let overrides: Overrides = serde_json::from_str(&overrides).unwrap_or_default();
     Ok(AccountPlan { effective: effective(&plan.limits, &overrides), plan, overrides })
 }
 
-pub async fn set_account_plan(pool: &SqlitePool, account_id: i64, key: &str) -> Result<()> {
+pub async fn set_account_plan(pool: &Pool, account_id: i64, key: &str) -> Result<()> {
     let plan = by_key(pool, key).await?.with_context(|| format!("no plan {key:?}"))?;
-    sqlx::query("UPDATE accounts SET plan_id = ? WHERE id = ?").bind(plan.id).bind(account_id).execute(pool).await?;
+    sqlx::query("UPDATE accounts SET plan_id = $1 WHERE id = $2").bind(plan.id).bind(account_id).execute(pool).await?;
     Ok(())
 }
 
-pub async fn set_overrides(pool: &SqlitePool, account_id: i64, overrides: &Overrides) -> Result<()> {
+pub async fn set_overrides(pool: &Pool, account_id: i64, overrides: &Overrides) -> Result<()> {
     validate_overrides(overrides)?;
-    sqlx::query("UPDATE accounts SET overrides = ? WHERE id = ?")
+    sqlx::query("UPDATE accounts SET overrides = $1 WHERE id = $2")
         .bind(serde_json::to_string(overrides)?)
         .bind(account_id)
         .execute(pool)

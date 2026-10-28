@@ -2,7 +2,7 @@
 //! window before and after the release with a two-sided Welch test.
 
 use anyhow::Result;
-use sqlx::SqlitePool;
+use crate::Pool;
 
 use crate::model::{Evaluation, InsightStatus, Verdict};
 use crate::util::{DAY_MS, now_ms};
@@ -25,7 +25,7 @@ impl Default for Options {
 }
 
 /// Evaluates every released insight that is linked to a KPI and stores the result.
-pub async fn run(pool: &SqlitePool, project_id: i64, opts: Options) -> Result<Vec<Evaluation>> {
+pub async fn run(pool: &Pool, project_id: i64, opts: Options) -> Result<Vec<Evaluation>> {
     let mut out = Vec::new();
     for insight in insights::list(pool, project_id, Some(InsightStatus::Released)).await? {
         let (Some(kpi_id), Some(released_at)) = (insight.kpi_id, insight.released_at) else { continue };
@@ -98,18 +98,18 @@ pub async fn run(pool: &SqlitePool, project_id: i64, opts: Options) -> Result<Ve
         };
         sqlx::query(
             "INSERT INTO evaluations (insight_id, kpi_id, baseline, current, baseline_n, current_n, p_value, verdict, summary, window_days, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              ON CONFLICT(insight_id) DO UPDATE SET kpi_id = excluded.kpi_id, baseline = excluded.baseline, current = excluded.current,
                baseline_n = excluded.baseline_n, current_n = excluded.current_n, p_value = excluded.p_value, verdict = excluded.verdict,
                summary = excluded.summary, window_days = excluded.window_days, created_at = excluded.created_at",
         )
         .bind(eval.insight_id)
         .bind(eval.kpi_id)
-        .bind(eval.baseline)
-        .bind(eval.current)
+        .bind(crate::db::Real(eval.baseline))
+        .bind(crate::db::Real(eval.current))
         .bind(eval.baseline_n)
         .bind(eval.current_n)
-        .bind(eval.p_value)
+        .bind(crate::db::Real(eval.p_value))
         .bind(eval.verdict.as_str())
         .bind(&eval.summary)
         .bind(eval.window_days)

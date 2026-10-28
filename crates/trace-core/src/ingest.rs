@@ -3,7 +3,7 @@
 
 use anyhow::{Result, bail};
 use serde::Deserialize;
-use sqlx::SqlitePool;
+use crate::Pool;
 
 use crate::privacy::{HostRules, clean_props_with, clean_user_id, redact_path, redact_with, referrer_origin};
 use crate::util::{DAY_MS, now_ms, truncate};
@@ -74,7 +74,7 @@ fn device(vw: Option<u32>) -> Option<&'static str> {
 
 /// Stores a batch and returns how many events were kept.
 pub async fn store(
-    pool: &SqlitePool,
+    pool: &Pool,
     project_id: i64,
     batch: Batch,
     user_agent: Option<&str>,
@@ -121,9 +121,9 @@ pub async fn store(
     let mut tx = pool.begin().await?;
     sqlx::query(
         "INSERT INTO sessions (id, project_id, visitor_id, user_id, started_at, last_seen_at, device, user_agent, entry_path, referrer)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT(id) DO UPDATE SET
-           last_seen_at = MAX(sessions.last_seen_at, excluded.last_seen_at),
+           last_seen_at = CASE WHEN excluded.last_seen_at > sessions.last_seen_at THEN excluded.last_seen_at ELSE sessions.last_seen_at END,
            user_id = COALESCE(excluded.user_id, sessions.user_id),
            entry_path = COALESCE(sessions.entry_path, excluded.entry_path)
          WHERE sessions.project_id = excluded.project_id",
@@ -153,7 +153,7 @@ pub async fn store(
         let strict = !matches!(e.kind.as_str(), "error" | "custom");
         sqlx::query(
             "INSERT INTO events (project_id, session_id, ts, type, path, selector, text, name, value, props)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
         )
         .bind(project_id)
         .bind(&batch.sid)
@@ -163,21 +163,21 @@ pub async fn store(
         .bind(e.sel.as_deref().map(|v| redact_with(rules, &truncate(v, 512), false)))
         .bind(e.text.as_deref().map(|v| redact_with(rules, &truncate(v, 300), strict)))
         .bind(e.name.as_deref().map(|v| redact_with(rules, &truncate(v, 128), false)))
-        .bind(e.value.filter(|v| v.is_finite()))
+        .bind(crate::db::Real(e.value.filter(|v| v.is_finite())))
         .bind(props)
         .execute(&mut *tx)
         .await?;
     }
     // Proof of collection. Writes are skipped when the value is under a minute
     // old, so busy sites don't turn every batch into extra writes.
-    sqlx::query("UPDATE projects SET last_event_at = ?1 WHERE id = ?2 AND (last_event_at IS NULL OR last_event_at < ?1 - 60000)")
+    sqlx::query("UPDATE projects SET last_event_at = $1 WHERE id = $2 AND (last_event_at IS NULL OR last_event_at < $1 - 60000)")
         .bind(server_now)
         .bind(project_id)
         .execute(&mut *tx)
         .await?;
     if let Some(origin) = origin.and_then(referrer_origin) {
         sqlx::query(
-            "INSERT INTO event_sources (project_id, origin, first_seen, last_seen) VALUES (?1, ?2, ?3, ?3)
+            "INSERT INTO event_sources (project_id, origin, first_seen, last_seen) VALUES ($1, $2, $3, $3)
              ON CONFLICT(project_id, origin) DO UPDATE SET last_seen = excluded.last_seen
              WHERE event_sources.last_seen < excluded.last_seen - 60000",
         )

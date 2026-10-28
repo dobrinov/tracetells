@@ -226,25 +226,25 @@ pub fn validate_rule(kind: RuleKind, pattern: &str, replacement: Option<&str>) -
     }
 }
 
-type RuleRow = (i64, String, String, Option<String>, String, bool, String, i64);
+type RuleRow = (i64, String, String, Option<String>, String, crate::db::Flag, String, i64);
 
-pub async fn list_rules(pool: &sqlx::SqlitePool, project_id: i64) -> anyhow::Result<Vec<Rule>> {
+pub async fn list_rules(pool: &crate::Pool, project_id: i64) -> anyhow::Result<Vec<Rule>> {
     let rows: Vec<RuleRow> = sqlx::query_as(
         "SELECT id, kind, pattern, replacement, label, enabled, created_by, created_at FROM privacy_rules
-         WHERE project_id = ? ORDER BY kind, id",
+         WHERE project_id = $1 ORDER BY kind, id",
     )
     .bind(project_id)
     .fetch_all(pool)
     .await?;
     rows.into_iter()
         .map(|(id, kind, pattern, replacement, label, enabled, created_by, created_at)| {
-            Ok(Rule { id, kind: kind.parse()?, pattern, replacement, label, enabled, created_by, created_at })
+            Ok(Rule { id, kind: kind.parse()?, pattern, replacement, label, enabled: enabled.0, created_by, created_at })
         })
         .collect()
 }
 
 pub async fn add_rule(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::Pool,
     project_id: i64,
     kind: RuleKind,
     pattern: &str,
@@ -255,7 +255,7 @@ pub async fn add_rule(
     let (pattern, replacement) = validate_rule(kind, pattern, replacement)?;
     Ok(sqlx::query_scalar(
         "INSERT INTO privacy_rules (project_id, kind, pattern, replacement, label, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
     )
     .bind(project_id)
     .bind(kind.as_str())
@@ -268,9 +268,9 @@ pub async fn add_rule(
     .await?)
 }
 
-pub async fn set_rule_enabled(pool: &sqlx::SqlitePool, project_id: i64, id: i64, enabled: bool) -> anyhow::Result<bool> {
-    let r = sqlx::query("UPDATE privacy_rules SET enabled = ? WHERE project_id = ? AND id = ?")
-        .bind(enabled)
+pub async fn set_rule_enabled(pool: &crate::Pool, project_id: i64, id: i64, enabled: bool) -> anyhow::Result<bool> {
+    let r = sqlx::query("UPDATE privacy_rules SET enabled = $1 WHERE project_id = $2 AND id = $3")
+        .bind(crate::db::Flag(enabled))
         .bind(project_id)
         .bind(id)
         .execute(pool)
@@ -278,9 +278,9 @@ pub async fn set_rule_enabled(pool: &sqlx::SqlitePool, project_id: i64, id: i64,
     Ok(r.rows_affected() > 0)
 }
 
-pub async fn delete_rule(pool: &sqlx::SqlitePool, project_id: i64, id: i64) -> anyhow::Result<Option<Rule>> {
+pub async fn delete_rule(pool: &crate::Pool, project_id: i64, id: i64) -> anyhow::Result<Option<Rule>> {
     let rule = list_rules(pool, project_id).await?.into_iter().find(|r| r.id == id);
-    sqlx::query("DELETE FROM privacy_rules WHERE project_id = ? AND id = ?").bind(project_id).bind(id).execute(pool).await?;
+    sqlx::query("DELETE FROM privacy_rules WHERE project_id = $1 AND id = $2").bind(project_id).bind(id).execute(pool).await?;
     Ok(rule)
 }
 
@@ -312,7 +312,7 @@ impl HostRules {
         out
     }
 
-    pub async fn load(pool: &sqlx::SqlitePool, project_id: i64) -> anyhow::Result<Self> {
+    pub async fn load(pool: &crate::Pool, project_id: i64) -> anyhow::Result<Self> {
         Ok(Self::from_rules(&list_rules(pool, project_id).await?))
     }
 

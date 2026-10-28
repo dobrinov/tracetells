@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::SqlitePool;
+use trace_core::Pool;
 use trace_core::model::{Insight, Kpi, NewInsight};
 use trace_core::util::now_ms;
 use trace_core::{digest, insights, kpi};
@@ -166,7 +166,7 @@ async fn ask_claude(
 
 /// Runs one analysis pass and stores the new insights.
 pub async fn analyze(
-    pool: &SqlitePool,
+    pool: &Pool,
     project_id: i64,
     claude_cfg: Option<&ClaudeConfig>,
     opts: &Options,
@@ -178,7 +178,7 @@ pub async fn analyze(
     };
     let started_at = now_ms();
     let run_id: i64 = sqlx::query_scalar(
-        "INSERT INTO analysis_runs (project_id, engine, model, started_at) VALUES (?, ?, ?, ?) RETURNING id",
+        "INSERT INTO analysis_runs (project_id, engine, model, started_at) VALUES ($1, $2, $3, $4) RETURNING id",
     )
     .bind(project_id)
     .bind(if engine_cfg.is_some() { "claude" } else { "heuristics" })
@@ -201,7 +201,7 @@ pub async fn analyze(
             None => duplicates += 1,
         }
     }
-    sqlx::query("UPDATE analysis_runs SET finished_at = ?, insights_created = ?, error = ?, engine = COALESCE(NULLIF(?, ''), engine), model = ? WHERE id = ?")
+    sqlx::query("UPDATE analysis_runs SET finished_at = $1, insights_created = $2, error = $3, engine = COALESCE(NULLIF($4, ''), engine), model = $5 WHERE id = $6")
         .bind(now_ms())
         .bind(created.len() as i64)
         .bind(error.as_deref().or(warning.as_deref()))
@@ -217,7 +217,7 @@ pub async fn analyze(
 }
 
 async fn run(
-    pool: &SqlitePool,
+    pool: &Pool,
     project_id: i64,
     claude_cfg: Option<&ClaudeConfig>,
     opts: &Options,

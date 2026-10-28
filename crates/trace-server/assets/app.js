@@ -1592,6 +1592,11 @@ async function renderAdmin() {
   view.innerHTML = `
     <h1>Admin</h1>
     <p class="sub">Every account on this server: plans, limits and usage. Customers never see plan names, and this area never shows their analytics.</p>
+    ${
+      o.database === "sqlite"
+        ? `<div class="card"><strong>This server keeps its data in SQLite.</strong> <span class="hint">That's fine for trying Trace and a few small websites. For production, use Postgres: run <code>trace init --database postgres</code> on the server and restart it. Data isn't copied between the two.</span></div>`
+        : ""
+    }
     <h2>Accounts</h2>
     ${table(
       [{ label: "Account" }, { label: "Plan" }, { label: "Websites", num: 1 }, { label: "Members", num: 1 }, { label: "Events this month" }, { label: "Claude runs", num: 1 }, { label: "Created" }],

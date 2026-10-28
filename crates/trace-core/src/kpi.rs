@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result};
-use sqlx::SqlitePool;
+use crate::Pool;
 
 use crate::model::{Direction, EventMatch, Kpi, KpiDefinition};
 
@@ -39,9 +39,9 @@ fn from_row((id, key, name, description, definition, direction, target, created_
 const COLS: &str = "id, key, name, description, definition, direction, target, created_at";
 
 /// Active KPIs, in the order they were first defined.
-pub async fn list(pool: &SqlitePool, project_id: i64) -> Result<Vec<Kpi>> {
+pub async fn list(pool: &Pool, project_id: i64) -> Result<Vec<Kpi>> {
     let rows: Vec<KpiRow> =
-        sqlx::query_as(&format!("SELECT {COLS} FROM kpis WHERE project_id = ? AND archived_at IS NULL ORDER BY id"))
+        sqlx::query_as(&format!("SELECT {COLS} FROM kpis WHERE project_id = $1 AND archived_at IS NULL ORDER BY id"))
         .bind(project_id)
         .fetch_all(pool)
         .await?;
@@ -50,9 +50,9 @@ pub async fn list(pool: &SqlitePool, project_id: i64) -> Result<Vec<Kpi>> {
 
 /// A KPI by id, including archived ones: released insights keep being evaluated
 /// against the KPI they targeted.
-pub async fn get(pool: &SqlitePool, project_id: i64, id: i64) -> Result<Option<Kpi>> {
+pub async fn get(pool: &Pool, project_id: i64, id: i64) -> Result<Option<Kpi>> {
     let row: Option<KpiRow> =
-        sqlx::query_as(&format!("SELECT {COLS} FROM kpis WHERE project_id = ? AND id = ?"))
+        sqlx::query_as(&format!("SELECT {COLS} FROM kpis WHERE project_id = $1 AND id = $2"))
             .bind(project_id)
             .bind(id)
             .fetch_optional(pool)
@@ -65,10 +65,10 @@ struct Hit {
     ts: i64,
 }
 
-async fn hits(pool: &SqlitePool, project_id: i64, m: &EventMatch, from: i64, to: i64) -> Result<Vec<Hit>> {
+async fn hits(pool: &Pool, project_id: i64, m: &EventMatch, from: i64, to: i64) -> Result<Vec<Hit>> {
     let rows: Vec<(String, i64, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT session_id, ts, path, selector, name FROM events
-         WHERE project_id = ? AND type = ? AND ts >= ? AND ts < ?",
+         WHERE project_id = $1 AND type = $2 AND ts >= $3 AND ts < $4",
     )
     .bind(project_id)
     .bind(&m.kind)
@@ -83,9 +83,9 @@ async fn hits(pool: &SqlitePool, project_id: i64, m: &EventMatch, from: i64, to:
         .collect())
 }
 
-async fn sessions_started(pool: &SqlitePool, project_id: i64, from: i64, to: i64) -> Result<Vec<String>> {
+async fn sessions_started(pool: &Pool, project_id: i64, from: i64, to: i64) -> Result<Vec<String>> {
     Ok(sqlx::query_scalar(
-        "SELECT id FROM sessions WHERE project_id = ? AND started_at >= ? AND started_at < ?",
+        "SELECT id FROM sessions WHERE project_id = $1 AND started_at >= $2 AND started_at < $3",
     )
     .bind(project_id)
     .bind(from)
@@ -96,7 +96,7 @@ async fn sessions_started(pool: &SqlitePool, project_id: i64, from: i64, to: i64
 
 /// Measures a KPI over `[from, to)` (epoch milliseconds).
 pub async fn measure(
-    pool: &SqlitePool,
+    pool: &Pool,
     project_id: i64,
     def: &KpiDefinition,
     from: i64,
@@ -158,7 +158,7 @@ mod tests {
     use crate::util::now_ms;
     use crate::{db, ingest};
 
-    async fn seed(pool: &SqlitePool, project_id: i64, sid: &str, paths: &[&str]) {
+    async fn seed(pool: &Pool, project_id: i64, sid: &str, paths: &[&str]) {
         let now = now_ms();
         let events = paths
             .iter()
@@ -189,8 +189,8 @@ mod tests {
 
     #[tokio::test]
     async fn conversion_counts_goal_after_start_only() {
-        let dir = std::env::temp_dir().join(format!("trace-test-{}.db", crate::util::new_key()));
-        let pool = db::connect(dir.to_str().unwrap()).await.unwrap();
+        let dir = crate::db::test_target("test").await;
+        let pool = db::connect(&dir).await.unwrap();
         let (_, p) = db::create_account_with_site(&pool, "Test", None).await.unwrap();
         seed(&pool, p.id, "a", &["/", "/checkout", "/checkout/success"]).await;
         seed(&pool, p.id, "b", &["/", "/checkout"]).await;
@@ -211,6 +211,6 @@ mod tests {
         let m = measure(&pool, p.id, &reached_checkout, 0, now_ms() + 1000).await.unwrap();
         assert_eq!(m.n(), 4);
         assert_eq!(m.value, Some(0.75));
-        let _ = std::fs::remove_file(dir);
+        crate::db::drop_test_target(&dir).await;
     }
 }
