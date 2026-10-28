@@ -140,7 +140,7 @@ fn set_cookie(res: &mut Response, token: Option<&str>, secure: bool) {
 
 /// Paths about one website; everything else is about the account.
 fn is_site_path(path: &str) -> bool {
-    ["/project", "/config", "/digest", "/kpis", "/insights", "/analyze", "/analysis", "/releases", "/publish", "/evaluate", "/runs", "/privacy", "/onboarding"]
+    ["/project", "/config", "/digest", "/kpis", "/insights", "/analyze", "/analysis", "/releases", "/publish", "/query", "/evaluate", "/runs", "/privacy", "/onboarding"]
         .iter()
         .any(|p| path == *p || path.starts_with(&format!("{p}/")))
 }
@@ -151,6 +151,8 @@ fn required_role(method: &Method, path: &str) -> Role {
     let read = matches!(*method, Method::GET | Method::HEAD);
     let user_actions = path == "/analyze"
         || path == "/evaluate"
+        || path == "/releases"
+        || path == "/query"
         || (path.starts_with("/insights/") && (path.ends_with("/status") || path.ends_with("/kpi")));
     match () {
         _ if path.starts_with("/team") || path.starts_with("/audit") => Role::Admin,
@@ -219,7 +221,9 @@ pub async fn authorize(State(state): State<AppStateRef>, mut req: Request, next:
     if principal.user().is_none() && people_only(&path) {
         return deny(StatusCode::FORBIDDEN, "people_only", "API tokens can't manage people, tokens, websites or accounts");
     }
-    if principal.read_only() && !matches!(*req.method(), Method::GET | Method::HEAD) {
+    // A question is a POST with a body, but changes nothing.
+    let asks = path == "/query" && *req.method() == Method::POST;
+    if principal.read_only() && !asks && !matches!(*req.method(), Method::GET | Method::HEAD) {
         return deny(StatusCode::FORBIDDEN, "read_only", "this token is read-only");
     }
     if path.starts_with("/operator") {

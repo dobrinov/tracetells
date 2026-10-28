@@ -17,6 +17,7 @@ pub mod privacy;
 pub mod readiness;
 pub mod prompt;
 pub mod public;
+pub mod query;
 pub mod retention;
 pub mod usage;
 pub mod util;

@@ -99,6 +99,7 @@ pub fn router(state: AppStateRef) -> Router {
         .route("/insights/{id}/status", post(set_status))
         .route("/insights/{id}/kpi", post(set_kpi))
         .route("/releases", post(record_release))
+        .route("/query", get(query_get).post(query_post))
         .merge(crate::public::admin_routes())
         .route("/analyze", post(analyze))
         .route("/evaluate", post(run_evaluate))
@@ -556,6 +557,31 @@ async fn set_status(
     Ok(Json(serde_json::to_value(insight).map_err(anyhow::Error::from)?))
 }
 
+/// Aggregated questions, as MCP's `query_behaviour`: a JSON body, or the same
+/// fields as query parameters (`match`, `from` and `to` as JSON strings).
+async fn query_post(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Json(v): Json<Value>) -> ApiResult<Json<Value>> {
+    let q = trace_core::query::Query::parse(&v).map_err(ApiError::bad_request)?;
+    Ok(Json(json!(trace_core::query::ask(&state.pool, site.id, &q).await?)))
+}
+
+async fn query_get(
+    State(state): State<AppStateRef>,
+    Extension(CurrentSite(site)): Extension<CurrentSite>,
+    Query(params): Query<HashMap<String, String>>,
+) -> ApiResult<Json<Value>> {
+    let mut v = serde_json::Map::new();
+    for (k, raw) in params {
+        let value = match k.as_str() {
+            "match" | "from" | "to" => serde_json::from_str(&raw).map_err(|_| ApiError::bad_request(format!("`{k}` is JSON, e.g. {{\"pageview\":\"/\"}}")))?,
+            "days" => json!(raw.parse::<u64>().map_err(|_| ApiError::bad_request("`days` is a number"))?),
+            "compare" => json!(raw == "true" || raw == "1"),
+            _ => json!(raw),
+        };
+        v.insert(k, value);
+    }
+    query_post(State(state), Extension(CurrentSite(site)), Json(Value::Object(v))).await
+}
+
 #[derive(Deserialize)]
 struct ReleaseBody {
     /// The insights this deploy ships.
@@ -893,7 +919,7 @@ mod isolation_tests {
     /// Every endpoint about one website, as (method, path below the website).
     const SITE_ROUTES: &[(&str, &str)] = &[
         ("GET", "project"), ("GET", "config"), ("POST", "config"), ("GET", "digest"), ("GET", "kpis"),
-        ("GET", "insights"), ("GET", "insights/1"), ("GET", "insights/1/prompt"), ("POST", "insights/1/status"), ("POST", "insights/1/kpi"), ("POST", "releases"), ("GET", "publish"), ("POST", "publish"), ("DELETE", "publish"), ("POST", "publish/rotate"),
+        ("GET", "insights"), ("GET", "insights/1"), ("GET", "insights/1/prompt"), ("POST", "insights/1/status"), ("POST", "insights/1/kpi"), ("POST", "releases"), ("GET", "query"), ("GET", "publish"), ("POST", "publish"), ("DELETE", "publish"), ("POST", "publish/rotate"),
         ("POST", "analyze"), ("POST", "evaluate"), ("GET", "runs"), ("GET", "privacy"), ("POST", "privacy/rules"),
         ("POST", "privacy/rules/1"), ("DELETE", "privacy/rules/1"), ("POST", "privacy/test"),
         ("GET", "onboarding"), ("POST", "onboarding/privacy-reviewed"), ("GET", "analysis"),
@@ -984,6 +1010,38 @@ mod isolation_tests {
             .header(header::CONTENT_TYPE, "application/json")
             .body(axum::body::Body::from(body.to_string()))
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn questions_answer_with_aggregates_for_any_token() {
+        let (app, state, path) = app().await;
+        let (acme, shop) = db::create_account_with_site(&state.pool, "Acme", None).await.unwrap();
+        let _ = person(&state, acme.id, "a@acme.example", Role::User).await;
+        let user = auth::find_user(&state.pool, "a@acme.example").await.unwrap().unwrap();
+        let (_, token) = auth::create_api_token(&state.pool, acme.id, &user, "agent", true).await.unwrap();
+        let bearer = format!("Bearer {token}");
+        let now = trace_core::util::now_ms();
+        for i in 0..4 {
+            let sid = format!("s{i}");
+            sqlx::query("INSERT INTO sessions (id, project_id, started_at, last_seen_at, device, user_agent) VALUES ($1, $2, $3, $3, 'mobile', 'SecretBrowser/1.0')")
+                .bind(&sid).bind(shop.id).bind(now - 60_000).execute(&state.pool).await.unwrap();
+            sqlx::query("INSERT INTO events (project_id, session_id, ts, type, path) VALUES ($1, $2, $3, 'pageview', '/checkout')")
+                .bind(shop.id).bind(&sid).bind(now - 59_000).execute(&state.pool).await.unwrap();
+        }
+        let question = json!({ "measure": "sessions", "match": { "pageview": "/checkout" }, "breakdown": "device" });
+        let (status, answer) = send(&app, json_req("POST", "/api/sites/acme/query", ("authorization", &bearer), question)).await;
+        assert_eq!(status, StatusCode::OK, "a read-only token can ask: {answer}");
+        assert_eq!((answer["value"].as_f64(), answer["rows"][0]["key"].as_str()), (Some(4.0), Some("mobile")));
+        let text = answer.to_string();
+        assert!(!text.contains("s0") && !text.contains("SecretBrowser") && !text.contains("session_id"), "{text}");
+
+        let get = format!("/api/sites/acme/query?measure=session_rate&days=7&match={}", "%7B%22pageview%22%3A%22%2Fcheckout%22%7D");
+        let (status, answer) = send(&app, json_req("GET", &get, ("authorization", &bearer), json!({}))).await;
+        assert_eq!((status, answer["value"].as_f64()), (StatusCode::OK, Some(1.0)));
+        let (status, refused) = send(&app, json_req("POST", "/api/sites/acme/query", ("authorization", &bearer), json!({ "measure": "sessions", "match": { "pageview": "*" }, "breakdown": "session" }))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(refused["error"].as_str().unwrap().contains("no per-session"));
+        trace_core::db::drop_test_target(&path).await;
     }
 
     #[tokio::test]

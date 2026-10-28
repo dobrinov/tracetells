@@ -81,6 +81,17 @@ struct Parser {
     warnings: Vec<String>,
 }
 
+/// One event matcher, in trace.json's shorthand (`{ "pageview": "/checkout" }`)
+/// or full form (`{ "type": "click", "selector": "button#pay" }`), for queries
+/// and insight evidence. Errors are prefixed with `at`.
+pub fn parse_matcher(v: &Value, at: &str) -> Result<EventMatch, String> {
+    let mut p = Parser { errors: Vec::new(), warnings: Vec::new() };
+    match p.matcher(Some(v), at, &BTreeMap::new()) {
+        Some(m) if p.errors.is_empty() => Ok(m),
+        _ => Err(p.errors.join("; ")),
+    }
+}
+
 fn valid_name(s: &str, max: usize) -> bool {
     !s.is_empty() && s.len() <= max && s.chars().all(|c| c.is_ascii_alphanumeric() || "_-.:".contains(c))
 }
