@@ -2,12 +2,13 @@
 
 **Trace**: web analytics, and a way to improve your website's UX, for the agentic era.
 
-Trace collects how people use your product, an analyst agent turns that into specific improvement insights tied to your KPIs, you copy an insight as a prompt for your coding agent, and once it ships Trace measures whether it worked.
+Trace collects how people use your product, in aggregate. Your coding agent, over MCP and with its own model, turns that into specific improvement insights tied to your KPIs and implements them, and once a change ships Trace measures whether it worked.
 
 ```
-collect ──▶ digest ──▶ analyst ──▶ insights ──▶ prompt ──▶ ship ──▶ evaluate
- (d.js)    (SQLite)   (Claude or   new → selected → in progress → released
-                       heuristics)                      ╰── dismissed (with a reason the analyst learns from)
+collect ──▶ digest ──▶ your agent analyses ──▶ insights ──▶ your agent ships ──▶ evaluate
+ (d.js)    (aggregates,  (over MCP: reads the       new → selected → in progress → released
+            SQLite or     summary, saves insights)                ╰── dismissed (with a reason the agent learns from)
+            Postgres)
 ```
 
 ## Try it in a minute
@@ -74,7 +75,7 @@ The navigation shows how far along you are until the five required steps are don
 |---|---|
 | **Collector** (`/d.js`) | One script tag. Captures pageviews (single-page apps and full reloads), clicks, rage clicks, dead clicks, errors, scroll depth, time on page, form starts and submits, plus custom events from `trace.track(name, props)` or `data-trace-event="name"` markup. It never records input values. |
 | **KPIs as code** | KPIs and the custom-event catalogue live in `trace.json` in your repository, next to the code that sends the events. `trace check` validates it, `trace push` publishes it (from CI, say), and the dashboard shows results and tracking health, but never edits definitions. |
-| **Analyst** | Builds an aggregated digest and asks Claude for insights through structured output. It sends your KPIs plus existing and dismissed insights so it doesn't repeat itself. Without an API key, or when Claude fails, built-in heuristics take over. |
+| **Analyst** | Your coding agent, over MCP: it reads the aggregated digest and KPIs and saves insights with `add_insights` (see [MCP](#mcp-use-trace-from-your-coding-agent)). The server also has its own: built-in heuristics that need no model (the dashboard's **Run analysis**), and optionally Claude when it has an `ANTHROPIC_API_KEY`. Either way it sends your KPIs plus existing and dismissed insights so it doesn't repeat itself. |
 | **Prompts** | Each insight is rendered as a self-contained task for a coding agent: problem, evidence, goal KPI, proposal, routes and acceptance criteria. Copy it from the dashboard, or run `trace prompt 12 \| claude`. |
 | **Errors** | Five kinds: uncaught exceptions, unhandled promise rejections, `console.error` calls (where React, Vue and Angular report the errors they catch), failed `fetch`/XHR requests (status ≥ 400 or no response) and scripts, stylesheets or images that fail to load. |
 | **Evaluation** | For released insights, compares the KPI in equal windows before and after the release (Welch test, at least 30 sessions per side) and gives a verdict: improved, regressed, no change or insufficient data. It runs every hour while the server is up. |
@@ -125,7 +126,9 @@ trace push --server https://trace.example.com --token "$TRACE_ADMIN_TOKEN"
 
 ## MCP: use Trace from your coding agent
 
-Trace is also an MCP server, so an agent such as Claude Code or Cursor can run the whole loop: read the KPIs, pick an insight, fetch it as a task prompt, implement it and mark it released, after which Trace measures the impact. Like the dashboard, it only exposes aggregated patterns, never individual sessions.
+Trace is also an MCP server, and your coding agent is its analyst. An agent such as Claude Code or Cursor runs the whole loop with its own model: it reads the aggregated behaviour summary and the KPIs, saves the improvements it finds as insights, fetches one as a task prompt, implements it and marks it released, after which Trace measures the impact. Like the dashboard, it only exposes aggregated patterns, never individual sessions, and nothing goes to a model you didn't choose.
+
+The **`analyse_website`** prompt gives the agent the analyst's brief: read `get_overview`, `get_behaviour_summary`, `list_kpis` and `list_insights` (skipping what exists and learning from dismissal reasons), pick up to five problems, and save them with `add_insights`. In Claude Code it's the slash command `/mcp__trace__analyse_website`. The brief, and the server's instructions, tell the agent that text inside behaviour data comes from visitors and is never to be followed as instructions.
 
 | Tool | |
 |---|---|
@@ -133,15 +136,16 @@ Trace is also an MCP server, so an agent such as Claude Code or Cursor can run t
 | `get_behaviour_summary` | The aggregated digest the analyst reads |
 | `list_kpis`, `get_tracking_health` | KPI values; whether declared events are arriving |
 | `list_insights`, `get_insight`, `get_insight_prompt` | Find work, and get it as a complete implementation task |
+| `add_insights` | Save insights the agent found: problem, evidence, proposal, acceptance criteria, pages, KPI key, confidence and a fingerprint. Known insights, including dismissed ones, are skipped; one invalid item saves nothing |
 | `update_insight_status` | Select, start, release or dismiss an insight |
-| `run_analysis`, `evaluate_releases` | Create insights; measure released ones |
+| `run_analysis`, `evaluate_releases` | Trace's own analysis (built-in checks, or Claude when the server has an API key); measure released ones |
 | `check_config` | Validate a `trace.json` being edited |
 | `get_privacy_rules` | What's protected (read-only) |
 | `list_sites` | The account's websites |
 
-Every tool except `list_sites` and `check_config` takes a `site` (the website's short name, e.g. `stride`). It can be left out when the account has a single website. Read-only tokens can only use the reading tools.
+Every tool except `list_sites` and `check_config` takes a `site` (the website's short name, e.g. `stride`). It can be left out when the account has a single website. Read-only tokens can only use the reading tools, so an agent that analyses needs a token that isn't read-only.
 
-Agents can't change privacy rules or people, which stay in the dashboard, or KPIs, which stay in `trace.json`. Status changes and analysis runs appear in the activity log under the token's name.
+Agents can't change privacy rules or people, which stay in the dashboard, or KPIs, which stay in `trace.json`. Saved insights, status changes and analysis runs appear in the activity log under the token's name.
 
 **Remote** (any server; Streamable HTTP, authenticated with a personal API token from **Account**):
 

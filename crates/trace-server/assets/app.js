@@ -334,7 +334,9 @@ async function renderInsights() {
             </aside>
           </div>`
         : `<div class="empty">${
-            insightTab === "new" ? `No new insights. Click <strong>Run analysis</strong> to look for some.` : `Nothing here yet.`
+            insightTab === "new"
+              ? `No new insights. Ask your coding agent to analyse the site (<a href="#/setup">connect it over MCP</a>), or click <strong>Run analysis</strong> for Trace's quick built-in checks.`
+              : `Nothing here yet.`
           }</div>`
     }`;
 
@@ -699,10 +701,11 @@ async function renderSetup() {
     <div class="copy-row"><pre class="snippet">${esc(custom)}</pre><button data-copy="${esc(custom)}">Copy</button></div>
 
     <h2>4. Connect your coding agent (MCP)</h2>
-    <p class="hint">Let Claude Code, Cursor or any MCP client read your KPIs and insights, fetch an insight as a task, and mark it released once it ships. Agents only see aggregated patterns, like this dashboard. Create a personal API token under <a href="#/account">Account</a> (read-only is enough if the agent only needs to look), then:</p>
+    <p class="hint">Your coding agent is the analyst: Claude Code, Cursor or any MCP client reads Trace's aggregated summary and your KPIs with its own model, saves the improvements it finds as insights, fetches one as a task, and marks it released once it ships. Agents only see aggregated patterns, like this dashboard. Create a personal API token under <a href="#/account">Account</a> (not read-only, so it can save insights), then:</p>
     <div class="copy-row"><pre class="snippet">${esc(mcpCommand)}</pre><button data-copy="${esc(mcpCommand)}">Copy</button></div>
     <p class="hint">Other MCP clients:</p>
     <div class="copy-row"><pre class="snippet">${esc(mcpJson)}</pre><button data-copy="${esc(mcpJson)}">Copy</button></div>
+    <p class="hint">Then ask it to analyse: in Claude Code run <code>/mcp__trace__analyse_website</code> (Trace's analysis prompt); in other clients pick the <strong>analyse_website</strong> prompt, or ask "Analyse my site with Trace and save the insights".</p>
 
     ${
       can("admin")
@@ -888,11 +891,11 @@ async function renderStart() {
     },
     agent: () => `
       <h1>Connect your coding agent</h1>
-      <p class="sub">Claude Code, Cursor or any MCP client can read your KPIs and insights, take an insight as a task and mark it released once it ships. Agents see only aggregated patterns, like this dashboard.</p>
+      <p class="sub">Your coding agent is the analyst. Claude Code, Cursor or any MCP client reads Trace's aggregated summary and your KPIs with its own model, saves what it finds as insights, takes one as a task and marks it released once it ships. Agents see only aggregated patterns, like this dashboard.</p>
       <ol class="steps">
-        <li>Create a personal API token under <a href="#/account">Account</a>. Read-only is enough if the agent only needs to look.</li>
+        <li>Create a personal API token under <a href="#/account">Account</a>, not read-only, so the agent can save insights.</li>
         <li>Add Trace to your agent:<div class="copy-row" style="margin-top: 8px"><pre class="snippet">${esc(mcpCommand)}</pre><button class="primary" data-copy="${esc(mcpCommand)}">Copy</button></div></li>
-        <li>Ask it something, e.g. "What does Trace say I should fix first?" This step ticks off once the token is used.</li>
+        <li>Ask it to analyse: in Claude Code run <code>/mcp__trace__analyse_website</code>, or ask "Analyse my site with Trace and save the insights". This step ticks off once the token is used.</li>
       </ol>`,
     team: () => `
       <h1>Invite your team</h1>
