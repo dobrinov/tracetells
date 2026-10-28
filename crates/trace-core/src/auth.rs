@@ -124,6 +124,25 @@ pub fn waste_password_check(password: &str) {
     let _ = verify_password(password, &DUMMY);
 }
 
+// Argon2 is slow on purpose (tens of milliseconds), so the async code runs it
+// on Tokio's blocking pool: a burst of sign-ins can't stall the threads that
+// serve everything else.
+
+async fn hash_off_thread(password: &str) -> Result<String> {
+    let password = password.to_owned();
+    tokio::task::spawn_blocking(move || hash_password(&password)).await?
+}
+
+async fn verify_off_thread(password: &str, hash: &str) -> bool {
+    let (password, hash) = (password.to_owned(), hash.to_owned());
+    tokio::task::spawn_blocking(move || verify_password(&password, &hash)).await.unwrap_or(false)
+}
+
+async fn waste_off_thread(password: &str) {
+    let password = password.to_owned();
+    let _ = tokio::task::spawn_blocking(move || waste_password_check(&password)).await;
+}
+
 pub fn check_new_password(password: &str) -> Result<()> {
     if password.chars().count() < MIN_PASSWORD_LEN {
         bail!("use at least {MIN_PASSWORD_LEN} characters");
@@ -237,7 +256,7 @@ pub async fn create_user(pool: &Pool, account_id: i64, email: &str, name: &str, 
     .bind(account_id)
     .bind(&email)
     .bind(name.trim())
-    .bind(hash_password(password)?)
+    .bind(hash_off_thread(password).await?)
     .bind(role.as_str())
     .bind(now_ms())
     .fetch_one(pool)
@@ -284,10 +303,10 @@ pub async fn authenticate(pool: &Pool, email: &str, password: &str) -> Result<Op
         Err(_) => None,
     };
     let Some((id, account_id, hash)) = row else {
-        waste_password_check(password);
+        waste_off_thread(password).await;
         return Ok(None);
     };
-    if !verify_password(password, &hash) {
+    if !verify_off_thread(password, &hash).await {
         return Ok(None);
     }
     get_user(pool, account_id, id).await
@@ -295,13 +314,13 @@ pub async fn authenticate(pool: &Pool, email: &str, password: &str) -> Result<Op
 
 pub async fn set_password(pool: &Pool, user_id: i64, password: &str) -> Result<()> {
     check_new_password(password)?;
-    sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2").bind(hash_password(password)?).bind(user_id).execute(pool).await?;
+    sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2").bind(hash_off_thread(password).await?).bind(user_id).execute(pool).await?;
     Ok(())
 }
 
 pub async fn password_matches(pool: &Pool, user_id: i64, password: &str) -> Result<bool> {
     let hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1").bind(user_id).fetch_one(pool).await?;
-    Ok(verify_password(password, &hash))
+    Ok(verify_off_thread(password, &hash).await)
 }
 
 pub async fn set_role(pool: &Pool, account_id: i64, user_id: i64, role: Role) -> Result<()> {

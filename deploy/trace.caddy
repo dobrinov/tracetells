@@ -1,0 +1,6 @@
+# Trace, the hosted dashboard, API and collector. Lives at
+# /opt/infra/caddy/conf.d/trace.caddy; see deploy/README.md.
+app.tracetells.com {
+	import common
+	reverse_proxy trace-web:4318
+}

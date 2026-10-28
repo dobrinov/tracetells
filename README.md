@@ -53,7 +53,7 @@ createuser trace --pwprompt && createdb trace --owner trace
 trace init --database postgres --db postgres://trace:PASSWORD@localhost/trace
 ```
 
-Without a terminal (scripts, provisioning), pass `--database sqlite|postgres` and `--db`. `trace init` won't replace a different database already saved in `trace.env` unless you confirm or pass `--force`, and data isn't copied between the two: a new database starts empty. On start, `trace serve` logs which database it uses (never the password) and warns when a server reachable from outside runs on SQLite; the operator **Admin** area shows the same advice. With systemd, point `EnvironmentFile=` at `trace.env`. Back up SQLite with Litestream or `sqlite3 trace.db ".backup backup.db"`, and Postgres with its own tools.
+To run it in Docker instead, see the `Dockerfile` and [deploy/README.md](deploy/README.md). Without a terminal (scripts, provisioning), pass `--database sqlite|postgres` and `--db`. `trace init` won't replace a different database already saved in `trace.env` unless you confirm or pass `--force`, and data isn't copied between the two: a new database starts empty. On start, `trace serve` logs which database it uses (never the password) and warns when a server reachable from outside runs on SQLite; the operator **Admin** area shows the same advice. With systemd, point `EnvironmentFile=` at `trace.env`. Back up SQLite with Litestream or `sqlite3 trace.db ".backup backup.db"`, and Postgres with its own tools.
 
 ## First run
 
@@ -352,6 +352,7 @@ Contributions come in as OpenSpec changes filed as GitHub issues. Explore the pr
 - `crates/trace-core`: storage, ingestion, KPI measurement, digest, insight lifecycle, prompt rendering, evaluation
 - `crates/trace-agent`: analyst (Claude client and heuristics)
 - `site/`: the marketing site (static, published to GitHub Pages by `.github/workflows/pages.yml`)
+- `deploy/` and `Dockerfile`: how the hosted server runs (Docker behind a shared Caddy, on a shared Postgres); see [deploy/README.md](deploy/README.md)
 - `crates/trace-server`: the `trace` binary (HTTP server, CLI, demo seeder, embedded dashboard and collector)
 
 ## License

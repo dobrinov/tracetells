@@ -18,9 +18,11 @@ axum.workspace = true
 brotli = "9"
 flate2 = "1"
 clap.workspace = true
+data-encoding.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 sqlx.workspace = true
 tokio = { workspace = true, features = ["io-std", "io-util"] }
 tower = { version = "0.5", features = ["util"] }

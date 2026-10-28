@@ -1,9 +1,6 @@
 //! Sign-in, two-step verification, invites, team management and API tokens,
 //! plus the middleware that decides who may call which dashboard endpoint.
 
-use std::collections::HashMap;
-use std::sync::Mutex;
-
 use axum::extract::{Path, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::Next;
@@ -11,7 +8,6 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
 use trace_core::auth::{self, Role, Session, User};
-use trace_core::util::now_ms;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -19,30 +15,23 @@ use crate::api::{ApiError, ApiResult, AppStateRef};
 use trace_core::db;
 
 pub const COOKIE: &str = "trc_session";
-const MAX_FAILED_LOGINS: u32 = 10;
 const LOCKOUT_MS: i64 = 15 * 60 * 1000;
+/// Wrong passwords for one email from one address before it waits 15 minutes.
+const MAX_FAILED_LOGINS: u32 = 10;
+/// Wrong passwords for one email from anywhere: high enough that a stranger
+/// can't easily lock someone out, low enough to stop a slow, spread-out guess.
+const MAX_FAILED_LOGINS_ANYWHERE: u32 = 50;
+/// Wrong passwords from one address across all emails (password spraying).
+const MAX_FAILED_LOGINS_PER_ADDRESS: u32 = 30;
+/// Wrong two-step codes for one person.
+const MAX_FAILED_CODES: u32 = 10;
+/// New accounts from one address.
+const MAX_SIGNUPS_PER_ADDRESS: u32 = 10;
 
-/// Failed sign-in attempts per email, to slow down password guessing.
-#[derive(Default)]
-pub struct LoginLimiter(Mutex<HashMap<String, (u32, i64)>>);
+type Connect = Option<Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>;
 
-impl LoginLimiter {
-    fn locked(&self, key: &str) -> bool {
-        let map = self.0.lock().unwrap();
-        map.get(key).is_some_and(|(n, since)| *n >= MAX_FAILED_LOGINS && now_ms() - since < LOCKOUT_MS)
-    }
-    fn failed(&self, key: &str) {
-        let mut map = self.0.lock().unwrap();
-        let now = now_ms();
-        let e = map.entry(key.to_string()).or_insert((0, now));
-        if now - e.1 >= LOCKOUT_MS {
-            *e = (0, now);
-        }
-        e.0 += 1;
-    }
-    fn succeeded(&self, key: &str) {
-        self.0.lock().unwrap().remove(key);
-    }
+fn address(connect: &Connect, headers: &HeaderMap) -> String {
+    crate::guard::client_ip(connect.as_ref().map(|Extension(c)| c.0), headers)
 }
 
 /// Who is calling a dashboard endpoint, always within one account.
@@ -383,21 +372,14 @@ async fn new_account(state: &AppStateRef, account: &str, email: &str, name: &str
 }
 
 /// Self-service sign-up, when the operator has enabled it.
-async fn signup(
-    State(state): State<AppStateRef>,
-    connect: Option<Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>,
-    headers: HeaderMap,
-    Json(b): Json<SetupBody>,
-) -> ApiResult<Response> {
+async fn signup(State(state): State<AppStateRef>, connect: Connect, headers: HeaderMap, Json(b): Json<SetupBody>) -> ApiResult<Response> {
     if !state.allow_signup {
         return Err(ApiError::forbidden("accounts on this server are created by invitation; ask its operator for an invite"));
     }
-    let ip = connect.map(|Extension(c)| c.0.ip().to_string()).unwrap_or_default();
-    let key = format!("signup:{ip}");
-    if state.limiter.locked(&key) {
+    let key = format!("signup:{}", address(&connect, &headers));
+    if !state.limiter.hit(&key, MAX_SIGNUPS_PER_ADDRESS, LOCKOUT_MS) {
         return Err(ApiError::too_many("too many sign-ups from this address; try again later"));
     }
-    state.limiter.failed(&key); // every sign-up counts towards the per-address limit
     let user = new_account(&state, &b.account, &b.email, &b.name, &b.password).await?;
     signed_in(&state, user, true, &headers).await
 }
@@ -408,19 +390,27 @@ struct LoginBody {
     password: String,
 }
 
-async fn login(State(state): State<AppStateRef>, headers: HeaderMap, Json(b): Json<LoginBody>) -> ApiResult<Response> {
-    let key = b.email.trim().to_lowercase();
-    if state.limiter.locked(&key) {
+async fn login(State(state): State<AppStateRef>, connect: Connect, headers: HeaderMap, Json(b): Json<LoginBody>) -> ApiResult<Response> {
+    let email = b.email.trim().to_lowercase();
+    let ip = address(&connect, &headers);
+    let limits = [
+        (format!("login:{email}|{ip}"), MAX_FAILED_LOGINS),
+        (format!("login:{email}"), MAX_FAILED_LOGINS_ANYWHERE),
+        (format!("login-from:{ip}"), MAX_FAILED_LOGINS_PER_ADDRESS),
+    ];
+    if limits.iter().any(|(key, limit)| state.limiter.over(key, *limit)) {
         return Err(ApiError::too_many("too many failed attempts; try again in 15 minutes"));
     }
     match auth::authenticate(&state.pool, &b.email, &b.password).await? {
         Some(user) => {
-            state.limiter.succeeded(&key);
+            state.limiter.clear(&limits[0].0);
             let needs_code = user.totp_enabled;
             signed_in(&state, user, !needs_code, &headers).await
         }
         None => {
-            state.limiter.failed(&key);
+            for (key, _) in &limits {
+                state.limiter.add(key, LOCKOUT_MS);
+            }
             Err(ApiError::unauthorized("wrong email or password"))
         }
     }
@@ -434,12 +424,12 @@ struct CodeBody {
 async fn verify_mfa(State(state): State<AppStateRef>, headers: HeaderMap, Json(b): Json<CodeBody>) -> ApiResult<Json<Value>> {
     let s = current_session(&state, &headers).await?.ok_or_else(|| ApiError::unauthorized("sign in first"))?;
     let key = format!("mfa:{}", s.user.id);
-    if state.limiter.locked(&key) {
+    if state.limiter.over(&key, MAX_FAILED_CODES) {
         return Err(ApiError::too_many("too many wrong codes; try again in 15 minutes"));
     }
     match auth::verify_second_factor(&state.pool, s.user.id, &b.code).await? {
         Some(kind) => {
-            state.limiter.succeeded(&key);
+            state.limiter.clear(&key);
             auth::mark_mfa_passed(&state.pool, &s).await?;
             let s = Session { mfa_ok: true, ..s };
             let mut out = state_json(&state, Some(&s)).await?;
@@ -450,7 +440,7 @@ async fn verify_mfa(State(state): State<AppStateRef>, headers: HeaderMap, Json(b
             Ok(Json(out))
         }
         None => {
-            state.limiter.failed(&key);
+            state.limiter.add(&key, LOCKOUT_MS);
             Err(ApiError::unauthorized("that code didn't work; use the newest code from your app, or a recovery code"))
         }
     }
@@ -603,12 +593,19 @@ struct RoleBody {
     role: String,
 }
 
+/// The person a team action is about. Nobody acts on themselves this way, and
+/// only the owner can act on the owner: an admin can't reset the owner's
+/// two-step verification or sign them out.
 async fn target(state: &AppStateRef, p: &Principal, id: i64) -> ApiResult<User> {
     let s = me(p)?;
     if s.user.id == id {
         return Err(bad("you can't change your own access"));
     }
-    auth::get_user(&state.pool, p.account(), id).await?.ok_or_else(|| ApiError::not_found_msg("no such user"))
+    let user = auth::get_user(&state.pool, p.account(), id).await?.ok_or_else(|| ApiError::not_found_msg("no such user"))?;
+    if user.role == Role::Owner && s.user.role != Role::Owner {
+        return Err(ApiError::forbidden("only the owner can change the owner's access"));
+    }
+    Ok(user)
 }
 
 async fn change_role(State(state): State<AppStateRef>, Extension(p): Extension<Principal>, Path(id): Path<i64>, Json(b): Json<RoleBody>) -> ApiResult<StatusCode> {

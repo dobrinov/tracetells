@@ -2,6 +2,7 @@ mod analysis;
 mod api;
 mod auth_api;
 mod demo;
+mod guard;
 mod mcp;
 mod operator;
 mod setup;

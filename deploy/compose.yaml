@@ -1,0 +1,29 @@
+# The hosted Trace server, for a host where a shared Caddy (network `edge`)
+# serves every app and a shared Postgres (network `internal`) holds their
+# databases. Lives at /opt/apps/trace/compose.yaml; see deploy/README.md.
+name: trace
+
+services:
+  web:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    image: trace:latest
+    container_name: trace-web
+    restart: unless-stopped
+    # TRACE_DB (the Postgres URL) and the other TRACE_* settings.
+    env_file: .env
+    networks:
+      - edge      # reachable by the shared Caddy
+      - internal  # reaches the shared Postgres
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  edge:
+    external: true
+  internal:
+    external: true

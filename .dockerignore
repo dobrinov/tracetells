@@ -1,0 +1,9 @@
+target
+*.db
+*.db-shm
+*.db-wal
+trace.env
+.git
+site
+openspec
+scripts

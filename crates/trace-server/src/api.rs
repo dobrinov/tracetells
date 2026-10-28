@@ -26,7 +26,10 @@ pub struct AppState {
     pub claude: Option<ClaudeConfig>,
     /// One-time code for creating the first account; None once one exists.
     pub setup_code: Mutex<Option<String>>,
-    pub limiter: crate::auth_api::LoginLimiter,
+    /// Sign-in, two-step and sign-up attempts.
+    pub limiter: crate::guard::Counter,
+    /// Collector batches per visitor address and per website.
+    pub collect_limits: crate::guard::Counter,
     /// Mark the session cookie Secure (the dashboard is served over HTTPS).
     pub secure_cookies: bool,
     /// Self-service sign-up creates accounts on the default plan.
@@ -53,6 +56,7 @@ impl AppState {
             claude,
             setup_code: Mutex::new(None),
             limiter: Default::default(),
+            collect_limits: Default::default(),
             secure_cookies: false,
             allow_signup: false,
             contact_url: None,
@@ -68,6 +72,7 @@ const INDEX_HTML: &str = include_str!("../assets/index.html");
 const APP_JS: &str = include_str!("../assets/app.js");
 const STYLE_CSS: &str = include_str!("../assets/style.css");
 const COLLECTOR_JS: &str = include_str!("../assets/d.js");
+static DASHBOARD_CSP: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| crate::guard::dashboard_csp(INDEX_HTML));
 
 pub fn router(state: AppStateRef) -> Router {
     let collector = Router::new()
@@ -106,6 +111,7 @@ pub fn router(state: AppStateRef) -> Router {
         .route("/mcp", post(mcp_http).get(|| async { (StatusCode::METHOD_NOT_ALLOWED, "this MCP endpoint takes POST requests") }))
         .merge(collector)
         .with_state(state)
+        .layer(middleware::from_fn(|req, next| crate::guard::security_headers(&DASHBOARD_CSP, req, next)))
         // Brotli or gzip, whichever the client accepts: the collector goes from ~32 KB to ~6 KB on the wire.
         .layer(CompressionLayer::new())
 }
@@ -352,19 +358,38 @@ async fn take_events(state: &AppState, account: i64, n: i64) -> anyhow::Result<i
     Ok(allowed)
 }
 
-async fn collect(State(state): State<AppStateRef>, headers: HeaderMap, body: Bytes) -> ApiResult<StatusCode> {
+/// Collector batches one visitor address may send per minute. A visitor's
+/// browser sends a few; a whole office behind one address, a few hundred.
+const BATCHES_PER_ADDRESS: u32 = 600;
+/// Collector batches one website may receive per minute (100 a second).
+const BATCHES_PER_SITE: u32 = 6000;
+
+async fn collect(
+    State(state): State<AppStateRef>,
+    connect: Option<axum::Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult<StatusCode> {
+    // Flooding from one address is refused before any work, even parsing.
+    let ip = crate::guard::client_ip(connect.map(|axum::Extension(c)| c.0), &headers);
+    if !state.collect_limits.hit(&format!("from:{ip}"), BATCHES_PER_ADDRESS, 60_000) {
+        return Err(ApiError(StatusCode::TOO_MANY_REQUESTS, "too many batches from this address".into()));
+    }
     // The collector posts JSON as text/plain so browsers skip the CORS preflight.
     let mut batch: ingest::Batch = serde_json::from_slice(&body).map_err(ApiError::bad_request)?;
     let Some((site, account)) = db::project_by_key(&state.pool, &batch.key).await? else {
         return Err(ApiError(StatusCode::UNAUTHORIZED, "unknown write key".into()));
     };
+    if !state.collect_limits.hit(&format!("site:{site}"), BATCHES_PER_SITE, 60_000) {
+        return Err(ApiError(StatusCode::TOO_MANY_REQUESTS, "too many batches for this website".into()));
+    }
     // Over the monthly limit: drop the rest, count it, and still answer 204 so
     // visitors' browsers do no extra work and never retry.
     let n = batch.events.len() as i64;
     let allowed = take_events(&state, account, n).await?;
     batch.events.truncate(allowed as usize);
-    trace_core::usage::add_events(&state.pool, account, allowed, n - allowed).await?;
     if batch.events.is_empty() {
+        trace_core::usage::add_events(&state.pool, account, 0, n).await?;
         return Ok(StatusCode::NO_CONTENT);
     }
     let ua = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok());
@@ -373,8 +398,20 @@ async fn collect(State(state): State<AppStateRef>, headers: HeaderMap, body: Byt
         .or_else(|| headers.get(header::REFERER))
         .and_then(|v| v.to_str().ok());
     let rules = site_rules(&state, site).await?;
-    ingest::store(&state.pool, site, batch, ua, origin, &rules).await.map_err(ApiError::bad_request)?;
+    if let Err(e) = ingest::store(&state.pool, site, batch, ua, origin, &rules).await {
+        // A rejected batch uses none of the account's quota.
+        give_back_events(&state, account, allowed);
+        return Err(ApiError::bad_request(e));
+    }
+    trace_core::usage::add_events(&state.pool, account, allowed, n - allowed).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Returns events taken by [`take_events`] that weren't stored after all.
+fn give_back_events(state: &AppState, account: i64, n: i64) {
+    if let Some(q) = state.quotas.lock().unwrap().get_mut(&account) {
+        q.used = (q.used - n).max(0);
+    }
 }
 
 async fn get_project(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>) -> ApiResult<Json<Value>> {
@@ -1153,5 +1190,85 @@ mod isolation_tests {
             let code = src.split("#[cfg(test)]").next().unwrap();
             assert!(!code.contains("set_operator") && !code.contains("is_operator ="), "{file} must not grant operator rights");
         }
+    }
+
+    async fn post_json<S>(app: &S, path: &str, body: Value, cookie: &str) -> StatusCode
+    where
+        S: tower::Service<Request, Response = Response, Error = std::convert::Infallible> + Clone,
+    {
+        let req = Request::builder()
+            .method("POST")
+            .uri(path)
+            .header(header::COOKIE, cookie)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap();
+        app.clone().oneshot(req).await.unwrap().status()
+    }
+
+    #[tokio::test]
+    async fn only_the_owner_acts_on_the_owner() {
+        let (app, state, path) = app().await;
+        let (acme, _) = db::create_account_with_site(&state.pool, "Acme", None).await.unwrap();
+        let owner = person(&state, acme.id, "o@acme.example", Role::Owner).await;
+        let admin = person(&state, acme.id, "a@acme.example", Role::Admin).await;
+        let owner_id = auth::find_user(&state.pool, "o@acme.example").await.unwrap().unwrap().id;
+        let admin_id = auth::find_user(&state.pool, "a@acme.example").await.unwrap().unwrap().id;
+        let reset = |id: i64| format!("/api/team/users/{id}/reset-mfa");
+        assert_eq!(post_json(&app, &reset(owner_id), json!({}), &admin).await, StatusCode::FORBIDDEN, "an admin can't reset the owner");
+        assert_eq!(post_json(&app, &reset(admin_id), json!({}), &owner).await, StatusCode::NO_CONTENT, "the owner can reset an admin");
+        trace_core::db::drop_test_target(&path).await;
+    }
+
+    #[tokio::test]
+    async fn password_guessing_is_limited_per_email_and_per_address() {
+        let (app, state, path) = app().await;
+        let (acme, _) = db::create_account_with_site(&state.pool, "Acme", None).await.unwrap();
+        for e in ["vic@acme.example", "eve@acme.example"] {
+            auth::create_user(&state.pool, acme.id, e, "", "the right password", Role::User).await.unwrap();
+        }
+        let login = |email: &str, password: &str| post_json(&app, "/api/auth/login", json!({ "email": email, "password": password }), "");
+        for _ in 0..10 {
+            assert_eq!(login("vic@acme.example", "wrong").await, StatusCode::UNAUTHORIZED);
+        }
+        assert_eq!(login("vic@acme.example", "the right password").await, StatusCode::TOO_MANY_REQUESTS, "vic waits 15 minutes");
+        assert_eq!(login("eve@acme.example", "the right password").await, StatusCode::OK, "other people aren't affected");
+        // Spraying many emails from one address is stopped too (30 failures in all).
+        for i in 0..20 {
+            login(&format!("nobody{i}@acme.example"), "wrong").await;
+        }
+        assert_eq!(login("eve@acme.example", "the right password").await, StatusCode::TOO_MANY_REQUESTS);
+        trace_core::db::drop_test_target(&path).await;
+    }
+
+    #[tokio::test]
+    async fn the_collector_refuses_floods_from_one_address() {
+        let (app, _state, path) = app().await;
+        let mut statuses = Vec::new();
+        for _ in 0..=BATCHES_PER_ADDRESS {
+            let req = Request::builder().method("POST").uri("/v1/collect").body(axum::body::Body::from("not json")).unwrap();
+            statuses.push(app.clone().oneshot(req).await.unwrap().status());
+        }
+        assert!(statuses[..BATCHES_PER_ADDRESS as usize].iter().all(|s| *s == StatusCode::BAD_REQUEST));
+        assert_eq!(statuses.last(), Some(&StatusCode::TOO_MANY_REQUESTS), "refused before parsing");
+        trace_core::db::drop_test_target(&path).await;
+    }
+
+    #[tokio::test]
+    async fn security_headers() {
+        let (app, _state, path) = app().await;
+        let get = |uri: &'static str| {
+            let app = app.clone();
+            async move { app.oneshot(Request::builder().uri(uri).body(axum::body::Body::empty()).unwrap()).await.unwrap() }
+        };
+        let page = get("/").await;
+        let csp = page.headers().get(header::CONTENT_SECURITY_POLICY).unwrap().to_str().unwrap().to_string();
+        assert!(csp.contains("frame-ancestors 'none'") && csp.contains("'sha256-"), "{csp}");
+        assert_eq!(page.headers().get("x-frame-options").unwrap(), "DENY");
+        assert_eq!(page.headers().get("x-content-type-options").unwrap(), "nosniff");
+        let collector = get("/d.js").await;
+        assert_eq!(collector.headers().get("x-content-type-options").unwrap(), "nosniff");
+        assert!(collector.headers().get("x-frame-options").is_none(), "the collector runs on other people's sites");
+        trace_core::db::drop_test_target(&path).await;
     }
 }
