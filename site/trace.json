@@ -1,0 +1,38 @@
+{
+  "product": "tracetells.com",
+  "events": {
+    "start_free": "Clicked a Start free button (sign-up on the hosted app)",
+    "self_host": "Clicked through to the code on GitHub",
+    "contact": "Clicked Contact about a paid plan"
+  },
+  "kpis": {
+    "start_free_rate": {
+      "name": "Start free clicks",
+      "description": "Share of sessions that click a Start free button",
+      "session_rate": { "event": "start_free" },
+      "goal": "increase",
+      "target": "5%"
+    },
+    "self_host_rate": {
+      "name": "Self-host interest",
+      "description": "Share of sessions that go to the code on GitHub",
+      "session_rate": { "event": "self_host" },
+      "goal": "increase",
+      "target": "10%"
+    },
+    "pricing_reach": {
+      "name": "Pricing reach",
+      "description": "Share of sessions starting on the home page that open the pricing page",
+      "conversion": { "from": { "pageview": "/" }, "to": { "pageview": "/pricing.html" } },
+      "goal": "increase",
+      "target": "20%"
+    },
+    "js_errors": {
+      "name": "Sessions with errors",
+      "description": "Share of sessions with any exception, console error, failed request or missing file",
+      "session_rate": { "error": "*" },
+      "goal": "decrease",
+      "target": "1%"
+    }
+  }
+}
