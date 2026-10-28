@@ -62,7 +62,7 @@ enum Command {
         #[arg(long, env = "TRACE_PUBLIC_URL")]
         public_url: Option<String>,
         /// Let anyone create an account (on the default plan) from the sign-in page.
-        #[arg(long, env = "TRACE_ALLOW_SIGNUP")]
+        #[arg(long, env = "TRACE_ALLOW_SIGNUP", value_parser = clap::builder::BoolishValueParser::new())]
         allow_signup: bool,
         /// Where people ask for higher limits, e.g. mailto:you@example.com or a form's URL.
         #[arg(long, env = "TRACE_CONTACT_URL")]
