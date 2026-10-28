@@ -29,6 +29,10 @@ impl Default for Options {
     }
 }
 
+/// A significant before/after difference is a change *after* the release, not
+/// proof the release caused it; every such verdict says so.
+const CAVEAT: &str = " A before-and-after comparison: a campaign, the season or other changes in those weeks can move it too.";
+
 /// Evaluates every released insight that is linked to a KPI and stores the
 /// result. Settled evaluations are left as they are.
 pub async fn run(pool: &Pool, project_id: i64, opts: Options) -> Result<Vec<Evaluation>> {
@@ -63,6 +67,21 @@ pub async fn run(pool: &Pool, project_id: i64, opts: Options) -> Result<Vec<Eval
         let eval = if now < ends_at {
             let so_far = kpi::measure(pool, project_id, &definition, released_at, now).await?;
             let day = ((now - released_at) / DAY_MS + 1).min(i64::from(opts.window_days));
+            // Say early when a verdict can't come, rather than after 14 days of waiting.
+            let before = kpi::measure(pool, project_id, &definition, released_at - window, released_at).await?;
+            let pace = so_far.n() as f64 * f64::from(opts.window_days) / day as f64;
+            let too_small = if before.n() < opts.min_sessions {
+                format!(
+                    " This site may be too small to judge: {} sessions in the {} days before the release, and a verdict needs {} on each side.",
+                    before.n(),
+                    opts.window_days,
+                    opts.min_sessions
+                )
+            } else if day >= 3 && pace < opts.min_sessions as f64 {
+                format!(" At this pace there won't be enough sessions for a verdict: it needs {} after the release.", opts.min_sessions)
+            } else {
+                String::new()
+            };
             Evaluation {
                 insight_id: insight.id,
                 kpi_id,
@@ -74,7 +93,7 @@ pub async fn run(pool: &Pool, project_id: i64, opts: Options) -> Result<Vec<Eval
                 verdict: Verdict::Measuring,
                 summary: format!(
                     "Measuring: day {day} of {}, {} sessions since the release. The verdict comes on {}, once the whole \
-                     window has passed, so an early swing can't decide it.",
+                     window has passed, so an early swing can't decide it.{too_small}",
                     opts.window_days,
                     so_far.n(),
                     date(ends_at)
@@ -107,16 +126,17 @@ pub async fn run(pool: &Pool, project_id: i64, opts: Options) -> Result<Vec<Eval
                     (true, false) => Verdict::Regressed,
                 };
                 let change = if definition.is_rate() { format!("{:+.1} pts", delta * 100.0) } else { format!("{delta:+.2}") };
-                let headline = match verdict {
-                    Verdict::Improved => "Improved",
-                    Verdict::Regressed => "Regressed",
-                    _ => "No significant change",
+                // "After", not "because of": this compares two windows, it isn't an experiment.
+                let (headline, caveat) = match verdict {
+                    Verdict::Improved => ("Improved after the release", CAVEAT),
+                    Verdict::Regressed => ("Worse after the release", CAVEAT),
+                    _ => ("No significant change", ""),
                 };
                 (
                     verdict,
                     Some(p),
                     format!(
-                        "{headline}: {} went from {} to {} ({change}, p={p:.3}) over the {} days on each side of the release (n={} vs {}).",
+                        "{headline}: {} went from {} to {} ({change}, p={p:.3}) over the {} days on each side of the release (n={} vs {}).{caveat}",
                         kpi.name,
                         fmt(before.value),
                         fmt(after.value),
@@ -354,11 +374,23 @@ mod tests {
         let by_id = |id: i64| evals.iter().find(|e| e.insight_id == id).unwrap().clone();
         let first = by_id(ids[0]);
         assert_eq!(first.verdict, Verdict::Improved, "{}", first.summary);
+        assert!(first.summary.starts_with("Improved after the release") && first.summary.contains("A before-and-after comparison"), "{}", first.summary);
         assert!(first.settled_at.is_some() && first.summary.contains(&format!("#{}", ids[1])), "{}", first.summary);
         assert!(by_id(ids[1]).summary.contains("as it was defined when this shipped"), "{}", by_id(ids[1]).summary);
         let latest = by_id(ids[2]);
         assert_eq!((latest.verdict, latest.settled_at), (Verdict::Measuring, None));
         assert!(latest.summary.starts_with("Measuring: day 2 of 14") && latest.summary.contains(&date(day(1) - 1000 + 14 * DAY_MS)), "{}", latest.summary);
+
+        // A site without the traffic for a verdict is told so while it's measured, not after 14 days.
+        let (_, tiny) = crate::db::create_account_with_site(&pool, "Tiny", None).await.unwrap();
+        crate::config::apply(&pool, tiny.id, &kpis("/done"), "test").await.unwrap();
+        let tiny_kpi = kpi::list(&pool, tiny.id).await.unwrap()[0].id;
+        let small = insights::insert(&pool, tiny.id, &crate::model::NewInsight { kpi_id: Some(tiny_kpi), ..new("Small site") }).await.unwrap().unwrap();
+        sqlx::query("UPDATE insights SET created_at = $1 WHERE id = $2").bind(day(60)).bind(small).execute(&pool).await.unwrap();
+        traffic(&pool, tiny.id, "few", day(10), 5, 1).await;
+        insights::set_status(&pool, tiny.id, small, InsightStatus::Released, None, Some(day(1))).await.unwrap();
+        let tiny_eval = run(&pool, tiny.id, Options::default()).await.unwrap().into_iter().find(|e| e.insight_id == small).unwrap();
+        assert!(tiny_eval.summary.contains("too small to judge: 5 sessions"), "{}", tiny_eval.summary);
 
         // A settled verdict doesn't move, whatever arrives later.
         traffic(&pool, site.id, "late", day(20) + 1, 40, 0).await;

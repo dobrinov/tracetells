@@ -304,7 +304,7 @@ function insightActions(insight) {
   return "";
 }
 
-const VERDICTS = { measuring: "Measuring", improved: "Improved", regressed: "Regressed", no_change: "No change", insufficient_data: "Not enough data" };
+const VERDICTS = { measuring: "Measuring", improved: "Improved after release", regressed: "Worse after release", no_change: "No change", insufficient_data: "Not enough data" };
 
 // The KPI's verdict, and each measured evidence item's: did the problem itself shrink?
 function verdictBlock(insight) {
