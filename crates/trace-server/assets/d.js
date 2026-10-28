@@ -17,11 +17,21 @@
  *   sample     share of visitors to record, e.g. 0.25 (the rest pay no cost at all)
  *   pageviews  "auto" (default) or "manual", where you call trace.page()
  *   console    "false" to stop recording console.error calls
+ *   consent    "banner" or "required": record nothing until the visitor agrees.
+ *              "banner" shows a small bar with Allow / No thanks; "required"
+ *              leaves asking to your own consent tool, which calls trace.consent().
+ *              Before an answer nothing is stored, listened to or sent; the answer
+ *              itself is kept in localStorage (trc_consent). Global Privacy
+ *              Control counts as "no". Any element with data-trace-consent (e.g. a
+ *              footer link) opens the bar again so visitors can change their mind.
+ *   consent-text, consent-link   the bar's sentence, and a "How it works" link
  *
  * Calls made before the script loads are queued if you add this stub first:
  *   <script>window.trace=window.trace||{q:[]};["track","identify","page","init"].forEach(function(m){trace[m]=trace[m]||function(){trace.q.push([m,arguments])}})</script>
  *
  * API: trace.track(name, props) | trace.identify(userId) | trace.page([route]) | trace.flush()
+ *      trace.consent(true | false) records the visitor's answer; trace.consent() returns
+ *      "yes", "no" or null
  * Tracking without JavaScript: data-trace-event="add_to_cart" sends that custom
  * event when the element is clicked (or, on a <form>, submitted). Static props can
  * go in data-trace-props='{"plan":"pro"}'. Declare event names in trace.json.
@@ -239,7 +249,7 @@
   function scriptConfig() {
     if (!script) return null;
     var c = {};
-    ["key", "endpoint", "routes", "sample", "pageviews"].forEach(function (k) {
+    ["key", "endpoint", "routes", "sample", "pageviews", "console", "consent", "consent-text", "consent-link"].forEach(function (k) {
       var v = script.getAttribute("data-" + k);
       if (v != null) c[k] = v;
     });
@@ -247,6 +257,8 @@
   }
 
   var started = false;
+  // Set when a visitor withdraws consent: nothing more is stored or sent.
+  var optedOut = false;
   function start(config) {
     if (started || !config || !config.key) return;
     started = true;
@@ -286,6 +298,7 @@
       }
     }
     function set(k, v) {
+      if (optedOut) return;
       try {
         if (ls) ls.setItem(k, v);
         else memory[k] = v;
@@ -387,6 +400,7 @@
       }
       var ev = { type: type, t: now, path: route() };
       for (var k in data) if (data[k] != null) ev[k] = data[k];
+      if (optedOut) return ev;
       // Pages the workspace ignores: nothing is recorded there at all.
       for (var g = 0; g < HOST_IGNORE.length; g++)
         if (matchesPattern(HOST_IGNORE[g], ev.path) || matchesPattern(HOST_IGNORE[g], location.pathname)) return ev;
@@ -402,6 +416,7 @@
     function flush() {
       clearTimeout(timer);
       timer = null;
+      if (optedOut) queue.length = 0;
       if (!queue.length || !sentSid) return;
       var body = JSON.stringify({
         key: KEY,
@@ -870,24 +885,161 @@
     if (!MANUAL_PAGEVIEWS) pageview();
   }
 
-  // Configuration: script attributes, then window.traceConfig, then a queued init().
-  var queuedInit = null;
-  for (var i = 0; i < pending.length; i++) if (pending[i][0] === "init") queuedInit = pending[i][1][0];
-  safe(start)(scriptConfig() || window.traceConfig || queuedInit);
-  if (!started) {
-    api.init = safe(function (config) {
-      start(config);
-      replay();
-    });
-    if (!pending.length) console.warn("[trace] waiting for trace.init({ key }) (no data-key on the script tag)");
-  }
-
   function replay() {
     var calls = pending.splice(0, pending.length);
     for (var c = 0; c < calls.length; c++) {
       var m = calls[c][0];
-      if (m !== "init" && typeof api[m] === "function") api[m].apply(null, calls[c][1]);
+      if (m !== "init" && m !== "consent" && typeof api[m] === "function") api[m].apply(null, calls[c][1]);
     }
   }
-  if (started) safe(replay)();
+
+  // ---- consent ---------------------------------------------------------------
+  // With consent: "banner" or "required", start() waits for a yes. Until then
+  // calls stay queued and nothing is stored, listened to or sent.
+  var CONSENT_KEY = "trc_consent";
+  var gated = null; // the config waiting for consent
+  var bar = null;
+
+  function storedAnswer() {
+    try {
+      return window.localStorage.getItem(CONSENT_KEY);
+    } catch (e) {
+      return null;
+    }
+  }
+  function storeAnswer(v) {
+    try {
+      window.localStorage.setItem(CONSENT_KEY, v);
+    } catch (e) {}
+  }
+  function forget() {
+    try {
+      var s = window.localStorage;
+      ["trc_vid", "trc_sid", "trc_uid", "trc_last"].forEach(function (k) {
+        s.removeItem(k);
+      });
+    } catch (e) {}
+  }
+
+  function setConsent(yes) {
+    storeAnswer(yes ? "yes" : "no");
+    hideBar();
+    if (yes) {
+      optedOut = false;
+      if (gated && !started) {
+        start(gated);
+        replay();
+      }
+    } else {
+      optedOut = true;
+      pending.length = 0;
+      forget();
+    }
+  }
+
+  function hideBar() {
+    if (bar && bar.parentNode) bar.parentNode.removeChild(bar);
+    bar = null;
+  }
+
+  function showBar() {
+    if (bar || !gated) return;
+    if (!document.body) return document.addEventListener("DOMContentLoaded", safe(showBar));
+    var c = gated;
+    var text =
+      c["consent-text"] ||
+      c.consentText ||
+      "This site uses Trace to see, in aggregate, how its pages are used. If you allow it, Trace keeps a random ID on this device. It never records what you type.";
+    var link = c["consent-link"] || c.consentLink;
+    var font = "14px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+    bar = document.createElement("div");
+    bar.setAttribute("role", "region");
+    bar.setAttribute("aria-label", "Privacy choice");
+    bar.setAttribute("data-trace-mask", "");
+    bar.style.cssText =
+      "position:fixed;left:50%;bottom:16px;transform:translateX(-50%);box-sizing:border-box;width:calc(100% - 32px);" +
+      "max-width:680px;z-index:2147483000;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;" +
+      "padding:14px 16px;border-radius:12px;background:#10141d;color:#f3f5f9;box-shadow:0 8px 30px rgba(0,0,0,.3);" +
+      "font:" + font + ";text-align:left;";
+    var p = document.createElement("span");
+    p.style.cssText = "flex:1 1 300px;margin:0;color:inherit;font:inherit;";
+    p.textContent = text + " ";
+    if (link) {
+      var a = document.createElement("a");
+      a.href = link;
+      a.textContent = "How it works";
+      a.style.cssText = "color:#8ea3ff;text-decoration:underline;font:inherit;";
+      p.appendChild(a);
+    }
+    bar.appendChild(p);
+    var row = document.createElement("span");
+    row.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;";
+    // The same look for both answers: saying no is as easy as saying yes.
+    [["Allow", true], ["No thanks", false]].forEach(function (choice) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = choice[0];
+      b.style.cssText =
+        "font:600 " + font + ";margin:0;min-height:40px;padding:8px 18px;border-radius:999px;cursor:pointer;" +
+        "border:1.5px solid #f3f5f9;background:transparent;color:#f3f5f9;";
+      b.addEventListener(
+        "click",
+        safe(function () {
+          setConsent(choice[1]);
+        })
+      );
+      row.appendChild(b);
+    });
+    bar.appendChild(row);
+    document.body.appendChild(bar);
+  }
+
+  api.consent = safe(function (yes) {
+    if (arguments.length === 0) return storedAnswer();
+    setConsent(!!yes);
+  });
+
+  function begin(config) {
+    var mode = config && String(config.consent || "");
+    if (!config || !config.key || (mode !== "banner" && mode !== "required")) {
+      start(config);
+      if (started) replay();
+      return;
+    }
+    gated = config;
+    // "Change your privacy choice" links anywhere on the page open the bar.
+    document.addEventListener(
+      "click",
+      safe(function (e) {
+        var t = e.target && e.target.closest && e.target.closest("[data-trace-consent]");
+        if (!t) return;
+        e.preventDefault();
+        showBar();
+      }),
+      true
+    );
+    // A consent tool may have answered through the stub before this loaded.
+    var answer = storedAnswer();
+    for (var q = 0; q < pending.length; q++) if (pending[q][0] === "consent") answer = pending[q][1][0] ? "yes" : "no";
+    if (answer === "yes") return setConsent(true);
+    optedOut = true;
+    if (answer === "no" || navigator.globalPrivacyControl === true) {
+      pending.length = 0;
+      return;
+    }
+    if (mode === "banner") showBar();
+  }
+
+  // Configuration: script attributes, then window.traceConfig, then a queued init().
+  var queuedInit = null;
+  for (var i = 0; i < pending.length; i++) if (pending[i][0] === "init") queuedInit = pending[i][1][0];
+  var initial = scriptConfig() || window.traceConfig || queuedInit;
+  if (initial) safe(begin)(initial);
+  else {
+    api.init = safe(function (config) {
+      api.init = function () {};
+      begin(config);
+    });
+    if (!pending.length) console.warn("[trace] waiting for trace.init({ key }) (no data-key on the script tag)");
+  }
 })();

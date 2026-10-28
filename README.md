@@ -293,8 +293,27 @@ The one-line stub queues calls made before the script loads, so `trace.track()` 
 | `sample` | Share of visitors to record, e.g. `0.25` |
 | `pageviews` | `auto` (default) or `manual`, in which case you call `trace.page()` yourself |
 | `console` | `false` stops recording `console.error` calls. The collector wraps `console.error`, so devtools shows `d.js` as the call site for those messages |
+| `consent` | `banner` or `required`: record nothing until the visitor agrees (see below) |
+| `consent-text`, `consent-link` | The consent bar's sentence, and the address of a "How it works" link |
 
-API: `trace.track(name, props)`, `trace.identify(userId)`, `trace.page(route?)`, `trace.flush()`.
+API: `trace.track(name, props)`, `trace.identify(userId)`, `trace.page(route?)`, `trace.flush()`, `trace.consent(true | false)`.
+
+### Asking for consent
+
+The collector keeps a random visitor id and session id in `localStorage`. In the EU, storing anything on a visitor's device usually needs their consent first, so the collector can ask:
+
+```html
+<script src="https://trace.example.com/d.js?k=WRITE_KEY" data-key="WRITE_KEY" data-consent="banner" data-consent-link="/privacy" defer></script>
+...
+<footer><a href="#" data-trace-consent>Privacy choices</a></footer>
+```
+
+- **Before an answer**, nothing is stored, no listeners run and nothing is sent. Calls such as `trace.track()` wait.
+- **`banner`** shows a small bar at the bottom of the page with one sentence and two buttons that look the same, **Allow** and **No thanks**. **`required`** shows nothing: your own consent tool calls `trace.consent(true)` or `trace.consent(false)`, which also works through the loading stub before `d.js` arrives.
+- **The answer** is the one thing kept beforehand, as `trc_consent` in `localStorage`. **No thanks**, or withdrawing later, deletes Trace's ids and stops collection. A browser sending **Global Privacy Control** counts as no, and sees no bar.
+- **Any element with `data-trace-consent`**, such as a footer link, opens the bar again so visitors can change their answer. `trace.consent()` returns `"yes"`, `"no"` or `null`.
+
+The dashboard's install snippets include `data-consent="banner"` unless you turn off **Ask visitors for consent first**.
 
 Multi-page sites keep one session across page loads (30 minutes of inactivity starts a new one). Pages restored from the back/forward cache count as pageviews, and form submits are sent before the browser navigates away. Query strings are never recorded. The collector sends JSON as `text/plain` through `sendBeacon`, so browsers skip the CORS preflight.
 

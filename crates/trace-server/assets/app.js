@@ -599,31 +599,49 @@ async function renderBehaviour() {
 // ---------------------------------------------------------------- Setup
 
 // Snippets for the current website, shared by Setup and Get started.
+// Whether install snippets ask visitors for consent first (on unless turned off).
+const askConsent = () => store("trace_ask_consent") !== "no";
+
+/// The "ask for consent" checkbox shown above install snippets.
+function consentToggle() {
+  return `<label class="check-row"><input type="checkbox" data-ask-consent ${askConsent() ? "checked" : ""}>
+    <span><strong>Ask visitors for consent first</strong> <span class="hint">Nothing is stored or sent until they click Allow on a small bar; a "No thanks" or Global Privacy Control is respected. Usually needed in the EU. Add <code>data-trace-consent</code> to a footer link to let visitors change their mind.</span></span></label>`;
+}
+
+function bindConsentToggle(rerender) {
+  view.querySelector("[data-ask-consent]")?.addEventListener("change", (e) => {
+    store("trace_ask_consent", e.target.checked ? "yes" : "no");
+    rerender();
+  });
+}
+
 function setupSnippets() {
   // ?k= serves this website's privacy rules built into the collector.
   const src = `${location.origin}/d.js?k=${project.write_key}`;
   const key = project.write_key;
-  const stub = `<script>window.trace=window.trace||{q:[]};["track","identify","page","init"].forEach(function(m){trace[m]=trace[m]||function(){trace.q.push([m,arguments])}})</script>`;
+  const consent = askConsent() ? ` data-consent="banner"` : "";
+  const consentInit = askConsent() ? `, consent: "banner"` : "";
+  const stub = `<script>window.trace=window.trace||{q:[]};["track","identify","page","init","consent"].forEach(function(m){trace[m]=trace[m]||function(){trace.q.push([m,arguments])}})</script>`;
   const installs = {
     site: {
       label: "Website",
       hint: "Any site where links reload the page: server-rendered apps, CMSs, static sites. Paste into every page before </head>. Sessions continue across page loads, and back/forward restores count as pageviews.",
-      code: `<script src="${src}" data-key="${key}" defer></script>`,
+      code: `<script src="${src}" data-key="${key}"${consent} defer></script>`,
     },
     spa: {
       label: "Single-page app",
       hint: "React, Vue, Svelte, Angular and others. Route changes through the history API, the Navigation API or hash routes (#/settings) are picked up automatically. Use data-routes to group dynamic URLs. Numeric and UUID segments become :id on their own. The stub lets your code call trace.track() before the script has loaded.",
-      code: `${stub}\n<script src="${src}" data-key="${key}" data-routes="/products/:slug, /docs/*" defer></script>`,
+      code: `${stub}\n<script src="${src}" data-key="${key}"${consent} data-routes="/products/:slug, /docs/*" defer></script>`,
     },
     next: {
       label: "Next.js",
       hint: "In app/layout.tsx (App Router) or pages/_app.tsx. App Router navigations are tracked automatically.",
-      code: `import Script from "next/script";\n\n<Script src="${src}" data-key="${key}" data-routes="/products/:slug" strategy="afterInteractive" />`,
+      code: `import Script from "next/script";\n\n<Script src="${src}" data-key="${key}"${consent} data-routes="/products/:slug" strategy="afterInteractive" />`,
     },
     bundle: {
       label: "Tag manager / module",
       hint: "When the script tag can't carry data-* attributes (Google Tag Manager, type=\"module\", dynamic loading), configure it in code instead. Calls made before the script loads are queued.",
-      code: `${stub}\n<script>\n  trace.init({ key: "${key}", routes: ["/products/:slug"] });\n</script>\n<script src="${src}" async></script>`,
+      code: `${stub}\n<script>\n  trace.init({ key: "${key}", routes: ["/products/:slug"]${consentInit} });\n</script>\n<script src="${src}" async></script>`,
     },
   };
   const mcpCommand = `claude mcp add --transport http trace ${location.origin}/mcp \\\n    --header "Authorization: Bearer YOUR_API_TOKEN"`;
@@ -643,7 +661,13 @@ Put this in the <head> of every page, in the shared layout or template so it loa
 
 ${code}
 
-It loads after the page and never records what people type. Then open a page and check that requests to ${location.origin}/v1/collect return 204.`;
+It loads after the page and never records what people type.${
+    askConsent()
+      ? `
+
+It asks visitors for consent first (data-consent="banner"): a small bar with Allow and No thanks appears, and nothing is stored or sent until they click Allow. Add a "Privacy choices" link with the attribute data-trace-consent to the site's footer so visitors can change their answer later. Check that before clicking Allow no requests go to ${location.origin}/v1/collect, and after it they return 204.`
+      : ` Then open a page and check that requests to ${location.origin}/v1/collect return 204.`
+  }`;
 }
 
 async function renderSetup() {
@@ -665,6 +689,7 @@ async function renderSetup() {
         .join("")}
     </div>
     <p class="hint">${esc(installs[installTab].hint)}</p>
+    ${consentToggle()}
     <div class="copy-row"><pre class="snippet">${esc(installs[installTab].code)}</pre><button data-copy="${esc(installs[installTab].code)}">Copy</button></div>
 
     <h2>2. Define KPIs and events in code</h2>
@@ -729,6 +754,7 @@ async function renderSetup() {
       renderSetup();
     })
   );
+  bindConsentToggle(renderSetup);
   if (!project.collection.active) pollSetup();
 }
 
@@ -827,6 +853,7 @@ async function renderStart() {
           .map(([id, i]) => `<button role="tab" data-install="${id}" class="${id === installTab ? "active" : ""}" aria-selected="${id === installTab}">${i.label}</button>`)
           .join("")}</div>
         <p class="hint">${esc(installs[installTab].hint)}</p>
+        ${consentToggle()}
         <pre class="snippet">${esc(installs[installTab].code)}</pre>
         <div class="actions">
           <button class="primary" data-copy="${esc(installs[installTab].code)}">Copy snippet</button>
@@ -904,6 +931,7 @@ async function renderStart() {
       renderStart();
     })
   );
+  bindConsentToggle(renderStart);
   view.querySelector("[data-reviewed]")?.addEventListener("click", async () => {
     await post("/onboarding/privacy-reviewed");
     toast("Thanks. Privacy reviewed.");
