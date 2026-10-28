@@ -1167,6 +1167,48 @@ body.auth #site-menu {
   padding: 28px 28px 20px;
 }
 
+.auth-card.wide {
+  max-width: 600px;
+}
+
+.welcome-steps {
+  margin: 16px 0;
+  padding-left: 22px;
+  display: grid;
+  /* Let long commands scroll in their box instead of widening the page. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+
+.welcome-steps li > .segmented {
+  margin: 10px 0 2px;
+}
+
+.welcome-steps p {
+  margin: 8px 0;
+}
+
+.paste-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.paste-row input {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .auth-brand {
   display: flex;
   align-items: center;

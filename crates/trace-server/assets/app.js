@@ -925,9 +925,9 @@ let auth = null;
 const RANK = { user: 1, admin: 2, owner: 3 };
 const can = (role) => Boolean(auth && auth.user && RANK[auth.user.role] >= RANK[role]);
 
-function authScreen(html) {
+function authScreen(html, { wide = false } = {}) {
   document.body.classList.add("auth");
-  view.innerHTML = `<div class="auth-card card">${html}</div>`;
+  view.innerHTML = `<div class="auth-card card${wide ? " wide" : ""}">${html}</div>`;
   const first = view.querySelector("input");
   if (first) first.focus();
 }
@@ -1084,11 +1084,24 @@ function renderEnroll() {
   enrollmentFlow(view.querySelector("#enroll"), boot).catch((err) => toast(err.message, true));
 }
 
+// Where `trace serve` writes its log, for finding the first-account link.
+const SETUP_LOGS = [
+  { id: "docker", label: "Docker", how: "On the server, run:", code: `docker logs trace-web 2>&1 | grep "first account"`,
+    note: "trace-web is the container's name in deploy/compose.yaml; use yours if it differs." },
+  { id: "systemd", label: "systemd", how: "On the server, run:", code: `journalctl -u trace | grep "first account"`,
+    note: "Use your service's name in place of trace." },
+  { id: "terminal", label: "Terminal", how: "Look in the terminal where trace serve is running, for the line:",
+    code: "No accounts yet. Create the first account here (this link works once): …", note: "" },
+];
+const CREATE_BY_HAND = {
+  docker: `docker exec -it trace-web trace user create --email you@example.com --name "Your name"`,
+  systemd: `trace user create --email you@example.com --name "Your name"`,
+  terminal: `trace user create --email you@example.com --name "Your name"`,
+};
+
 function renderWelcome(code) {
   if (!code) {
-    authScreen(`${BRAND}<h1>Welcome to Trace</h1>
-      <p>This server has no accounts yet. To create the first one, open the setup link that <code>trace serve</code> printed when it started.</p>
-      <p class="hint">Or create it on the server: <code>trace user create --email you@example.com</code></p>`);
+    renderWelcomeSteps("docker");
     return;
   }
   authScreen(`${BRAND}<h1>Create your account</h1>
@@ -1108,6 +1121,55 @@ function renderWelcome(code) {
     });
     history.replaceState(null, "", "#/start");
     boot();
+  });
+}
+
+/// The first-run screen when the setup link's code isn't in the address:
+/// how to find the link on the server, or paste it here.
+function renderWelcomeSteps(method) {
+  const m = SETUP_LOGS.find((x) => x.id === method) || SETUP_LOGS[0];
+  authScreen(
+    `${BRAND}<h1>Welcome to Trace</h1>
+    <p>This server has no accounts yet. The first one is created with a one-time setup link, which only someone with access to the server can see. Three steps:</p>
+    <ol class="welcome-steps">
+      <li>
+        <strong>Find the setup link in the server's log.</strong> How is Trace running?
+        <div class="segmented" role="group" aria-label="How Trace runs">${SETUP_LOGS.map(
+          (x) => `<button type="button" data-method="${x.id}" aria-pressed="${x.id === m.id}">${x.label}</button>`
+        ).join("")}</div>
+        <p>${esc(m.how)}</p>
+        <div class="copy-row"><pre class="snippet">${esc(m.code)}</pre>${m.id === "terminal" ? "" : `<button data-copy="${esc(m.code)}">Copy</button>`}</div>
+        ${m.note ? `<p class="hint">${esc(m.note)}</p>` : ""}
+      </li>
+      <li>
+        <strong>Open the link in this browser</strong>, or paste it here:
+        <form id="setup-code" class="paste-row">
+          <label class="visually-hidden" for="setup-link">Setup link or code</label>
+          <input id="setup-link" name="link" placeholder="${esc(location.origin)}/#/welcome/…" autocomplete="off" required>
+          <button class="primary" type="submit">Continue</button>
+        </form>
+      </li>
+      <li><strong>Create your account.</strong> You become its owner, and can add websites and invite your team afterwards.</li>
+    </ol>
+    <p class="hint">Nothing in the log? The link is printed each time the server starts while it has no accounts, and only the newest one works. Restart the server${m.id === "docker" ? " (<code>docker restart trace-web</code>)" : ""} and look again.</p>
+    <details>
+      <summary>Or create the account from the command line</summary>
+      <div class="copy-row"><pre class="snippet">${esc(CREATE_BY_HAND[m.id])}</pre><button data-copy="${esc(CREATE_BY_HAND[m.id])}">Copy</button></div>
+      <p class="hint">It prints a password once; sign in with it and change it under Account.</p>
+    </details>`,
+    { wide: true }
+  );
+  view.querySelectorAll("[data-method]").forEach((b) => b.addEventListener("click", () => renderWelcomeSteps(b.dataset.method)));
+  view.querySelectorAll("[data-copy]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (await copyText(b.dataset.copy)) toast("Copied");
+    })
+  );
+  view.querySelector("#setup-code").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const raw = new FormData(e.currentTarget).get("link").trim();
+    const code = raw.includes("/welcome/") ? raw.split("/welcome/").pop() : raw;
+    if (code) location.hash = `#/welcome/${encodeURIComponent(code)}`;
   });
 }
 
