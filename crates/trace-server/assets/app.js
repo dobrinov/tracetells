@@ -248,7 +248,7 @@ function verdictBlock(insight) {
   if (!insight.kpi_id) return `<div class="verdict"><span class="badge">Not measured</span><span>Link a KPI to measure the impact of this release.</span></div>`;
   const e = insight.evaluation;
   if (!e) return `<div class="verdict"><span class="badge">Pending</span><span>Not evaluated yet. Trace checks released insights every hour.</span></div>`;
-  const label = { improved: "Improved", regressed: "Regressed", no_change: "No change", insufficient_data: "Not enough data" }[e.verdict] || e.verdict;
+  const label = { measuring: "Measuring", improved: "Improved", regressed: "Regressed", no_change: "No change", insufficient_data: "Not enough data" }[e.verdict] || e.verdict;
   return `<div class="verdict ${esc(e.verdict)}"><span class="badge">${esc(label)}</span><span>${esc(e.summary)}</span></div>`;
 }
 
@@ -380,14 +380,28 @@ async function renderInsights() {
       btn.addEventListener("click", async () => {
         const status = btn.dataset.status;
         let reason = null;
+        let released_at = null;
         if (status === "dismissed") {
           reason = prompt("Why dismiss this insight? The analyst uses your reason to avoid similar suggestions.", "");
           if (reason === null) return;
         }
-        await post(`/insights/${id}/status`, { status, reason });
+        if (status === "released") {
+          // The before/after split is when the change went live, which may be earlier than now.
+          const pad = (n) => String(n).padStart(2, "0");
+          const d = new Date();
+          const nowText = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+          const when = prompt("When did this change go live? Keep now, or enter the deploy's time (your local time).", nowText);
+          if (when === null) return;
+          if (when.trim() !== nowText) {
+            const at = new Date(when.trim().replace(" ", "T"));
+            if (isNaN(at)) return toast("Use a time like 2026-10-28 14:05");
+            released_at = at.toISOString();
+          }
+        }
+        await post(`/insights/${id}/status`, { status, reason, released_at });
         if (status === "released") {
           await post("/evaluate");
-          toast("Released. Trace will compare the KPI before and after the release.");
+          toast("Released. Trace compares the KPI over the 14 days before and after, and gives its verdict once those 14 days have passed.");
         }
         renderInsights();
       })

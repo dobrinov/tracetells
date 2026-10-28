@@ -95,8 +95,9 @@ pub fn render(insight: &Insight, ctx: &PromptContext) -> String {
     let _ = writeln!(s, "- When you're done, summarise what you changed and how to verify it by hand.\n");
     let _ = writeln!(
         s,
-        "---\nTrace insight #{}. Once this ships, mark the insight as released in Trace so it can measure the impact.",
-        insight.id
+        "---\nTrace insight #{id}. Put `Trace-Insight: {id}` on its own line in the commit message. Once the change is live, mark \
+         the insight released in Trace with the time it went live (or let the deploy do it), so Trace can measure the impact.",
+        id = insight.id
     );
     s
 }

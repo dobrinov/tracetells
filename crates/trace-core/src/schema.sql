@@ -142,11 +142,17 @@ CREATE TABLE IF NOT EXISTS insights (
   fingerprint TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
-  released_at INTEGER
+  -- When the change went live (the deploy's time when one was given), and
+  -- the linked KPI as it was defined then: the release is judged by it.
+  released_at INTEGER,
+  released_definition TEXT,
+  released_direction TEXT
 );
 CREATE INDEX IF NOT EXISTS insights_project_status ON insights(project_id, status);
 
--- Latest before/after measurement of a released insight against its KPI.
+-- Before/after measurement of a released insight against its KPI. Measuring
+-- until the fixed window after the release has passed; then settled_at is set
+-- and the verdict no longer changes.
 CREATE TABLE IF NOT EXISTS evaluations (
   insight_id INTEGER PRIMARY KEY REFERENCES insights(id) ON DELETE CASCADE,
   kpi_id INTEGER NOT NULL,
@@ -158,7 +164,8 @@ CREATE TABLE IF NOT EXISTS evaluations (
   verdict TEXT NOT NULL,
   summary TEXT NOT NULL,
   window_days REAL NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  settled_at INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS analysis_runs (

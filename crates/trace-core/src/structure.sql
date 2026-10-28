@@ -147,7 +147,9 @@ CREATE TABLE IF NOT EXISTS insights (
   fingerprint TEXT,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
-  released_at BIGINT
+  released_at BIGINT,
+  released_definition TEXT,
+  released_direction TEXT
 );
 CREATE INDEX IF NOT EXISTS insights_project_status ON insights(project_id, status);
 
@@ -163,7 +165,8 @@ CREATE TABLE IF NOT EXISTS evaluations (
   verdict TEXT NOT NULL,
   summary TEXT NOT NULL,
   window_days DOUBLE PRECISION NOT NULL,
-  created_at BIGINT NOT NULL
+  created_at BIGINT NOT NULL,
+  settled_at BIGINT
 );
 
 CREATE TABLE IF NOT EXISTS analysis_runs (

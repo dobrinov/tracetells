@@ -241,8 +241,9 @@ pub fn tools() -> Vec<Value> {
         tool(
             "update_insight_status",
             "Update insight status",
-            "Move an insight through new → selected → in_progress → released, or dismiss it. Mark it released once the change is live: Trace then compares the KPI before and after. When dismissing, give the reason; the analyst learns from it.",
-            json!({ "id": id, "status": { "type": "string", "enum": statuses }, "reason": { "type": "string", "description": "Why it was dismissed" } }),
+            "Move an insight through new → selected → in_progress → released, or dismiss it. Mark it released once the change is live, with `released_at` if it went live earlier than now (the deploy's time): Trace compares the KPI over the 14 days before and after that moment, and gives its verdict once the 14 days after have passed. When dismissing, give the reason; the analyst learns from it.",
+            json!({ "id": id, "status": { "type": "string", "enum": statuses }, "reason": { "type": "string", "description": "Why it was dismissed" },
+                    "released_at": { "type": "string", "description": "When the change went live, ISO 8601, e.g. 2026-10-28T14:05:00Z (default: now)" } }),
             &["id", "status"],
             false,
         ),
@@ -454,13 +455,14 @@ async fn call(ctx: &Context<'_>, name: &str, args: &Value) -> anyhow::Result<Too
                 .ok_or_else(|| anyhow::anyhow!("`status` is required"))?
                 .parse()?;
             let reason = args.get("reason").and_then(Value::as_str);
-            let insight = insights::set_status(pool, p, id, status, reason).await?.ok_or_else(|| anyhow::anyhow!("no insight with that id"))?;
+            let at = args.get("released_at").filter(|v| !v.is_null()).map(crate::api::time_arg).transpose()?;
+            let insight = insights::set_status(pool, p, id, status, reason, at).await?.ok_or_else(|| anyhow::anyhow!("no insight with that id"))?;
             trace_core::auth::audit_site(pool, ctx.account_id, Some(p), &ctx.actor, "insight.status", &format!("#{id} → {status}")).await?;
             let mut note = format!("Insight #{id} is now {status}.");
             if status == InsightStatus::Released {
                 if insight.kpi_id.is_some() {
                     evaluate::run(pool, p, evaluate::Options::default()).await?;
-                    note.push_str(" Trace will compare its KPI before and after the release; check back with get_insight in a few days.");
+                    note.push_str(" Trace compares its KPI over the 14 days before and after the release and gives its verdict once those 14 days have passed; get_insight shows the progress.");
                 } else {
                     note.push_str(" It has no KPI linked, so its impact can't be measured.");
                 }

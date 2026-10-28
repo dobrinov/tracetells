@@ -256,6 +256,8 @@ pub struct NewInsight {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Verdict {
+    /// The window after the release hasn't passed yet.
+    Measuring,
     Improved,
     Regressed,
     NoChange,
@@ -265,6 +267,7 @@ pub enum Verdict {
 impl Verdict {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Measuring => "measuring",
             Self::Improved => "improved",
             Self::Regressed => "regressed",
             Self::NoChange => "no_change",
@@ -277,6 +280,7 @@ impl FromStr for Verdict {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> anyhow::Result<Self> {
         Ok(match s {
+            "measuring" => Self::Measuring,
             "improved" => Self::Improved,
             "regressed" => Self::Regressed,
             "no_change" => Self::NoChange,
@@ -299,6 +303,8 @@ pub struct Evaluation {
     pub summary: String,
     pub window_days: f64,
     pub created_at: i64,
+    /// When the verdict became final; none while measuring.
+    pub settled_at: Option<i64>,
 }
 
 #[cfg(test)]

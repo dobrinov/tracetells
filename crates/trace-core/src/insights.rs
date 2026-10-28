@@ -41,19 +41,19 @@ fn from_row(row: &AnyRow) -> Result<Insight> {
     })
 }
 
-type EvalRow = (i64, i64, Option<f64>, Option<f64>, i64, i64, Option<f64>, String, String, f64, i64);
+type EvalRow = (i64, i64, Option<f64>, Option<f64>, i64, i64, Option<f64>, String, String, f64, i64, Option<i64>);
 
 async fn evaluations(pool: &Pool, project_id: i64) -> Result<HashMap<i64, Evaluation>> {
     let rows: Vec<EvalRow> = sqlx::query_as(
         "SELECT e.insight_id, e.kpi_id, e.baseline, e.current, e.baseline_n, e.current_n, e.p_value,
-                e.verdict, e.summary, e.window_days, e.created_at
+                e.verdict, e.summary, e.window_days, e.created_at, e.settled_at
          FROM evaluations e JOIN insights i ON i.id = e.insight_id WHERE i.project_id = $1",
     )
     .bind(project_id)
     .fetch_all(pool)
     .await?;
     let mut out = HashMap::new();
-    for (insight_id, kpi_id, baseline, current, baseline_n, current_n, p_value, verdict, summary, window_days, created_at) in rows {
+    for (insight_id, kpi_id, baseline, current, baseline_n, current_n, p_value, verdict, summary, window_days, created_at, settled_at) in rows {
         out.insert(
             insight_id,
             Evaluation {
@@ -68,6 +68,7 @@ async fn evaluations(pool: &Pool, project_id: i64) -> Result<HashMap<i64, Evalua
                 summary,
                 window_days,
                 created_at,
+                settled_at,
             },
         );
     }
@@ -147,21 +148,34 @@ pub async fn insert(pool: &Pool, project_id: i64, insight: &NewInsight) -> Resul
     Ok(Some(id))
 }
 
+/// Moves an insight to `status`. Releasing records when the change went live:
+/// `released_at` when given (a deploy's time), otherwise now. Giving it again
+/// for a released insight corrects the time and starts its measurement over.
 pub async fn set_status(
     pool: &Pool,
     project_id: i64,
     id: i64,
     status: InsightStatus,
     reason: Option<&str>,
+    released_at: Option<i64>,
 ) -> Result<Option<Insight>> {
+    let Some(before) = get(pool, project_id, id).await? else { return Ok(None) };
     let now = now_ms();
+    if let Some(at) = released_at {
+        anyhow::ensure!(status == InsightStatus::Released, "a release time only goes with the status \"released\"");
+        anyhow::ensure!(at <= now + 5 * 60_000, "the release time is in the future");
+        anyhow::ensure!(
+            at >= before.created_at,
+            "the release time is before Trace found this insight ({}), so the change can't be its fix",
+            crate::util::date(before.created_at)
+        );
+    }
     let reason = reason.map(str::trim).filter(|r| !r.is_empty());
     sqlx::query(
         "UPDATE insights SET
            status = $1,
            updated_at = $2,
-           dismiss_reason = CASE WHEN $1 = 'dismissed' THEN $3 ELSE NULL END,
-           released_at = CASE WHEN $1 = 'released' AND status <> 'released' THEN $2 ELSE released_at END
+           dismiss_reason = CASE WHEN $1 = 'dismissed' THEN $3 ELSE NULL END
          WHERE project_id = $4 AND id = $5",
     )
     .bind(status.as_str())
@@ -171,7 +185,35 @@ pub async fn set_status(
     .bind(id)
     .execute(pool)
     .await?;
+    if status == InsightStatus::Released && (before.status != InsightStatus::Released || released_at.is_some()) {
+        sqlx::query("UPDATE insights SET released_at = $1 WHERE id = $2").bind(released_at.unwrap_or(now)).bind(id).execute(pool).await?;
+        snapshot_release(pool, id).await?;
+    }
     get(pool, project_id, id).await
+}
+
+/// Keeps the linked KPI's definition as it is now, for judging the release,
+/// and drops any measurement made against another time or KPI.
+async fn snapshot_release(pool: &Pool, id: i64) -> Result<()> {
+    sqlx::query(
+        "UPDATE insights SET
+           released_definition = (SELECT definition FROM kpis WHERE kpis.id = insights.kpi_id),
+           released_direction = (SELECT direction FROM kpis WHERE kpis.id = insights.kpi_id)
+         WHERE id = $1",
+    )
+    .bind(id)
+    .execute(pool)
+    .await?;
+    sqlx::query("DELETE FROM evaluations WHERE insight_id = $1").bind(id).execute(pool).await?;
+    Ok(())
+}
+
+/// The KPI definition and direction a released insight is judged by, as
+/// stored at release. None for releases from before Trace kept them.
+pub async fn released_kpi(pool: &Pool, id: i64) -> Result<Option<(String, String)>> {
+    let row: Option<(Option<String>, Option<String>)> =
+        sqlx::query_as("SELECT released_definition, released_direction FROM insights WHERE id = $1").bind(id).fetch_optional(pool).await?;
+    Ok(row.and_then(|(d, dir)| d.zip(dir)))
 }
 
 /// Links an insight to a different KPI (or none).
@@ -183,5 +225,9 @@ pub async fn set_kpi(pool: &Pool, project_id: i64, id: i64, kpi_id: Option<i64>)
         .bind(id)
         .execute(pool)
         .await?;
+    // A released insight linked to another KPI is judged by that one from now on.
+    if get(pool, project_id, id).await?.is_some_and(|i| i.status == InsightStatus::Released) {
+        snapshot_release(pool, id).await?;
+    }
     get(pool, project_id, id).await
 }

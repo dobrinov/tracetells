@@ -123,6 +123,9 @@ enum Command {
         /// Why the insight was dismissed; the analyst learns from it.
         #[arg(long)]
         reason: Option<String>,
+        /// When a released change went live, if not now: ISO 8601 (2026-10-28T14:05:00Z) or epoch ms.
+        #[arg(long, value_parser = parse_at)]
+        at: Option<i64>,
     },
     /// Run an MCP server on stdin/stdout for a local coding agent (Claude Code, Cursor, ...),
     /// acting as an admin of one account. Remote agents use the server's /mcp endpoint with a token.
@@ -406,9 +409,9 @@ async fn run() -> Result<()> {
             let insight = insights::get(&pool, target.id, id).await?.with_context(|| format!("no insight #{id} on {}", target.slug))?;
             print!("{}", render_prompt(&pool, &target, &insight).await?);
         }
-        Command::Status { id, status, reason } => {
+        Command::Status { id, status, reason, at } => {
             let target = db::resolve_site(&pool, site).await?;
-            let insight = insights::set_status(&pool, target.id, id, status, reason.as_deref())
+            let insight = insights::set_status(&pool, target.id, id, status, reason.as_deref(), at)
                 .await?
                 .with_context(|| format!("no insight #{id} on {}", target.slug))?;
             println!("#{} is now {}", insight.id, insight.status);
@@ -576,6 +579,10 @@ fn print_report(r: &config::SyncReport) {
     for w in &r.warnings {
         println!("warning: {w}");
     }
+}
+
+fn parse_at(s: &str) -> Result<i64, String> {
+    trace_core::util::parse_time(s).ok_or_else(|| "use ISO 8601, e.g. 2026-10-28T14:05:00Z, or epoch milliseconds".into())
 }
 
 pub async fn render_prompt(pool: &Pool, project: &Project, insight: &trace_core::model::Insight) -> Result<String> {

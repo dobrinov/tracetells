@@ -78,7 +78,31 @@ The navigation shows how far along you are until the five required steps are don
 | **Analyst** | Your coding agent, over MCP: it reads the aggregated digest and KPIs and saves insights with `add_insights` (see [MCP](#mcp-use-trace-from-your-coding-agent)). The server also has its own: built-in heuristics that need no model (the dashboard's **Run analysis**), and optionally Claude when it has an `ANTHROPIC_API_KEY`. Either way it sends your KPIs plus existing and dismissed insights so it doesn't repeat itself. |
 | **Prompts** | Each insight is rendered as a self-contained task for a coding agent: problem, evidence, goal KPI, proposal, routes and acceptance criteria. Copy it from the dashboard, or run `trace prompt 12 \| claude`. |
 | **Errors** | Five kinds: uncaught exceptions, unhandled promise rejections, `console.error` calls (where React, Vue and Angular report the errors they catch), failed `fetch`/XHR requests (status ≥ 400 or no response) and scripts, stylesheets or images that fail to load. |
-| **Evaluation** | For released insights, compares the KPI in equal windows before and after the release (Welch test, at least 30 sessions per side) and gives a verdict: improved, regressed, no change or insufficient data. It runs every hour while the server is up. |
+| **Evaluation** | For released insights, compares the KPI over the 14 days before the release with the 14 days after (Welch test, at least 30 sessions per side). See [Did it help?](#did-it-help). |
+
+On the first-party API, the analyst opts into server-side refusal fallbacks (`fallbacks: "default"`), so a request the main model declines is retried on Anthropic's recommended fallback model.
+
+### Did it help?
+
+Trace tries hard not to tell you a change worked when it was noise.
+
+- **A fixed window.** The 14 days after a release are compared with the 14 before; whole weeks, so weekdays and weekends balance. Until those 14 days have passed the insight says *Measuring: day 3 of 14* and gives no verdict, because checking a growing window every hour would sooner or later catch a lucky swing. Then the verdict (improved, regressed, no change, or not enough data) is settled and doesn't change.
+- **The KPI as it was.** A release is judged by its KPI's definition at the moment it shipped. If `trace.json` changes the KPI later, the verdict says it was measured with the earlier definition. Linking another KPI, or correcting the release time, starts the measurement over.
+- **When it really went live.** The before/after split is the release time, so give the deploy's time rather than the moment someone remembered to click: the dashboard asks for it, `update_insight_status` takes `released_at`, `trace status 12 released --at 2026-10-28T14:05:00Z` does it from the CLI, and a deploy pipeline can do it itself (below). A release time before Trace found the insight is refused: that change can't have been its fix.
+- **Other changes.** When another change aimed at the same KPI shipped within 14 days, the verdict names it: part of the difference may be its doing.
+
+It is still a before/after comparison, not an experiment: a campaign, a season or an outage in either window can move a KPI too.
+
+**From your deploy.** Task prompts ask the agent to put `Trace-Insight: 12` in the commit message. After a deploy, mark every insight it shipped as released at that moment:
+
+```sh
+ids=$(git log --format=%B "$PREVIOUS_DEPLOY..HEAD" | sed -n 's/^Trace-Insight: *#\{0,1\}\([0-9][0-9]*\).*/\1/p' | sort -un | paste -sd, -)
+[ -n "$ids" ] && curl -fsS -X POST "https://trace.example.com/api/sites/SITE/releases" \
+  -H "Authorization: Bearer $TRACE_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"insights\": [$ids], \"ref\": \"$(git rev-parse --short HEAD)\"}"
+```
+
+`POST /releases` takes `insights` (ids), and optionally `at` (ISO 8601 or epoch ms; default now) and `ref` (for the activity log). It answers with what it `released` and what it `skipped` and why (dismissed, already released earlier, unknown).
 
 ## KPIs and events in code
 
@@ -355,8 +379,6 @@ Multi-page sites keep one session across page loads (30 minutes of inactivity st
 | `TRACE_EFFORT` | `high` | `output_config.effort` for the analyst |
 | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | |
 
-On the first-party API, the analyst opts into server-side refusal fallbacks (`fallbacks: "default"`), so a request the main model declines is retried on Anthropic's recommended fallback model.
-
 ## CLI
 
 ```
@@ -365,7 +387,7 @@ trace [--site S] ...
            serve [--config trace.json] [--demo-site ADDR] [--allow-signup] [--contact-url URL]
            check [FILE] | push [FILE] [--server URL --token T]
            analyze [--engine auto|claude|heuristics] [--days 14] [--max-insights 5] | evaluate
-           insights [--status new] | prompt <id> | status <id> <status> [--reason ...] | demo
+           insights [--status new] | prompt <id> | status <id> <status> [--reason ...] [--at TIME] | demo
            site list | site add NAME [--account A] | site remove SLUG --confirm NAME
            user create --email E [--role owner|admin|user] [--account A] | user list
            user reset-password --email E | user reset-mfa --email E
@@ -375,7 +397,7 @@ trace [--site S] ...
 
 ## HTTP API
 
-`GET /d.js?k=WRITE_KEY` (collector) · `POST /v1/collect` (write key) · `POST /mcp` (MCP, API token) · with an API token: `GET /api/sites` · `GET /api/plan` · and per website, under `/api/sites/{site}`: `GET|POST /config` · `GET /kpis` · `GET /digest?days=14` · `GET /insights?status=` · `GET /insights/{id}/prompt` · `POST /insights/{id}/status` · `POST /insights/{id}/kpi` · `POST /analyze` · `POST /evaluate` · `GET /runs`
+`GET /d.js?k=WRITE_KEY` (collector) · `POST /v1/collect` (write key) · `POST /mcp` (MCP, API token) · with an API token: `GET /api/sites` · `GET /api/plan` · and per website, under `/api/sites/{site}`: `GET|POST /config` · `GET /kpis` · `GET /digest?days=14` · `GET /insights?status=` · `GET /insights/{id}/prompt` · `POST /insights/{id}/status` (with `released_at`) · `POST /insights/{id}/kpi` · `POST /releases` · `GET /analysis` · `POST /analyze` · `POST /evaluate` · `GET /runs`
 
 ## Contributing
 

@@ -95,6 +95,7 @@ pub fn router(state: AppStateRef) -> Router {
         .route("/insights/{id}/prompt", get(get_prompt))
         .route("/insights/{id}/status", post(set_status))
         .route("/insights/{id}/kpi", post(set_kpi))
+        .route("/releases", post(record_release))
         .route("/analyze", post(analyze))
         .route("/evaluate", post(run_evaluate))
         .route("/runs", get(list_runs))
@@ -523,6 +524,16 @@ struct StatusBody {
     status: InsightStatus,
     #[serde(default)]
     reason: Option<String>,
+    /// When the change went live, if not now: epoch ms or ISO 8601.
+    #[serde(default)]
+    released_at: Option<Value>,
+}
+
+/// A moment given as epoch milliseconds or an ISO 8601 string.
+pub(crate) fn time_arg(v: &Value) -> anyhow::Result<i64> {
+    v.as_i64()
+        .or_else(|| v.as_str().and_then(trace_core::util::parse_time))
+        .ok_or_else(|| anyhow::anyhow!("times are epoch milliseconds or ISO 8601, e.g. \"2026-10-28T14:05:00Z\""))
 }
 
 async fn set_status(
@@ -530,10 +541,62 @@ async fn set_status(
     Path(id): Path<i64>,
     Json(body): Json<StatusBody>,
 ) -> ApiResult<Json<Value>> {
-    let insight = insights::set_status(&state.pool, site.id, id, body.status, body.reason.as_deref())
-        .await?
+    let at = body.released_at.as_ref().filter(|v| !v.is_null()).map(time_arg).transpose().map_err(ApiError::bad_request)?;
+    let insight = insights::set_status(&state.pool, site.id, id, body.status, body.reason.as_deref(), at)
+        .await
+        .map_err(ApiError::bad_request)?
         .ok_or_else(|| ApiError::not_found("insight"))?;
     Ok(Json(serde_json::to_value(insight).map_err(anyhow::Error::from)?))
+}
+
+#[derive(Deserialize)]
+struct ReleaseBody {
+    /// The insights this deploy ships.
+    insights: Vec<i64>,
+    /// When it went live, if not now.
+    #[serde(default)]
+    at: Option<Value>,
+    /// The commit or version deployed, for the activity log.
+    #[serde(default, rename = "ref")]
+    git_ref: Option<String>,
+}
+
+/// For deploy pipelines: marks the insights a deploy ships as released at the
+/// deploy's time, so the before/after split is when the change went live.
+async fn record_release(
+    State(state): State<AppStateRef>,
+    Extension(CurrentSite(site)): Extension<CurrentSite>,
+    Extension(who): Extension<crate::auth_api::Principal>,
+    Json(body): Json<ReleaseBody>,
+) -> ApiResult<Json<Value>> {
+    if body.insights.is_empty() || body.insights.len() > 50 {
+        return Err(ApiError::bad_request("list between 1 and 50 insight ids in `insights`"));
+    }
+    let at = match body.at.as_ref().filter(|v| !v.is_null()) {
+        Some(v) => time_arg(v).map_err(ApiError::bad_request)?,
+        None => trace_core::util::now_ms(),
+    };
+    let (mut released, mut skipped) = (Vec::new(), Vec::new());
+    for &id in &body.insights {
+        let problem = match insights::get(&state.pool, site.id, id).await? {
+            None => Some("no such insight".to_string()),
+            Some(i) if i.status == InsightStatus::Dismissed => Some("dismissed".into()),
+            Some(i) if i.status == InsightStatus::Released && i.released_at.is_some_and(|t| t <= at) => {
+                Some(format!("already released on {}", trace_core::util::date(i.released_at.unwrap_or(at))))
+            }
+            Some(_) => insights::set_status(&state.pool, site.id, id, InsightStatus::Released, None, Some(at)).await.err().map(|e| e.to_string()),
+        };
+        match problem {
+            None => released.push(id),
+            Some(reason) => skipped.push(json!({ "id": id, "reason": reason })),
+        }
+    }
+    if !released.is_empty() {
+        let git_ref = body.git_ref.as_deref().map(|r| format!(" ({})", trace_core::util::truncate(&trace_core::privacy::one_line(r), 80))).unwrap_or_default();
+        let ids = released.iter().map(|id| format!("#{id}")).collect::<Vec<_>>().join(", ");
+        trace_core::auth::audit_site(&state.pool, site.account_id, Some(site.id), &who.actor(), "insights.released", &format!("{ids}{git_ref}")).await?;
+    }
+    Ok(Json(json!({ "released": released, "skipped": skipped, "released_at": at })))
 }
 
 #[derive(Deserialize)]
@@ -822,7 +885,7 @@ mod isolation_tests {
     /// Every endpoint about one website, as (method, path below the website).
     const SITE_ROUTES: &[(&str, &str)] = &[
         ("GET", "project"), ("GET", "config"), ("POST", "config"), ("GET", "digest"), ("GET", "kpis"),
-        ("GET", "insights"), ("GET", "insights/1"), ("GET", "insights/1/prompt"), ("POST", "insights/1/status"), ("POST", "insights/1/kpi"),
+        ("GET", "insights"), ("GET", "insights/1"), ("GET", "insights/1/prompt"), ("POST", "insights/1/status"), ("POST", "insights/1/kpi"), ("POST", "releases"),
         ("POST", "analyze"), ("POST", "evaluate"), ("GET", "runs"), ("GET", "privacy"), ("POST", "privacy/rules"),
         ("POST", "privacy/rules/1"), ("DELETE", "privacy/rules/1"), ("POST", "privacy/test"),
         ("GET", "onboarding"), ("POST", "onboarding/privacy-reviewed"), ("GET", "analysis"),
@@ -1024,6 +1087,34 @@ mod isolation_tests {
         assert_eq!(stored, 5);
         let u = trace_core::usage::get(&state.pool, acme.id, &trace_core::usage::this_month()).await.unwrap();
         assert_eq!((u.events, u.events_dropped), (5, 4));
+        trace_core::db::drop_test_target(&path).await;
+    }
+
+    #[tokio::test]
+    async fn deploys_mark_insights_released_at_their_time() {
+        let (app, state, path) = app().await;
+        let (acme, shop) = db::create_account_with_site(&state.pool, "Acme", None).await.unwrap();
+        let owner = person(&state, acme.id, "a@acme.example", Role::Owner).await;
+        let mut ids = Vec::new();
+        for (title, status) in [("Ship me", "in_progress"), ("Not this", "dismissed")] {
+            let id: i64 = sqlx::query_scalar("INSERT INTO insights (project_id, title, problem, proposal, source, status, created_at, updated_at) VALUES ($1, $2, 'p', 'x', 'test', $3, 1, 1) RETURNING id")
+                .bind(shop.id).bind(title).bind(status).fetch_one(&state.pool).await.unwrap();
+            ids.push(id);
+        }
+        let url = format!("/api/sites/{}/releases", shop.slug);
+        let (status, body) = send(&app, json_req("POST", &url, ("cookie", &owner), json!({ "insights": [ids[0], ids[1], 999], "at": "2026-10-01T09:30:00Z", "ref": "abc123" }))).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["released"], json!([ids[0]]));
+        let reasons: Vec<&str> = body["skipped"].as_array().unwrap().iter().map(|s| s["reason"].as_str().unwrap()).collect();
+        assert_eq!(reasons, ["dismissed", "no such insight"]);
+        let shipped = insights::get(&state.pool, shop.id, ids[0]).await.unwrap().unwrap();
+        assert_eq!((shipped.status, shipped.released_at), (InsightStatus::Released, trace_core::util::parse_time("2026-10-01T09:30:00Z")));
+
+        // The same deploy reported again changes nothing; a bad time is refused.
+        let (_, again) = send(&app, json_req("POST", &url, ("cookie", &owner), json!({ "insights": [ids[0]], "at": "2026-10-01T09:30:00Z" }))).await;
+        assert!(again["skipped"][0]["reason"].as_str().unwrap().starts_with("already released"), "{again}");
+        let (status, _) = send(&app, json_req("POST", &url, ("cookie", &owner), json!({ "insights": [ids[0]], "at": "last tuesday" }))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
         trace_core::db::drop_test_target(&path).await;
     }
 

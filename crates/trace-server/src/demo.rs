@@ -162,7 +162,8 @@ pub async fn seed(pool: &Pool, sessions: usize) -> Result<()> {
     let project_id = shop.id;
 
     let now = now_ms();
-    let released_at = now - 7 * DAY_MS;
+    // Two weeks ago: the fixed window after the release has passed, so the demo shows a verdict.
+    let released_at = now - 14 * DAY_MS;
     let mut rng = Rng(0x7e11_7a1e_5eed);
     let mut tx = pool.begin().await?;
     let mut n_events = 0;
@@ -326,7 +327,7 @@ pub async fn seed(pool: &Pool, sessions: usize) -> Result<()> {
     )
     .await?
     .expect("fresh database");
-    insights::set_status(pool, project_id, released, InsightStatus::Released, None).await?;
+    insights::set_status(pool, project_id, released, InsightStatus::Released, None, None).await?;
     sqlx::query("UPDATE insights SET released_at = $1 WHERE id = $2")
         .bind(released_at)
         .bind(released)
