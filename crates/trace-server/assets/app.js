@@ -1,0 +1,1826 @@
+"use strict";
+
+const view = document.getElementById("view");
+const toastEl = document.getElementById("toast");
+
+const STATUSES = [
+  ["new", "New"],
+  ["selected", "Selected"],
+  ["in_progress", "In progress"],
+  ["released", "Released"],
+  ["dismissed", "Dismissed"],
+];
+
+const esc = (s) =>
+  String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const pct = (v) => (v == null ? "–" : `${(v * 100).toFixed(1)}%`);
+const num = (v) => (v == null ? "–" : Number(v).toLocaleString());
+
+function store(key, value) {
+  try {
+    if (value === undefined) return localStorage.getItem(key);
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    return null;
+  }
+}
+
+// "system" follows the OS; the choice is per browser.
+const themeChoice = () => store("trace_theme") || "system";
+function setTheme(choice) {
+  store("trace_theme", choice === "system" ? null : choice);
+  if (choice === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = choice;
+}
+
+let toastTimer;
+function toast(message, isError = false) {
+  toastEl.textContent = message;
+  toastEl.className = "toast" + (isError ? " error" : "");
+  toastEl.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (toastEl.hidden = true), isError ? 8000 : 4000);
+}
+
+// Every request is JSON: the server rejects cookie-authenticated writes that
+// aren't, which is what stops other sites from forging requests (CSRF).
+async function api(path, opts = {}) {
+  // The selected website goes with every call; account-level endpoints ignore it.
+  const siteHeader = currentSite ? { "X-Trace-Site": currentSite } : {};
+  const res = await fetch(`/api${path}`, { ...opts, headers: { "Content-Type": "application/json", ...siteHeader, ...(opts.headers || {}) } });
+  const type = res.headers.get("content-type") || "";
+  const body = type.includes("json") ? await res.json() : await res.text();
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    // Session ended or a second factor is due: back to the sign-in flow.
+    auth = null;
+    project = null;
+    boot();
+  }
+  if (!res.ok) throw new Error((body && body.error) || body || res.statusText);
+  return body;
+}
+
+const post = (path, data) => api(path, { method: "POST", body: JSON.stringify(data ?? {}) });
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  }
+}
+
+let project = null;
+// The account's websites and the one being looked at (its slug).
+let sites = [];
+let currentSite = store("trace_site");
+let kpiCache = [];
+
+function host(origin) {
+  return String(origin || "").replace(/^https?:\/\//, "");
+}
+
+// Setup is onboarding: once the collector is clearly delivering data it leaves the
+// navigation, and the header pill is both the confirmation and the way back to it.
+function showCollection() {
+  const c = project.collection;
+  const pill = document.getElementById("collect-status");
+  const setupLink = document.querySelector('#nav a[data-view="setup"]');
+  setupLink.hidden = c.active;
+  pill.hidden = false;
+  document.getElementById("site-dot").classList.toggle("on", c.active);
+  if (c.active) {
+    const sites = c.sources.filter((s) => Date.now() - s.last_seen < 86400000).map((s) => host(s.origin));
+    pill.className = "collect-status ok";
+    pill.textContent = `Collecting${sites.length ? ` from ${sites[0]}${sites.length > 1 ? ` +${sites.length - 1}` : ""}` : ""}`;
+    pill.title = `Last event ${ago(c.last_event_at)}. Open the install snippet to add another site.`;
+  } else {
+    pill.className = "collect-status waiting";
+    pill.textContent = c.last_event_at ? `No data since ${ago(c.last_event_at)}` : "Not collecting yet";
+    pill.title = "Open the install snippet";
+  }
+}
+
+const siteButton = document.getElementById("site-button");
+const siteList = document.getElementById("site-list");
+
+async function loadSites() {
+  sites = await api("/sites");
+  if (!sites.some((s) => s.slug === currentSite)) currentSite = sites.length ? sites[0].slug : null;
+  store("trace_site", currentSite);
+  document.getElementById("site-menu").hidden = !sites.length;
+  const current = sites.find((s) => s.slug === currentSite);
+  document.getElementById("site-name").textContent = current ? current.name : "";
+  siteButton.setAttribute("aria-label", current ? `Website: ${current.name}` : "Website");
+  siteList.innerHTML =
+    `<div class="account-name">${esc(auth.account ? auth.account.name : "Websites")}</div>` +
+    sites
+      .map(
+        (s) => `<button type="button" role="option" data-site="${esc(s.slug)}" aria-selected="${s.slug === currentSite}">
+          <span class="dot ${s.collection && s.collection.active ? "on" : ""}"></span>
+          <span><span>${esc(s.name)}</span><span class="site-host">${esc(s.collection && s.collection.sources.length ? host(s.collection.sources[0].origin) : s.slug)}</span></span>
+        </button>`
+      )
+      .join("") +
+    (can("admin")
+      ? `<hr><button type="button" class="add" data-add-site><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add website</button>`
+      : "");
+}
+
+function toggleSiteList(open = siteList.hidden) {
+  siteList.hidden = !open;
+  siteButton.setAttribute("aria-expanded", String(open));
+  if (open) (siteList.querySelector('[aria-selected="true"]') || siteList.querySelector("button"))?.focus();
+}
+
+async function addWebsite() {
+  const name = prompt("Name of the new website, e.g. \"Docs\" or \"Shop (staging)\":");
+  if (!name) return false;
+  const s = await post("/sites", { name });
+  toast(`Added ${s.name}. Install its snippet on Setup.`);
+  currentSite = s.slug;
+  store("trace_site", currentSite);
+  await loadSites();
+  return true;
+}
+
+function switchSite(slug) {
+  currentSite = slug;
+  store("trace_site", slug);
+  project = null;
+  kpiCache = [];
+  route();
+}
+
+siteButton.addEventListener("click", () => toggleSiteList());
+siteList.addEventListener("click", async (e) => {
+  const pick = e.target.closest("[data-site]");
+  if (pick) {
+    toggleSiteList(false);
+    if (pick.dataset.site !== currentSite) {
+      switchSite(pick.dataset.site);
+      await loadSites();
+    }
+    return;
+  }
+  if (e.target.closest("[data-add-site]")) {
+    toggleSiteList(false);
+    try {
+      if (await addWebsite()) switchSite(currentSite);
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+});
+siteList.addEventListener("keydown", (e) => {
+  const items = [...siteList.querySelectorAll("button")];
+  const i = items.indexOf(document.activeElement);
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    items[(i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length].focus();
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !siteList.hidden) {
+    toggleSiteList(false);
+    siteButton.focus();
+  }
+});
+document.addEventListener("click", (e) => {
+  if (!siteList.hidden && !e.target.closest("#site-menu")) toggleSiteList(false);
+});
+
+async function loadProject() {
+  project = await api("/project");
+  showCollection();
+  loadChecklist();
+  // Events dropped because of the monthly limit: say so on every page.
+  const notice = document.getElementById("notice");
+  try {
+    const p = await api("/plan");
+    const events = p.limits.find((l) => l.key === "monthly_events");
+    notice.hidden = !p.events_dropped;
+    if (p.events_dropped)
+      notice.innerHTML = `<div><span><strong>${num(p.events_dropped)} events weren't recorded this month.</strong> This account reached its limit of ${num(events.limit)} events. Your website is not affected.</span> <a href="#/plan">Plan & usage</a></div>`;
+  } catch {
+    notice.hidden = true;
+  }
+}
+
+// ---------------------------------------------------------------- Insights
+
+let insightTab = store("trace_tab") || "new";
+
+function kpiValue(k, v) {
+  if (v == null) return "–";
+  return k.kind === "per_session" ? Number(v).toFixed(2) : pct(v);
+}
+
+function insightActions(insight) {
+  const b = (status, label, cls = "") => `<button class="${cls}" data-status="${status}">${label}</button>`;
+  switch (insight.status) {
+    case "new":
+      return b("selected", "Select") + b("dismissed", "Dismiss", "quiet");
+    case "selected":
+      return b("in_progress", "Start work") + b("new", "Back to new", "quiet") + b("dismissed", "Dismiss", "quiet");
+    case "in_progress":
+      return b("released", "Mark released") + b("selected", "Back to selected", "quiet");
+    case "released":
+      return b("in_progress", "Reopen", "quiet");
+    case "dismissed":
+      return b("new", "Restore", "quiet");
+  }
+  return "";
+}
+
+function verdictBlock(insight) {
+  if (insight.status !== "released") return "";
+  if (!insight.kpi_id) return `<div class="verdict"><span class="badge">Not measured</span><span>Link a KPI to measure the impact of this release.</span></div>`;
+  const e = insight.evaluation;
+  if (!e) return `<div class="verdict"><span class="badge">Pending</span><span>Not evaluated yet. Trace checks released insights every hour.</span></div>`;
+  const label = { improved: "Improved", regressed: "Regressed", no_change: "No change", insufficient_data: "Not enough data" }[e.verdict] || e.verdict;
+  return `<div class="verdict ${esc(e.verdict)}"><span class="badge">${esc(label)}</span><span>${esc(e.summary)}</span></div>`;
+}
+
+let focusedInsight = null;
+
+function insightCard(insight) {
+  const kpi = kpiCache.find((k) => k.id === insight.kpi_id);
+  const focused = insight.id === focusedInsight;
+  const released = insight.released_at ? ` · released ${new Date(insight.released_at).toLocaleDateString()}` : "";
+  const kpiOptions =
+    `<option value="">No KPI</option>` +
+    kpiCache.map((k) => `<option value="${k.id}" ${k.id === insight.kpi_id ? "selected" : ""}>${esc(k.name)}</option>`).join("");
+  return `
+  <article class="card ${focused ? "focused" : ""}" data-id="${insight.id}">
+    <div class="meta">
+      <span class="chip ${esc(insight.confidence)}">${esc(insight.confidence)} confidence</span>
+      <span>#${insight.id} · via ${esc(insight.source)}${released}</span>
+      ${kpi ? `<span class="kpi-name" title="KPI this insight should move">${esc(kpi.name)}</span>` : ""}
+    </div>
+    <h3>${esc(insight.title)}</h3>
+    <p class="problem">${esc(insight.problem)}</p>
+    ${
+      insight.evidence.length
+        ? `<details><summary>Evidence (${insight.evidence.length})</summary><ul>${insight.evidence.map((e) => `<li>${esc(e)}</li>`).join("")}</ul></details>`
+        : ""
+    }
+    <div class="proposal"><strong>Proposed change</strong>${esc(insight.proposal)}</div>
+    ${insight.expected_impact ? `<p class="hint">Expected impact: ${esc(insight.expected_impact)}</p>` : ""}
+    ${insight.dismiss_reason ? `<p class="dismissed-reason">Dismissed: ${esc(insight.dismiss_reason)}</p>` : ""}
+    ${verdictBlock(insight)}
+    <div class="actions">
+      <button class="${focused ? "primary" : ""}" data-copy>Copy as prompt</button>
+      <span class="spacer"></span>
+      ${can("user") ? `<select data-kpi aria-label="KPI this insight should move">${kpiOptions}</select>${insightActions(insight)}` : ""}
+    </div>
+  </article>`;
+}
+
+async function showPrompt(id) {
+  const panel = view.querySelector(".prompt-panel");
+  if (!panel) return;
+  panel.querySelector("pre").textContent = "Loading…";
+  panel.dataset.id = id;
+  panel.querySelector(".cli").textContent = `trace prompt ${id} | claude`;
+  const text = await api(`/insights/${id}/prompt`);
+  if (panel.dataset.id === String(id)) panel.querySelector("pre").textContent = text;
+}
+
+async function copyPrompt(id, btn) {
+  const text = await api(`/insights/${id}/prompt`);
+  if (await copyText(text)) {
+    const label = btn.textContent;
+    btn.textContent = "Copied ✓";
+    setTimeout(() => (btn.textContent = label), 1600);
+  } else {
+    toast("Couldn't copy. Select the prompt in the panel and copy it from there.", true);
+  }
+}
+
+async function renderInsights() {
+  const [insights, kpis] = await Promise.all([api("/insights"), api("/kpis")]);
+  kpiCache = kpis;
+  const counts = Object.fromEntries(STATUSES.map(([s]) => [s, insights.filter((i) => i.status === s).length]));
+  const shown = insights.filter((i) => i.status === insightTab);
+  if (!shown.some((i) => i.id === focusedInsight)) focusedInsight = shown.length ? shown[0].id : null;
+  view.innerHTML = `
+    <h1>Insights</h1>
+    <p class="sub">What the analyst found in real behaviour, with the change it suggests. Copy one as a prompt for your coding agent, move it along as you work, and once it's released Trace measures whether it moved its KPI.</p>
+    <div class="chips" role="tablist" aria-label="Status">
+      ${STATUSES.map(
+        ([s, label]) =>
+          `<button role="tab" data-tab="${s}" class="${s === insightTab ? "active" : ""}" aria-selected="${s === insightTab}">${label}<span class="count">${counts[s]}</span></button>`
+      ).join("")}
+    </div>
+    ${
+      shown.length
+        ? `<div class="insights-layout">
+            <div class="insights">${shown.map(insightCard).join("")}</div>
+            <aside class="prompt-panel" aria-label="Prompt for your coding agent">
+              <div class="head"><strong>Prompt for your coding agent</strong><button data-panel-copy>Copy</button></div>
+              <pre></pre>
+              <div class="cli"></div>
+            </aside>
+          </div>`
+        : `<div class="empty">${
+            insightTab === "new" ? `No new insights. Click <strong>Run analysis</strong> to look for some.` : `Nothing here yet.`
+          }</div>`
+    }`;
+
+  view.querySelectorAll("[data-tab]").forEach((el) =>
+    el.addEventListener("click", () => {
+      insightTab = el.dataset.tab;
+      store("trace_tab", insightTab);
+      renderInsights();
+    })
+  );
+  if (focusedInsight != null) showPrompt(focusedInsight);
+  view.querySelector("[data-panel-copy]")?.addEventListener("click", (e) => copyPrompt(focusedInsight, e.currentTarget));
+
+  view.querySelectorAll(".card").forEach((card) => {
+    const id = Number(card.dataset.id);
+    // Clicking a card shows its prompt; controls inside it keep their own behaviour.
+    card.addEventListener("click", (e) => {
+      if (e.target.closest("button, select, a, summary") || focusedInsight === id) return;
+      focusedInsight = id;
+      view.querySelectorAll(".card").forEach((c) => {
+        const on = Number(c.dataset.id) === id;
+        c.classList.toggle("focused", on);
+        c.querySelector("[data-copy]").classList.toggle("primary", on);
+      });
+      showPrompt(id);
+    });
+    card.querySelector("[data-copy]").addEventListener("click", (e) => copyPrompt(id, e.currentTarget));
+    card.querySelector("[data-kpi]")?.addEventListener("change", async (e) => {
+      await post(`/insights/${id}/kpi`, { kpi_id: e.target.value ? Number(e.target.value) : null });
+      toast("KPI updated");
+      renderInsights();
+    });
+    card.querySelectorAll("[data-status]").forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        const status = btn.dataset.status;
+        let reason = null;
+        if (status === "dismissed") {
+          reason = prompt("Why dismiss this insight? The analyst uses your reason to avoid similar suggestions.", "");
+          if (reason === null) return;
+        }
+        await post(`/insights/${id}/status`, { status, reason });
+        if (status === "released") {
+          await post("/evaluate");
+          toast("Released. Trace will compare the KPI before and after the release.");
+        }
+        renderInsights();
+      })
+    );
+  });
+}
+
+// ---------------------------------------------------------------- KPIs
+
+function deltaHtml(k) {
+  if (k.current == null || k.previous == null) return "";
+  const d = k.current - k.previous;
+  if (Math.abs(d) < 1e-9) return `<span class="delta">no change</span>`;
+  const good = (d > 0) === (k.direction === "increase");
+  const text = k.kind === "per_session" ? `${d > 0 ? "+" : ""}${d.toFixed(2)}` : `${d > 0 ? "+" : ""}${(d * 100).toFixed(1)} pts`;
+  return `<span class="delta ${good ? "good" : "bad"}">${d > 0 ? "▲" : "▼"} ${text}</span>`;
+}
+
+function ago(ts) {
+  if (!ts) return "never";
+  const m = Math.round((Date.now() - ts) / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
+}
+
+const CONFIG_EXAMPLE = `{
+  "product": "Your product",
+  "events": {
+    "purchase": "Payment succeeded"
+  },
+  "kpis": {
+    "checkout_conversion": {
+      "name": "Checkout conversion",
+      "conversion": { "from": { "pageview": "/checkout" }, "to": { "event": "purchase" } },
+      "goal": "increase",
+      "target": "55%"
+    }
+  }
+}`;
+
+// Where the value and target sit on a bar: rates use 0–100%, per-session counts
+// scale to whichever of value and target is larger.
+function kpiBar(k) {
+  if (k.current == null) return "";
+  const max = k.kind === "per_session" ? Math.max(k.current, k.target ?? 0) * 1.25 || 1 : 1;
+  const at = (v) => Math.max(0, Math.min(100, (v / max) * 100));
+  const tone = k.target == null || k.target_met ? "" : k.direction === "decrease" ? "bad" : "";
+  return `<div class="bar ${tone}" role="img" aria-label="${esc(k.name)}: ${kpiValue(k, k.current)}${k.target != null ? `, target ${kpiValue(k, k.target)}` : ""}">
+    <span style="width:${at(k.current).toFixed(1)}%"></span>
+    ${k.target != null ? `<i class="target" style="left:${at(k.target).toFixed(1)}%"></i>` : ""}
+  </div>`;
+}
+
+function kpiCard(k) {
+  const target = k.target != null ? `Target ${k.direction === "increase" ? "≥" : "≤"} ${kpiValue(k, k.target)}${k.target_met ? " ✓" : ""}` : "No target";
+  return `
+    <div class="card kpi-card">
+      <div class="head"><span class="name">${esc(k.name)}</span><span class="key" title="Key in trace.json">${esc(k.key || "")}</span></div>
+      <div class="value-row"><span class="value">${kpiValue(k, k.current)}</span>${deltaHtml(k)}</div>
+      ${kpiBar(k)}
+      <span class="hint">${target} · ${num(k.sessions)} sessions</span>
+      <div class="def">${esc(k.description || k.summary)}</div>
+    </div>`;
+}
+
+async function renderKpis() {
+  const [kpis, cfg] = await Promise.all([api("/kpis"), api("/config")]);
+  kpiCache = kpis;
+  const push = `trace push trace.json --server ${location.origin} --token $TRACE_TOKEN   # create one under Account`;
+  const source = cfg.synced_at
+    ? `<span class="source" title="To change a KPI, edit trace.json in your repository and push it."><code>${esc(cfg.source || "trace.json")}</code> · synced ${esc(ago(cfg.synced_at))}</span>`
+    : "";
+  const cards = kpis.length
+    ? `<div class="kpi-grid">${kpis.map(kpiCard).join("")}</div>`
+    : `<div class="card">
+        <p><strong>No KPIs yet.</strong> KPIs live in your application's code, next to the events that feed them. Add a <code>trace.json</code> to your repository:</p>
+        <div class="copy-row"><pre class="snippet">${esc(CONFIG_EXAMPLE)}</pre><button data-copy="${esc(CONFIG_EXAMPLE)}">Copy</button></div>
+        <p class="hint">Check it with <code>trace check</code>, then publish it, for example from CI:</p>
+        <div class="copy-row"><pre class="snippet">${esc(push)}</pre><button data-copy="${esc(push)}">Copy</button></div>
+      </div>`;
+
+  const declared = cfg.events.map((e) => [
+    `<code>${esc(e.name)}</code>`,
+    esc(e.description),
+    num(e.count),
+    e.count ? `<span class="status-dot good">● receiving</span> <span class="hint">${esc(ago(e.last_seen))}</span>` : `<span class="status-dot bad">● not seen in 14 days</span>`,
+  ]);
+  const undeclared = cfg.undeclared_events.map((e) => [
+    `<code>${esc(e.name)}</code>`,
+    `<span class="hint">Sent by your app but not declared in trace.json</span>`,
+    num(e.count),
+    `<span class="status-dot">● undeclared</span>`,
+  ]);
+
+  const steps = `trace check\ntrace push --server ${location.origin} --site ${project.slug}`;
+  view.innerHTML = `
+    <div class="page-head">
+      <div><h1>KPIs</h1><p class="sub">The last 14 days against the 14 before. Your team defines these in code; this page only shows how they're doing, and released insights are judged against them.</p></div>
+      ${source}
+    </div>
+    ${cards}
+    <h2>Tracking health</h2>
+    <div class="side-by-side">
+      <div>
+        ${table(
+          [{ label: "Event" }, { label: "What it means" }, { label: "Last 14 days", num: 1 }, { label: "Status" }],
+          [...declared, ...undeclared],
+          "No custom events declared or received yet."
+        )}
+        <p class="hint">Send events with <code>trace.track("name")</code>, or without JavaScript using <code>data-trace-event="name"</code> on a button, link or form.</p>
+      </div>
+      <div class="dark-panel">
+        <strong>Change a KPI in your repo</strong>
+        <span>Edit <code>trace.json</code> next to the code that sends the events, then:</span>
+        <pre>${esc(steps)}</pre>
+        <span class="hint">Run them in CI with a personal API token (<code>TRACE_TOKEN</code>), so the dashboard always matches your main branch.</span>
+      </div>
+    </div>`;
+  view.querySelectorAll("[data-copy]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (await copyText(b.dataset.copy)) toast("Copied");
+    })
+  );
+}
+
+// ---------------------------------------------------------------- Behaviour
+
+let digestDays = Number(store("trace_days")) || 14;
+
+function table(headers, rows, empty = "No data in this window.") {
+  if (!rows.length) return `<p class="hint">${empty}</p>`;
+  return `<div class="table-wrap"><table><thead><tr>${headers
+    .map((h) => `<th class="${h.num ? "num" : ""}">${h.label}</th>`)
+    .join("")}</tr></thead><tbody>${rows
+    .map((r) => `<tr>${r.map((c, i) => `<td class="${headers[i].num ? "num" : ""}">${c}</td>`).join("")}</tr>`)
+    .join("")}</tbody></table></div>`;
+}
+
+async function renderBehaviour() {
+  const d = await api(`/digest?days=${digestDays}`);
+  const t = d.totals;
+  const clickRows = (list) => list.map((c) => [esc(c.path), `<code>${esc(c.selector)}</code>`, esc(c.text || ""), num(c.count), num(c.sessions)]);
+  const clickHeaders = [{ label: "Page" }, { label: "Element" }, { label: "Text" }, { label: "Count", num: 1 }, { label: "Sessions", num: 1 }];
+  view.innerHTML = `
+    <div class="toolbar">
+      <div><h1>Behaviour</h1><p class="sub">This is what the analyst sees: behaviour aggregated over the window, never individual recordings.</p></div>
+      <label class="field narrow">Window
+        <select id="days">${[1, 7, 14, 30, 90].map((n) => `<option value="${n}" ${n === digestDays ? "selected" : ""}>Last ${n} day${n > 1 ? "s" : ""}</option>`).join("")}</select>
+      </label>
+    </div>
+    <div class="stats">
+      ${[
+        ["Sessions", t.sessions],
+        ["Visitors", t.visitors],
+        ["Pageviews", t.pageviews],
+        ["Events", t.events],
+      ]
+        .map(([l, v]) => `<div class="card stat"><div class="value">${num(v)}</div><div class="label">${l}</div></div>`)
+        .join("")}
+      ${d.devices
+        .map((x) => `<div class="card stat"><div class="value">${pct(t.sessions ? x.count / t.sessions : 0)}</div><div class="label">${esc(x.name)}</div></div>`)
+        .join("")}
+    </div>
+
+    <h2>Pages</h2>
+    ${table(
+      [{ label: "Path" }, { label: "Views", num: 1 }, { label: "Sessions", num: 1 }, { label: "Exit rate", num: 1 }, { label: "Avg scroll", num: 1 }, { label: "Avg time", num: 1 }],
+      d.pages.map((p) => [
+        esc(p.path),
+        num(p.views),
+        num(p.sessions),
+        pct(p.exit_rate),
+        p.avg_scroll_pct == null ? "–" : `${p.avg_scroll_pct}%`,
+        p.avg_seconds == null ? "–" : `${p.avg_seconds}s`,
+      ])
+    )}
+
+    <h2>Rage clicks</h2>
+    ${table(clickHeaders, clickRows(d.rage_clicks), "No rage clicks. Nice.")}
+
+    <h2>Dead clicks</h2>
+    ${table(clickHeaders, clickRows(d.dead_clicks), "No dead clicks.")}
+
+    <h2>Errors</h2>
+    ${table(
+      [{ label: "Kind" }, { label: "Message" }, { label: "Page" }, { label: "Source" }, { label: "Count", num: 1 }, { label: "Sessions", num: 1 }],
+      d.errors.map((e) => [`<span class="chip">${esc(e.kind)}</span>`, esc(e.message), esc(e.path), e.source ? `<code>${esc(e.source)}</code>` : "", num(e.count), num(e.sessions)]),
+      "No errors: no exceptions, console errors, failed requests or missing files."
+    )}
+
+    <h2>Forms</h2>
+    ${table(
+      [{ label: "Page" }, { label: "Form" }, { label: "Started", num: 1 }, { label: "Submitted", num: 1 }, { label: "Completion", num: 1 }],
+      d.forms.map((f) => [esc(f.path), `<code>${esc(f.selector)}</code>`, num(f.started), num(f.submitted), pct(f.completion_rate)])
+    )}
+
+    <h2>Top paths</h2>
+    ${table(
+      [{ label: "From" }, { label: "To" }, { label: "Count", num: 1 }],
+      d.transitions.map((x) => [esc(x.from), esc(x.to), num(x.count)])
+    )}
+
+    <h2>Custom events</h2>
+    ${table(
+      [{ label: "Name" }, { label: "Meaning" }, { label: "Count", num: 1 }, { label: "Sessions", num: 1 }],
+      d.custom_events.map((x) => [esc(x.name), x.declared ? esc(x.description) : `<span class="hint">not declared in trace.json</span>`, num(x.count), num(x.sessions)]),
+      "No custom events. Send them with trace.track(name, props)."
+    )}`;
+  view.querySelector("#days").addEventListener("change", (e) => {
+    digestDays = Number(e.target.value);
+    store("trace_days", String(digestDays));
+    renderBehaviour();
+  });
+}
+
+// ---------------------------------------------------------------- Setup
+
+// Snippets for the current website, shared by Setup and Get started.
+function setupSnippets() {
+  // ?k= serves this website's privacy rules built into the collector.
+  const src = `${location.origin}/d.js?k=${project.write_key}`;
+  const key = project.write_key;
+  const stub = `<script>window.trace=window.trace||{q:[]};["track","identify","page","init"].forEach(function(m){trace[m]=trace[m]||function(){trace.q.push([m,arguments])}})</script>`;
+  const installs = {
+    site: {
+      label: "Website",
+      hint: "Any site where links reload the page: server-rendered apps, CMSs, static sites. Paste into every page before </head>. Sessions continue across page loads, and back/forward restores count as pageviews.",
+      code: `<script src="${src}" data-key="${key}" defer></script>`,
+    },
+    spa: {
+      label: "Single-page app",
+      hint: "React, Vue, Svelte, Angular and others. Route changes through the history API, the Navigation API or hash routes (#/settings) are picked up automatically. Use data-routes to group dynamic URLs. Numeric and UUID segments become :id on their own. The stub lets your code call trace.track() before the script has loaded.",
+      code: `${stub}\n<script src="${src}" data-key="${key}" data-routes="/products/:slug, /docs/*" defer></script>`,
+    },
+    next: {
+      label: "Next.js",
+      hint: "In app/layout.tsx (App Router) or pages/_app.tsx. App Router navigations are tracked automatically.",
+      code: `import Script from "next/script";\n\n<Script src="${src}" data-key="${key}" data-routes="/products/:slug" strategy="afterInteractive" />`,
+    },
+    bundle: {
+      label: "Tag manager / module",
+      hint: "When the script tag can't carry data-* attributes (Google Tag Manager, type=\"module\", dynamic loading), configure it in code instead. Calls made before the script loads are queued.",
+      code: `${stub}\n<script>\n  trace.init({ key: "${key}", routes: ["/products/:slug"] });\n</script>\n<script src="${src}" async></script>`,
+    },
+  };
+  const mcpCommand = `claude mcp add --transport http trace ${location.origin}/mcp \\\n    --header "Authorization: Bearer YOUR_API_TOKEN"`;
+  const mcpJson = JSON.stringify({ mcpServers: { trace: { url: `${location.origin}/mcp`, headers: { Authorization: "Bearer YOUR_API_TOKEN" } } } }, null, 2);
+  const custom = `<button data-trace-event="add_to_cart">Add to cart</button>   <!-- no JavaScript needed -->
+
+trace.track("purchase", { plan: "pro" });\ntrace.identify(currentUser.id);      // optional: tie sessions to your user id\ntrace.page("/checkout/:step");       // optional: name the current route yourself\n                                        // (set pageviews: "manual" to turn off automatic pageviews)`;
+  const push = `trace check\ntrace push --server ${location.origin} --site ${project.slug} --token $TRACE_TOKEN`;
+  return { installs, mcpCommand, mcpJson, custom, push };
+}
+
+// A task a coding agent can follow to install the collector.
+function installPrompt(code) {
+  return `Add the Trace analytics collector to this website.
+
+Put this in the <head> of every page, in the shared layout or template so it loads on every route:
+
+${code}
+
+It loads after the page and never records what people type. Then open a page and check that requests to ${location.origin}/v1/collect return 204.`;
+}
+
+async function renderSetup() {
+  const runs = await api("/runs");
+  const { installs, mcpCommand, mcpJson, custom } = setupSnippets();
+  let installTab = store("trace_install") || "site";
+  if (!installs[installTab]) installTab = "site";
+  view.innerHTML = `
+    <h1>Setup</h1>
+    <p class="sub">Install the collector, then let the analyst do its work. New here? <a href="#/start">Follow the setup checklist</a>.</p>
+    <div class="card setup-status" id="setup-status">${setupStatus()}</div>
+
+
+    <h2>1. Add the collector to your site</h2>
+    <p class="hint">The collector records pageviews, clicks, rage and dead clicks, errors, scroll depth and form starts/submits. It never records what users type. Add <code>data-trace-mask</code> to any element whose text is private. It does its work when the browser is idle, so it doesn't slow your pages down.</p>
+    <div class="tabs" role="tablist">
+      ${Object.entries(installs)
+        .map(([id, i]) => `<button role="tab" data-install="${id}" class="${id === installTab ? "active" : ""}" aria-selected="${id === installTab}">${i.label}</button>`)
+        .join("")}
+    </div>
+    <p class="hint">${esc(installs[installTab].hint)}</p>
+    <div class="copy-row"><pre class="snippet">${esc(installs[installTab].code)}</pre><button data-copy="${esc(installs[installTab].code)}">Copy</button></div>
+
+    <h2>2. Define KPIs and events in code</h2>
+    <p class="hint">Add a <code>trace.json</code> to your repository with the product name, the custom events your app sends and the KPIs you care about. Validate it with <code>trace check</code> and publish it with <code>trace push --server ${esc(location.origin)}</code>, ideally from CI on every merge. The <a href="#/kpis">KPIs</a> page shows the results and whether each event is arriving.</p>
+
+    <h2>3. Track the moments that matter</h2>
+    <div class="copy-row"><pre class="snippet">${esc(custom)}</pre><button data-copy="${esc(custom)}">Copy</button></div>
+
+    <h2>4. Connect your coding agent (MCP)</h2>
+    <p class="hint">Let Claude Code, Cursor or any MCP client read your KPIs and insights, fetch an insight as a task, and mark it released once it ships. Agents only see aggregated patterns, like this dashboard. Create a personal API token under <a href="#/account">Account</a> (read-only is enough if the agent only needs to look), then:</p>
+    <div class="copy-row"><pre class="snippet">${esc(mcpCommand)}</pre><button data-copy="${esc(mcpCommand)}">Copy</button></div>
+    <p class="hint">Other MCP clients:</p>
+    <div class="copy-row"><pre class="snippet">${esc(mcpJson)}</pre><button data-copy="${esc(mcpJson)}">Copy</button></div>
+
+    ${
+      can("admin")
+        ? `<h2>Remove this website</h2>
+    <p class="hint">Deletes ${esc(project.name)} and everything collected and configured for it. This can't be undone.</p>
+    <button class="quiet danger" id="remove-site">Remove ${esc(project.name)}…</button>`
+        : ""
+    }
+
+    <h2>5. Analyst</h2>
+    <p class="hint">${
+      project.claude
+        ? `The analyst uses Claude (<code>${esc(project.claude.model)}</code>, effort <code>${esc(project.claude.effort)}</code>). If Claude is unavailable, it falls back to the built-in heuristics.`
+        : `No <code>ANTHROPIC_API_KEY</code> is set, so the analyst uses built-in heuristics: rage clicks, dead clicks, errors and form drop-off. Set the key and restart for richer, KPI-aware insights.`
+    }</p>
+    <p class="hint">From the command line: <code>trace analyze</code>, <code>trace evaluate</code>, <code>trace prompt &lt;id&gt; | claude</code>.</p>
+    ${table(
+      [{ label: "Run" }, { label: "When" }, { label: "Engine" }, { label: "Insights", num: 1 }, { label: "Notes" }],
+      runs.map((r) => [
+        `#${r.id}`,
+        new Date(r.started_at).toLocaleString(),
+        esc(r.engine + (r.model ? ` · ${r.model}` : "")),
+        num(r.insights_created),
+        esc(r.error || ""),
+      ]),
+      "No analysis runs yet."
+    )}`;
+  view.querySelectorAll("[data-copy]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (await copyText(b.dataset.copy)) toast("Copied");
+    })
+  );
+  view.querySelector("#remove-site")?.addEventListener("click", async () => {
+    const typed = prompt(`Type the website's name, "${project.name}", to delete it and all its data:`);
+    if (typed === null) return;
+    try {
+      await api(`/sites/${encodeURIComponent(project.slug)}`, { method: "DELETE", body: JSON.stringify({ confirm: typed }) });
+      toast(`Removed ${project.name}`);
+      project = null;
+      await loadSites();
+      route();
+    } catch (e) {
+      toast(e.message, true);
+    }
+  });
+  view.querySelectorAll("[data-install]").forEach((b) =>
+    b.addEventListener("click", () => {
+      store("trace_install", b.dataset.install);
+      renderSetup();
+    })
+  );
+  if (!project.collection.active) pollSetup();
+}
+
+function setupStatus() {
+  const c = project.collection;
+  if (c.active) {
+    const sites = c.sources.map((s) => `<code>${esc(host(s.origin))}</code> (last event ${esc(ago(s.last_seen))})`).join(", ");
+    return `<strong class="delta good">● Receiving data</strong>${sites ? ` from ${sites}` : ""}. You're set up: <a href="#/behaviour">see what's coming in</a> or <a href="#/insights">go to insights</a>. This page leaves the menu now; the status in the header brings you back here.`;
+  }
+  return c.last_event_at
+    ? `<strong class="delta bad">● No data since ${esc(ago(c.last_event_at))}</strong>. Check that the snippet below is still on your pages.`
+    : `<strong class="pulse">● Waiting for the first event…</strong> Add the snippet to your site and open any page. This updates by itself.`;
+}
+
+// While Setup is open and nothing has arrived yet, check every few seconds so the
+// confirmation appears the moment the first event lands.
+let setupPoll = null;
+function pollSetup() {
+  clearInterval(setupPoll);
+  setupPoll = setInterval(async () => {
+    if (!/^#\/(setup|start)/.test(location.hash)) return clearInterval(setupPoll);
+    const was = project.collection.active;
+    try {
+      project = await api("/project");
+    } catch {
+      return;
+    }
+    showCollection();
+    const box = document.getElementById("setup-status");
+    if (box) box.innerHTML = setupStatus();
+    if (!was && project.collection.active) {
+      toast("Data is coming in. Trace is collecting.");
+      if (location.hash.startsWith("#/start")) renderStart();
+    }
+    if (project.collection.active) clearInterval(setupPoll);
+  }, 3000);
+}
+
+// Keep the header status current on long-open dashboards.
+setInterval(async () => {
+  try {
+    project = await api("/project");
+    showCollection();
+  } catch {}
+}, 60000);
+
+// ---------------------------------------------------------------- get started
+
+const START_STEPS = {
+  website: "Your website",
+  install: "Install the collector",
+  privacy: "Check what's protected",
+  kpis: "Define KPIs in code",
+  agent: "Connect your coding agent",
+  team: "Invite your team",
+};
+
+let checklist = null;
+
+async function loadChecklist() {
+  try {
+    checklist = await api("/onboarding");
+  } catch {
+    checklist = null;
+  }
+  const link = document.querySelector('#nav a[data-view="start"]');
+  link.hidden = !checklist || checklist.complete;
+  if (checklist) document.getElementById("start-progress").textContent = `${checklist.done}/${checklist.total}`;
+}
+
+const tick = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>`;
+
+async function renderStart() {
+  await loadChecklist();
+  if (!checklist) throw new Error("couldn't load the checklist");
+  const steps = checklist.steps;
+  const asked = location.hash.split("/")[2];
+  const firstOpen = steps.find((x) => !x.done && !x.optional) || steps.find((x) => !x.done) || steps[steps.length - 1];
+  const current = steps.find((x) => x.key === asked) || firstOpen;
+  const index = steps.indexOf(current);
+  const next = steps[index + 1];
+  const { installs, mcpCommand } = setupSnippets();
+  let installTab = store("trace_install") || "site";
+  if (!installs[installTab]) installTab = "site";
+
+  const content = {
+    website: () => `
+      <h1>${esc(project.name)}</h1>
+      <p class="sub">Each website has its own snippet, KPIs, privacy rules and insights. Its short name is <code>${esc(project.slug)}</code>, used in commands like <code>trace insights --site ${esc(project.slug)}</code>.</p>
+      ${can("admin") ? `<p class="hint">Monitoring more than one site? Add it from the website menu next to the logo.</p>` : ""}`,
+    install: () => `
+      <h1>Add one line to your site</h1>
+      <p class="sub">Paste it into the page's &lt;head&gt;, on every page. It loads after your page, and if it ever fails your site carries on as if it weren't there.</p>
+      <div class="card">
+        <div class="tabs" role="tablist" aria-label="Kind of site">${Object.entries(installs)
+          .map(([id, i]) => `<button role="tab" data-install="${id}" class="${id === installTab ? "active" : ""}" aria-selected="${id === installTab}">${i.label}</button>`)
+          .join("")}</div>
+        <p class="hint">${esc(installs[installTab].hint)}</p>
+        <pre class="snippet">${esc(installs[installTab].code)}</pre>
+        <div class="actions">
+          <button class="primary" data-copy="${esc(installs[installTab].code)}">Copy snippet</button>
+          <button data-copy="${esc(installPrompt(installs[installTab].code))}">Copy as a prompt for my agent</button>
+        </div>
+      </div>
+      <div class="card" id="setup-status" style="margin-top: 16px">${setupStatus()}</div>
+      <div class="pair">
+        <div class="card"><strong>What it records</strong><p class="hint">Pages, clicks, scroll, form starts and submits, errors. Counted per route, never per person.</p></div>
+        <div class="card"><strong>What it never records</strong><p class="hint">Anything typed, page titles, query strings, the content of your pages.</p></div>
+      </div>`,
+    privacy: () => `
+      <h1>Check what's protected</h1>
+      <p class="sub">Trace looks for patterns, never people. These protections are always on. If your pages show anything else that identifies someone, such as order or member numbers, add a rule for it.</p>
+      <div class="card"><ul class="checklist" id="built-in"><li>Loading…</li></ul></div>
+      <div class="actions">
+        ${
+          can("admin")
+            ? `<button class="primary" data-reviewed>I've reviewed this</button><a class="button" href="#/privacy">Add a rule</a>`
+            : `<span class="hint">An admin of your account confirms this step.</span><a class="button" href="#/privacy">See the privacy page</a>`
+        }
+      </div>`,
+    kpis: () => {
+      const { push } = setupSnippets();
+      return `
+      <h1>Define KPIs in code</h1>
+      <p class="sub">KPIs live in <code>trace.json</code> in your repository, next to the code that sends the events. The analyst puts them first, and released insights are judged against them.</p>
+      <pre class="snippet">${esc(CONFIG_EXAMPLE)}</pre>
+      <div class="actions"><button class="primary" data-copy="${esc(CONFIG_EXAMPLE)}">Copy example</button></div>
+      <p class="hint">Check it and publish it, ideally from CI on every merge, with a personal API token from <a href="#/account">Account</a>:</p>
+      <div class="copy-row"><pre class="snippet">${esc(push)}</pre><button data-copy="${esc(push)}">Copy</button></div>`;
+    },
+    agent: () => `
+      <h1>Connect your coding agent</h1>
+      <p class="sub">Claude Code, Cursor or any MCP client can read your KPIs and insights, take an insight as a task and mark it released once it ships. Agents see only aggregated patterns, like this dashboard.</p>
+      <ol class="steps">
+        <li>Create a personal API token under <a href="#/account">Account</a>. Read-only is enough if the agent only needs to look.</li>
+        <li>Add Trace to your agent:<div class="copy-row" style="margin-top: 8px"><pre class="snippet">${esc(mcpCommand)}</pre><button class="primary" data-copy="${esc(mcpCommand)}">Copy</button></div></li>
+        <li>Ask it something, e.g. "What does Trace say I should fix first?" This step ticks off once the token is used.</li>
+      </ol>`,
+    team: () => `
+      <h1>Invite your team</h1>
+      <p class="sub">Optional. Users work with insights and analysis; admins also manage the team, websites, security and privacy rules. You can require two-step verification for everyone.</p>
+      <div class="actions">${can("admin") ? `<a class="button primary" href="#/team">Invite someone</a>` : `<span class="hint">Ask an admin of your account to invite people.</span>`}</div>`,
+  };
+
+  view.innerHTML = `
+    <div class="start">
+      <nav class="start-steps" aria-label="Setup steps">${steps
+        .map(
+          (x, i) => `<a href="#/start/${x.key}" class="${x === current ? "current" : ""} ${x.done ? "done" : ""}" ${x === current ? 'aria-current="step"' : ""}>
+            <span class="mark">${x.done ? tick : i + 1}</span><span>${esc(START_STEPS[x.key])}${x.optional ? ` <span class="hint">(optional)</span>` : ""}</span></a>`
+        )
+        .join("")}
+        <p class="hint">${checklist.complete ? "All set. This checklist stays here, under Setup." : `${checklist.done} of ${checklist.total} done.`} <a href="#/insights">Skip to the dashboard</a></p>
+      </nav>
+      <section class="start-body">
+        <span class="hint">Step ${index + 1} of ${steps.length}${current.done ? " · done" : ""}</span>
+        ${content[current.key]()}
+        <div class="start-foot">
+          ${index > 0 ? `<a href="#/start/${steps[index - 1].key}">Back</a>` : "<span></span>"}
+          ${next ? `<a class="button" href="#/start/${next.key}">Next: ${esc(START_STEPS[next.key].toLowerCase())}</a>` : `<a class="button" href="#/insights">Go to insights</a>`}
+        </div>
+      </section>
+    </div>`;
+
+  view.querySelectorAll("[data-copy]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (await copyText(b.dataset.copy)) toast("Copied");
+    })
+  );
+  view.querySelectorAll("[data-install]").forEach((b) =>
+    b.addEventListener("click", () => {
+      store("trace_install", b.dataset.install);
+      renderStart();
+    })
+  );
+  view.querySelector("[data-reviewed]")?.addEventListener("click", async () => {
+    await post("/onboarding/privacy-reviewed");
+    toast("Thanks. Privacy reviewed.");
+    location.hash = next ? `#/start/${next.key}` : "#/insights";
+  });
+  if (current.key === "privacy") {
+    const p = await api("/privacy");
+    const list = view.querySelector("#built-in");
+    if (list) list.innerHTML = p.built_in.map((b) => `<li>${esc(b)}</li>`).join("") + (p.rules.length ? `<li>${p.rules.length} rule${p.rules.length === 1 ? "" : "s"} of your own</li>` : "");
+  }
+  if (current.key === "install" && !project.collection.active) pollSetup();
+}
+
+// ---------------------------------------------------------------- shell
+
+// ---------------------------------------------------------------- accounts
+
+let auth = null;
+const RANK = { user: 1, admin: 2, owner: 3 };
+const can = (role) => Boolean(auth && auth.user && RANK[auth.user.role] >= RANK[role]);
+
+function authScreen(html) {
+  document.body.classList.add("auth");
+  view.innerHTML = `<div class="auth-card card">${html}</div>`;
+  const first = view.querySelector("input");
+  if (first) first.focus();
+}
+
+function formError(form, message) {
+  let el = form.querySelector(".form-error");
+  if (!el) {
+    el = document.createElement("p");
+    el.className = "form-error";
+    el.setAttribute("role", "alert");
+    form.prepend(el);
+  }
+  el.textContent = message;
+}
+
+// Wires a form to an async action; shows errors inline and disables the button while busy.
+function onSubmit(form, action) {
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector("button[type=submit]");
+    if (btn) btn.disabled = true;
+    try {
+      await action(new FormData(form));
+    } catch (err) {
+      formError(form, err.message);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+}
+
+const BRAND = `<div class="auth-brand"><svg class="logo" viewBox="2 15.5 60 33" aria-hidden="true"><rect x="3.5" y="25" width="14" height="14" rx="4.5" fill="#45c75b"/><rect x="13.5" y="21" width="22" height="22" rx="6" fill="#2a9ba3" class="ring"/><rect x="30.5" y="17" width="30" height="30" rx="8" fill="#4a6cff" class="ring"/></svg> Trace</div>`;
+const PATTERNS_NOT_PEOPLE = `<p class="hint privacy-note">Trace looks at patterns, not people: no session recordings, nothing users type, and personal data is removed before it's stored.</p>`;
+
+function renderLogin() {
+  authScreen(`${BRAND}<h1>Sign in</h1>
+    <form id="login" class="stack">
+      <label class="field">Email <input name="email" type="email" autocomplete="username" required></label>
+      <label class="field">Password <input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="primary" type="submit">Sign in</button>
+    </form>
+    <p class="hint">Forgot your password? Ask an admin to invite you again, or run <code>trace user reset-password</code> on the server.</p>
+    ${auth && auth.allow_signup ? `<p>New here? <a href="#/signup" id="to-signup">Create an account</a></p>` : ""}`);
+  view.querySelector("#to-signup")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    renderSignup();
+  });
+  onSubmit(view.querySelector("#login"), async (fd) => {
+    auth = await api("/auth/login", { method: "POST", body: JSON.stringify({ email: fd.get("email"), password: fd.get("password") }) });
+    boot();
+  });
+}
+
+function renderSignup() {
+  authScreen(`${BRAND}<h1>Create an account</h1>
+    <p>Free to try. You'll own the account and can add your team later.</p>
+    <form id="signup" class="stack">
+      <label class="field">Company or project <input name="account" autocomplete="organization" placeholder="Acme"></label>
+      <label class="field">Name <input name="name" autocomplete="name"></label>
+      <label class="field">Email <input name="email" type="email" autocomplete="username" required></label>
+      <label class="field">Password <input name="password" type="password" autocomplete="new-password" minlength="10" required>
+        <span class="hint">At least 10 characters.</span></label>
+      <button class="primary" type="submit">Create account</button>
+    </form>
+    <p class="hint">Already have an account? <a href="#/" id="to-login">Sign in</a></p>${PATTERNS_NOT_PEOPLE}`);
+  view.querySelector("#to-login").addEventListener("click", (e) => {
+    e.preventDefault();
+    renderLogin();
+  });
+  onSubmit(view.querySelector("#signup"), async (fd) => {
+    auth = await api("/auth/signup", {
+      method: "POST",
+      body: JSON.stringify({ account: fd.get("account"), name: fd.get("name"), email: fd.get("email"), password: fd.get("password") }),
+    });
+    history.replaceState(null, "", "#/start");
+    boot();
+  });
+}
+
+function renderVerify() {
+  authScreen(`${BRAND}<h1>Two-step verification</h1>
+    <p>Enter the 6-digit code from your authenticator app.</p>
+    <form id="verify" class="stack">
+      <label class="field">Code <input name="code" autocomplete="one-time-code" inputmode="numeric" maxlength="12" required></label>
+      <button class="primary" type="submit">Verify</button>
+    </form>
+    <p class="hint">Lost your phone? Enter one of your recovery codes instead. <a href="#" id="start-over">Sign in as someone else</a></p>`);
+  onSubmit(view.querySelector("#verify"), async (fd) => {
+    const r = await api("/auth/mfa", { method: "POST", body: JSON.stringify({ code: fd.get("code") }) });
+    auth = r;
+    if (r.recovery_codes_left != null)
+      toast(`Recovery code used. ${r.recovery_codes_left} left: set up your authenticator again under Account.`, r.recovery_codes_left < 3);
+    boot();
+  });
+  view.querySelector("#start-over").addEventListener("click", (e) => {
+    e.preventDefault();
+    signOut();
+  });
+}
+
+// Set up an authenticator app inside `box`, then call `done`.
+async function enrollmentFlow(box, done) {
+  const e = await api("/account/mfa/start", { method: "POST" });
+  box.innerHTML = `
+    <ol class="steps">
+      <li>Scan this with your authenticator app (1Password, Google Authenticator, Authy, ...).
+        <div class="qr">${e.qr_svg}</div>
+        <p class="hint">Can't scan? Enter this key instead: <code class="secret">${esc(e.secret.replace(/(.{4})/g, "$1 ").trim())}</code>
+          · or <a href="${esc(e.uri)}">open it in an app on this device</a></p></li>
+      <li>Enter the 6-digit code the app shows:
+        <form id="confirm-mfa" class="row">
+          <label class="field narrow">Code <input name="code" autocomplete="one-time-code" inputmode="numeric" maxlength="7" required></label>
+          <button class="primary" type="submit">Turn on</button>
+        </form></li>
+    </ol>`;
+  box.querySelector("input").focus();
+  onSubmit(box.querySelector("#confirm-mfa"), async (fd) => {
+    const r = await api("/account/mfa/confirm", { method: "POST", body: JSON.stringify({ code: fd.get("code") }) });
+    showRecoveryCodes(box, r.recovery_codes, done);
+  });
+}
+
+function showRecoveryCodes(box, codes, done) {
+  const text = `Trace recovery codes for ${auth.user.email}\nEach works once, instead of an authenticator code.\n\n${codes.join("\n")}\n`;
+  box.innerHTML = `
+    <p><strong>Save your recovery codes.</strong> Each one works once if you lose your phone. They won't be shown again.</p>
+    <div class="codes">${codes.map((c) => `<code>${esc(c)}</code>`).join("")}</div>
+    <div class="actions">
+      <button data-copy-codes>Copy</button>
+      <button data-download-codes>Download .txt</button>
+      <span class="spacer"></span>
+      <button class="primary" data-done>I've saved them</button>
+    </div>`;
+  box.querySelector("[data-copy-codes]").addEventListener("click", async () => (await copyText(text)) && toast("Copied"));
+  box.querySelector("[data-download-codes]").addEventListener("click", () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+    a.download = "trace-recovery-codes.txt";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  box.querySelector("[data-done]").addEventListener("click", done);
+}
+
+function renderEnroll() {
+  authScreen(`${BRAND}<h1>Set up two-step verification</h1>
+    <p>Your workspace requires it. You'll need an authenticator app on your phone.</p>
+    <div id="enroll"></div>
+    <p class="hint"><a href="#" id="start-over">Sign out</a></p>`);
+  view.querySelector("#start-over").addEventListener("click", (e) => {
+    e.preventDefault();
+    signOut();
+  });
+  enrollmentFlow(view.querySelector("#enroll"), boot).catch((err) => toast(err.message, true));
+}
+
+function renderWelcome(code) {
+  if (!code) {
+    authScreen(`${BRAND}<h1>Welcome to Trace</h1>
+      <p>This server has no accounts yet. To create the first one, open the setup link that <code>trace serve</code> printed when it started.</p>
+      <p class="hint">Or create it on the server: <code>trace user create --email you@example.com</code></p>`);
+    return;
+  }
+  authScreen(`${BRAND}<h1>Create your account</h1>
+    <p>You'll own this account. You can add more websites and invite your team later, or keep it just for you.</p>
+    <form id="welcome" class="stack">
+      <label class="field">Company or project <input name="account" autocomplete="organization" placeholder="Acme"></label>
+      <label class="field">Name <input name="name" autocomplete="name"></label>
+      <label class="field">Email <input name="email" type="email" autocomplete="username" required></label>
+      <label class="field">Password <input name="password" type="password" autocomplete="new-password" minlength="10" required>
+        <span class="hint">At least 10 characters.</span></label>
+      <button class="primary" type="submit">Create account</button>
+    </form>${PATTERNS_NOT_PEOPLE}`);
+  onSubmit(view.querySelector("#welcome"), async (fd) => {
+    auth = await api("/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ code, account: fd.get("account"), name: fd.get("name"), email: fd.get("email"), password: fd.get("password") }),
+    });
+    history.replaceState(null, "", "#/start");
+    boot();
+  });
+}
+
+async function renderInvite(token) {
+  let invite;
+  try {
+    invite = await api(`/auth/invite/${encodeURIComponent(token)}`);
+  } catch (e) {
+    authScreen(`${BRAND}<h1>Invite not valid</h1><p>${esc(e.message)}</p><p><a href="#/">Sign in</a></p>`);
+    return;
+  }
+  authScreen(`${BRAND}<h1>Join ${esc(invite.workspace)}</h1>
+    <p>You've been invited as <strong>${esc(invite.role)}</strong> with <strong>${esc(invite.email)}</strong>.${invite.require_mfa ? " This workspace requires two-step verification, which you'll set up next." : ""}</p>
+    <form id="accept" class="stack">
+      <input type="email" name="username" value="${esc(invite.email)}" autocomplete="username" hidden>
+      <label class="field">Name <input name="name" autocomplete="name"></label>
+      <label class="field">Choose a password <input name="password" type="password" autocomplete="new-password" minlength="10" required>
+        <span class="hint">At least 10 characters.</span></label>
+      <button class="primary" type="submit">Join</button>
+    </form>${PATTERNS_NOT_PEOPLE}`);
+  onSubmit(view.querySelector("#accept"), async (fd) => {
+    auth = await api(`/auth/invite/${encodeURIComponent(token)}`, {
+      method: "POST",
+      body: JSON.stringify({ name: fd.get("name"), password: fd.get("password") }),
+    });
+    history.replaceState(null, "", "#/insights");
+    boot();
+  });
+}
+
+async function signOut() {
+  try {
+    await api("/auth/logout", { method: "POST" });
+  } catch {}
+  auth = null;
+  project = null;
+  history.replaceState(null, "", "#/");
+  boot();
+}
+
+function applyRole() {
+  document.querySelector('#nav a[data-view="team"]').hidden = !can("admin");
+  document.querySelector('#nav a[data-view="admin"]').hidden = !auth.user.is_operator;
+  document.getElementById("run-analysis").hidden = !can("user");
+  const me = document.getElementById("me");
+  me.hidden = false;
+  me.textContent = auth.user.name || auth.user.email;
+  me.title = `${auth.user.email} (${auth.user.role})`;
+}
+
+async function renderAccount() {
+  const [a, tokens] = await Promise.all([api("/account"), api("/account/tokens")]);
+  const u = a.user;
+  view.innerHTML = `
+    <h1>Account</h1>
+    <p class="sub">${esc(u.email)} · ${esc(u.role)}</p>
+    <h2>Two-step verification</h2>
+    <div class="card" id="mfa-box">${
+      u.totp_enabled
+        ? `<p><strong class="delta good">● On.</strong> Signing in needs a code from your authenticator app. ${a.recovery_codes_left} recovery code${a.recovery_codes_left === 1 ? "" : "s"} left.</p>
+           <div class="actions"><button data-new-codes>New recovery codes</button>${
+             a.require_mfa ? `<span class="hint">Your workspace requires two-step verification.</span>` : `<button class="quiet" data-mfa-off>Turn off</button>`
+           }</div>`
+        : `<p><strong class="delta bad">● Off.</strong> Add a second step to signing in: a code from an authenticator app on your phone.</p>
+           <button class="primary" data-mfa-on>Set up</button>`
+    }</div>
+    <h2>Password</h2>
+    <form class="card stack narrow-form" id="password">
+      <input type="email" name="username" value="${esc(u.email)}" autocomplete="username" hidden>
+      <label class="field">Current password <input name="current" type="password" autocomplete="current-password" required></label>
+      <label class="field">New password <input name="new" type="password" autocomplete="new-password" minlength="10" required></label>
+      <div><button type="submit">Change password</button> <span class="hint">Signs you out on other devices.</span></div>
+    </form>
+    <h2>Your API tokens</h2>
+    <p class="hint">For your coding agent over MCP and for CI (<code>trace push --token</code>). A token can do what you can (you're ${esc(u.role)}), or only read if you tick read-only. Use one token per tool, so you can revoke them separately.</p>
+    ${tokens.length ? table(
+      [{ label: "Token" }, { label: "Access" }, { label: "Created" }, { label: "Last used" }, { label: "" }],
+      tokens.map((k) => [`${esc(k.name)} <code>${esc(k.prefix)}…</code>`, k.read_only ? "read-only" : esc(u.role), new Date(k.created_at).toLocaleDateString(), esc(ago(k.last_used_at)), `<button class="quiet" data-revoke-mine="${k.id}">Revoke</button>`])
+    ) : ""}
+    <form class="card row" id="new-token">
+      <label class="field">Name <input name="name" placeholder="Claude Code" required></label>
+      <label class="check"><input type="checkbox" name="read_only"> <span>Read-only</span></label>
+      <button type="submit">Create token</button>
+    </form>
+    <div id="token-result"></div>
+
+    <h2>Appearance</h2>
+    <div class="segmented" role="group" aria-label="Theme">${["system", "light", "dark"]
+      .map((t) => `<button type="button" data-theme-choice="${t}" aria-pressed="${themeChoice() === t}">${t[0].toUpperCase() + t.slice(1)}</button>`)
+      .join("")}</div>
+
+    <h2>Session</h2>
+    <button data-sign-out>Sign out</button>`;
+  view.querySelectorAll("[data-theme-choice]").forEach((b) =>
+    b.addEventListener("click", () => {
+      setTheme(b.dataset.themeChoice);
+      view.querySelectorAll("[data-theme-choice]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    })
+  );
+  const box = view.querySelector("#mfa-box");
+  view.querySelector("[data-mfa-on]")?.addEventListener("click", () =>
+    enrollmentFlow(box, async () => {
+      auth = await api("/auth/state");
+      renderAccount();
+    }).catch((e) => toast(e.message, true))
+  );
+  view.querySelector("[data-mfa-off]")?.addEventListener("click", async () => {
+    const password = prompt("Enter your password to turn off two-step verification:");
+    if (!password) return;
+    await api("/account/mfa/disable", { method: "POST", body: JSON.stringify({ password }) });
+    toast("Two-step verification is off");
+    renderAccount();
+  });
+  view.querySelector("[data-new-codes]")?.addEventListener("click", async () => {
+    const password = prompt("Enter your password to replace your recovery codes. The old ones stop working.");
+    if (!password) return;
+    const r = await api("/account/recovery-codes", { method: "POST", body: JSON.stringify({ password }) });
+    showRecoveryCodes(box, r.recovery_codes, renderAccount);
+  });
+  onSubmit(view.querySelector("#password"), async (fd) => {
+    await api("/account/password", { method: "POST", body: JSON.stringify({ current: fd.get("current"), new: fd.get("new") }) });
+    view.querySelector("#password").reset();
+    toast("Password changed");
+  });
+  view.querySelector("[data-sign-out]").addEventListener("click", signOut);
+  onSubmit(view.querySelector("#new-token"), async (fd) => {
+    const r = await api("/account/tokens", { method: "POST", body: JSON.stringify({ name: fd.get("name"), read_only: fd.get("read_only") === "on" }) });
+    await renderAccount();
+    view.querySelector("#token-result").innerHTML = `<div class="card"><p><strong>Copy this token now.</strong> It won't be shown again.</p>
+      <div class="copy-row"><pre class="snippet">${esc(r.secret)}</pre><button data-copy="${esc(r.secret)}">Copy</button></div></div>`;
+    view.querySelector("#token-result [data-copy]").addEventListener("click", async (e) => (await copyText(e.target.dataset.copy)) && toast("Copied"));
+  });
+  view.querySelectorAll("[data-revoke-mine]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm("Revoke this token? Anything using it stops working.")) return;
+      await api(`/account/tokens/${b.dataset.revokeMine}`, { method: "DELETE" });
+      renderAccount();
+    })
+  );
+}
+
+async function renderTeam() {
+  if (!can("admin")) {
+    view.innerHTML = `<div class="empty">Only admins can manage the team.</div>`;
+    return;
+  }
+  const [t, tokens, log] = await Promise.all([api("/team"), api("/team/tokens"), api("/audit")]);
+  const roleSelect = (u) =>
+    u.role === "owner" || u.id === auth.user.id
+      ? esc(u.role)
+      : `<select data-role="${u.id}" aria-label="Role for ${esc(u.email)}">${["admin", "user"]
+          .map((r) => `<option ${r === u.role ? "selected" : ""}>${r}</option>`)
+          .join("")}</select>`;
+  view.innerHTML = `
+    <h1>Team</h1>
+    <p class="sub">Who can use this workspace, and how they sign in.</p>
+
+    <h2>Security</h2>
+    <div class="card">
+      <label class="check"><input type="checkbox" id="require-mfa" ${t.require_mfa ? "checked" : ""}>
+        <span><strong>Require two-step verification for everyone</strong><br>
+        <span class="hint">Anyone without it is asked to set up an authenticator app the next time they sign in.${auth.user.totp_enabled ? "" : " Turn it on for your own account first, under Account."}</span></span></label>
+    </div>
+
+    <h2>Members</h2>
+    ${table(
+      [{ label: "Person" }, { label: "Role" }, { label: "Two-step" }, { label: "Last sign-in" }, { label: "" }],
+      t.users.map((u) => [
+        `${esc(u.name || u.email)}<br><span class="hint">${esc(u.email)}</span>`,
+        roleSelect(u),
+        u.totp_enabled ? `<span class="delta good">● on</span>` : `<span class="delta ${t.require_mfa ? "bad" : ""}">● off</span>`,
+        esc(ago(u.last_login_at)),
+        u.role === "owner" || u.id === auth.user.id
+          ? ""
+          : `${u.totp_enabled ? `<button class="quiet" data-reset-mfa="${u.id}">Reset two-step</button>` : ""}<button class="quiet" data-remove="${u.id}" data-email="${esc(u.email)}">Remove</button>`,
+      ])
+    )}
+
+    <h2>Invite someone</h2>
+    <form class="card row" id="invite">
+      <label class="field">Email <input name="email" type="email" required></label>
+      <label class="field narrow">Role <select name="role"><option>user</option><option>admin</option></select></label>
+      <button class="primary" type="submit">Create invite link</button>
+    </form>
+    <p class="hint">Users see every website and work with insights and analysis. Admins also manage the team, websites, security, privacy rules and everyone's API tokens. Trace doesn't send email: share the link yourself. It works once and expires in 7 days.</p>
+    <div id="invite-result"></div>
+    ${
+      t.invites.length
+        ? table(
+            [{ label: "Pending invite" }, { label: "Role" }, { label: "Expires" }, { label: "" }],
+            t.invites.map((i) => [esc(i.email), esc(i.role), new Date(i.expires_at).toLocaleDateString(), `<button class="quiet" data-revoke-invite="${i.id}">Revoke</button>`])
+          )
+        : ""
+    }
+
+    <h2>API tokens</h2>
+    <p class="hint">Everyone creates their own tokens under Account. A token acts with its owner's current role (or read-only), and stops working when they leave the team. You can revoke any of them here.</p>
+    ${tokens.length ? table(
+      [{ label: "Token" }, { label: "Owner" }, { label: "Access" }, { label: "Last used" }, { label: "" }],
+      tokens.map((k) => [`${esc(k.name)} <code>${esc(k.prefix)}…</code>`, esc(k.owner_email), k.read_only ? "read-only" : "owner's role", esc(ago(k.last_used_at)), `<button class="quiet" data-revoke-token="${k.id}">Revoke</button>`])
+    ) : `<p class="hint">No tokens yet.</p>`}
+
+    <h2>Activity</h2>
+    ${table(
+      [{ label: "When" }, { label: "Who" }, { label: "What" }],
+      log.slice(0, 25).map((e) => [esc(ago(e.at)), esc(e.actor), `${esc(e.action)}${e.detail ? ` <span class="hint">${esc(e.detail)}</span>` : ""}`]),
+      "Nothing yet."
+    )}`;
+
+  view.querySelector("#require-mfa").addEventListener("change", async (e) => {
+    try {
+      await api("/team/settings", { method: "POST", body: JSON.stringify({ require_mfa: e.target.checked }) });
+      toast(e.target.checked ? "Two-step verification is now required" : "Two-step verification is optional");
+    } catch (err) {
+      e.target.checked = !e.target.checked;
+      toast(err.message, true);
+    }
+    renderTeam();
+  });
+  view.querySelectorAll("[data-role]").forEach((sel) =>
+    sel.addEventListener("change", async () => {
+      await api(`/team/users/${sel.dataset.role}/role`, { method: "POST", body: JSON.stringify({ role: sel.value }) });
+      toast("Role changed");
+      renderTeam();
+    })
+  );
+  view.querySelectorAll("[data-remove]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm(`Remove ${b.dataset.email}? They're signed out immediately.`)) return;
+      await api(`/team/users/${b.dataset.remove}`, { method: "DELETE" });
+      renderTeam();
+    })
+  );
+  view.querySelectorAll("[data-reset-mfa]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm("Turn off their two-step verification and sign them out? Use this when someone lost their phone.")) return;
+      await api(`/team/users/${b.dataset.resetMfa}/reset-mfa`, { method: "POST" });
+      toast("Reset. They'll set it up again when they sign in.");
+      renderTeam();
+    })
+  );
+  onSubmit(view.querySelector("#invite"), async (fd) => {
+    const r = await api("/team/invites", { method: "POST", body: JSON.stringify({ email: fd.get("email"), role: fd.get("role") }) });
+    const link = `${location.origin}/#/invite/${r.token}`;
+    await renderTeam();
+    view.querySelector("#invite-result").innerHTML = `<div class="card"><p>Send this link to <strong>${esc(r.invite.email)}</strong>. It works once and expires in 7 days.</p>
+      <div class="copy-row"><pre class="snippet">${esc(link)}</pre><button data-copy="${esc(link)}">Copy</button></div></div>`;
+    view.querySelector("#invite-result [data-copy]").addEventListener("click", async (e) => (await copyText(e.target.dataset.copy)) && toast("Copied"));
+  });
+  view.querySelectorAll("[data-revoke-invite]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      await api(`/team/invites/${b.dataset.revokeInvite}`, { method: "DELETE" });
+      renderTeam();
+    })
+  );
+  view.querySelectorAll("[data-revoke-token]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm("Revoke this token? Anything using it stops working.")) return;
+      await api(`/team/tokens/${b.dataset.revokeToken}`, { method: "DELETE" });
+      renderTeam();
+    })
+  );
+}
+
+// ---------------------------------------------------------------- privacy
+
+const RULE_KINDS = {
+  mask_selector: {
+    title: "Never read text inside",
+    help: "A CSS selector, e.g. .account-summary or [data-customer]. Text inside matching elements is never recorded. Applies in the browser.",
+    placeholder: ".account-summary",
+  },
+  redact_pattern: {
+    title: "Redact a pattern",
+    help: "A regular expression, e.g. ORD-\\d+ for order numbers. Matches are replaced in everything recorded, in the browser and again on the server. Add (?i) at the start to ignore case.",
+    placeholder: "ORD-\\d+",
+  },
+  ignore_path: {
+    title: "Ignore pages",
+    help: "A page path; end it with * to cover everything below it, e.g. /admin/* or /account/billing. Nothing at all is recorded on these pages.",
+    placeholder: "/admin/*",
+  },
+  drop_prop: {
+    title: "Drop a property",
+    help: "A custom-event property name that's never stored, e.g. customer_ref. Matching ignores case.",
+    placeholder: "customer_ref",
+  },
+};
+
+// Same check the collector does, so a rule that would be skipped in browsers is caught here.
+function checkRuleInBrowser(kind, pattern) {
+  try {
+    if (kind === "redact_pattern") new RegExp(pattern.replace(/^\(\?i\)/, ""), "g");
+    if (kind === "mask_selector") document.querySelector(pattern);
+    return null;
+  } catch {
+    return kind === "redact_pattern" ? "Browsers can't use this regular expression." : "That isn't a valid CSS selector.";
+  }
+}
+
+async function renderPrivacy() {
+  const p = await api("/privacy");
+  const admin = can("admin");
+  const byKind = (kind) => p.rules.filter((r) => r.kind === kind);
+  const ruleTable = (kind) => {
+    const rules = byKind(kind);
+    if (!rules.length) return "";
+    return table(
+      [{ label: kind === "redact_pattern" ? "Pattern → replacement" : "Rule" }, { label: "Note" }, { label: "Added" }, { label: "" }],
+      rules.map((r) => [
+        `<code>${esc(r.pattern)}</code>${r.replacement ? ` → <code>${esc(r.replacement)}</code>` : ""}${r.enabled ? "" : ` <span class="chip">off</span>`}`,
+        esc(r.label),
+        `${esc(ago(r.created_at))} <span class="hint">by ${esc(r.created_by)}</span>`,
+        admin
+          ? `<button class="quiet" data-toggle="${r.id}" data-on="${r.enabled ? 0 : 1}">${r.enabled ? "Turn off" : "Turn on"}</button><button class="quiet" data-delete-rule="${r.id}">Remove</button>`
+          : "",
+      ])
+    );
+  };
+  view.innerHTML = `
+    <h1>Privacy</h1>
+    <p class="sub">Trace studies patterns, not people. These protections always apply. Add your own rules for anything specific to your site.</p>
+
+    <h2>Always on</h2>
+    <div class="card"><ul class="checklist">${p.built_in.map((b) => `<li>${esc(b)}</li>`).join("")}</ul></div>
+
+    <h2>Your rules</h2>
+    <p class="hint">Changes apply on the server straight away and reach visitors' browsers within an hour, as soon as their cached copy of the collector is refreshed.${admin ? "" : " Only admins can change rules."}</p>
+    ${Object.entries(RULE_KINDS)
+      .map(([kind, k]) => {
+        const t = ruleTable(kind);
+        return t ? `<h3>${esc(k.title)}</h3>${t}` : "";
+      })
+      .join("") || `<div class="empty">No rules of your own yet.${admin ? " Add one below." : ""}</div>`}
+
+    ${
+      admin
+        ? `<h2>Add a rule</h2>
+    <form class="card stack" id="add-rule">
+      <div class="row">
+        <label class="field narrow">Kind
+          <select name="kind">${Object.entries(RULE_KINDS).map(([kind, k]) => `<option value="${kind}">${esc(k.title)}</option>`).join("")}</select></label>
+        <label class="field">Pattern <input name="pattern" required></label>
+        <label class="field narrow" id="replacement-field">Replace with <input name="replacement" placeholder="[redacted]"></label>
+      </div>
+      <p class="hint" id="rule-help"></p>
+      <label class="field">Note (optional) <input name="label" placeholder="Why this rule exists, e.g. order numbers identify customers"></label>
+      <div><button class="primary" type="submit">Add rule</button></div>
+    </form>`
+        : ""
+    }
+
+    <h2>Try it</h2>
+    <form class="card stack" id="try-rules">
+      <label class="field">Sample text, as it might appear on a button, a link or in an error message
+        <textarea name="text" rows="2">Order ORD-20931 for jane.doe@example.com: pay €1,234.56 with 4242 4242 4242 4242</textarea></label>
+      <label class="field">Page path <input name="path" value="/account/jane.doe@example.com/orders/ORD-20931"></label>
+      <div><button type="submit">Show what would be stored</button></div>
+      <div id="try-result"></div>
+    </form>`;
+
+  view.querySelectorAll("[data-toggle]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      await api(`/privacy/rules/${b.dataset.toggle}`, { method: "POST", body: JSON.stringify({ enabled: b.dataset.on === "1" }) });
+      renderPrivacy();
+    })
+  );
+  view.querySelectorAll("[data-delete-rule]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm("Remove this rule?")) return;
+      await api(`/privacy/rules/${b.dataset.deleteRule}`, { method: "DELETE" });
+      renderPrivacy();
+    })
+  );
+  const form = view.querySelector("#add-rule");
+  if (form) {
+    const sync = () => {
+      const k = RULE_KINDS[form.kind.value];
+      view.querySelector("#rule-help").textContent = k.help;
+      form.pattern.placeholder = k.placeholder;
+      view.querySelector("#replacement-field").hidden = form.kind.value !== "redact_pattern";
+    };
+    form.kind.addEventListener("change", sync);
+    sync();
+    onSubmit(form, async (fd) => {
+      const kind = fd.get("kind");
+      const problem = checkRuleInBrowser(kind, String(fd.get("pattern")).trim());
+      if (problem) throw new Error(problem);
+      await api("/privacy/rules", {
+        method: "POST",
+        body: JSON.stringify({ kind, pattern: fd.get("pattern"), replacement: fd.get("replacement") || null, label: fd.get("label") }),
+      });
+      toast("Rule added");
+      renderPrivacy();
+    });
+  }
+  onSubmit(view.querySelector("#try-rules"), async (fd) => {
+    const r = await api("/privacy/test", { method: "POST", body: JSON.stringify({ text: fd.get("text"), path: fd.get("path") }) });
+    view.querySelector("#try-result").innerHTML = `
+      <div class="table-wrap"><table><tbody>
+        <tr><th>On a button or link</th><td><code>${esc(r.page_text)}</code></td></tr>
+        <tr><th>In an error message</th><td><code>${esc(r.error_text)}</code></td></tr>
+        ${r.path != null ? `<tr><th>Page</th><td>${r.path_ignored ? `<strong>ignored</strong>: nothing is recorded on this page` : `<code>${esc(r.path)}</code>`}</td></tr>` : ""}
+      </tbody></table></div>`;
+  });
+}
+
+// ---------------------------------------------------------------- plan & usage
+
+function limitText(l) {
+  if (l.limit == null) return "No limit";
+  return l.key === "retention_days" ? `${num(l.limit)} days` : num(l.limit);
+}
+
+async function renderPlan() {
+  const p = await api("/plan");
+  const retention = p.limits.find((l) => l.key === "retention_days");
+  const effectiveDays = [retention.limit, p.server_retention_days].filter((d) => d != null);
+  const meters = p.limits
+    .filter((l) => l.key !== "retention_days")
+    .map((l) => {
+      const share = l.limit ? Math.min(100, Math.round((l.used / l.limit) * 100)) : null;
+      const full = l.limit != null && l.used >= l.limit;
+      const note =
+        l.key === "monthly_events" && p.events_dropped
+          ? `${num(p.events_dropped)} not recorded since the limit`
+          : l.key === "monthly_ai_runs"
+            ? "Heuristic analysis is never limited"
+            : l.key === "max_members"
+              ? "Pending invites count too"
+              : full
+                ? "Ask for more to add another"
+                : "";
+      return `<div class="card meter-card ${full ? "at-limit" : ""}">
+        <span class="label">${esc(l.label)}</span>
+        <span class="figure">${num(l.used)} <small>${l.limit == null ? "· no limit" : `/ ${num(l.limit)}`}</small></span>
+        ${share == null ? "" : `<div class="bar ${full ? "warn" : ""}" role="img" aria-label="${share}% used"><span style="width:${share}%"></span></div>`}
+        ${note ? `<span class="hint">${esc(note)}</span>` : ""}
+      </div>`;
+    })
+    .join("");
+  const days = effectiveDays.length ? `${Math.min(...effectiveDays)} days` : "No limit";
+  view.innerHTML = `
+    <h1>Plan & usage</h1>
+    <p class="sub">What this account can use, and how much of it has gone this month (${esc(p.month)}).</p>
+    <div class="meters">${meters}</div>
+    <div class="callout">
+      <div class="card" style="flex: 1 1 420px"><strong style="font-size: 26px">${esc(days)}</strong> <span class="hint">of raw events kept. Older events are deleted every hour; insights and their evaluations stay.</span></div>
+      ${
+        p.contact_url
+          ? `<div class="card" style="flex: 1 1 360px; display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap"><span>Need longer history, more websites or more events? Limits are set by hand, per account.</span><a class="button primary" href="${esc(p.contact_url)}">Contact</a></div>`
+          : `<p class="hint">Need more? Ask the people who run this server.</p>`
+      }
+    </div>`;
+}
+
+// ---------------------------------------------------------------- operator area
+
+const LIMIT_KEYS = ["retention_days", "max_sites", "monthly_events", "max_members", "monthly_ai_runs"];
+
+function limitInput(name, value, placeholder = "no limit") {
+  return `<input name="${name}" type="number" min="0" step="1" value="${value == null ? "" : value}" placeholder="${placeholder}">`;
+}
+
+async function renderAdmin() {
+  if (!auth.user.is_operator) {
+    view.innerHTML = `<div class="empty">This area is for the server's operators.</div>`;
+    return;
+  }
+  let o;
+  try {
+    o = await api("/operator/overview");
+  } catch (e) {
+    view.innerHTML = `<div class="empty"><p>${esc(e.message)}</p><p><a href="#/account">Set up two-step verification</a></p></div>`;
+    return;
+  }
+  const labels = Object.fromEntries(o.limits);
+  const usageCell = (a) => {
+    const ev = a.limits.monthly_events;
+    return `${num(a.usage.events)}${ev == null ? "" : ` / ${num(ev)}`}${a.usage.events_dropped ? ` <span class="delta bad">${num(a.usage.events_dropped)} dropped</span>` : ""}`;
+  };
+  view.innerHTML = `
+    <h1>Admin</h1>
+    <p class="sub">Every account on this server: plans, limits and usage. Customers never see plan names, and this area never shows their analytics.</p>
+    <h2>Accounts</h2>
+    ${table(
+      [{ label: "Account" }, { label: "Plan" }, { label: "Websites", num: 1 }, { label: "Members", num: 1 }, { label: "Events this month" }, { label: "Claude runs", num: 1 }, { label: "Created" }],
+      o.accounts.map((a) => [
+        `<a href="#/admin" data-account="${a.id}">${esc(a.name)}</a>`,
+        `${esc(a.plan)}${Object.keys(a.overrides).length ? ` <span class="chip">+${Object.keys(a.overrides).length} override${Object.keys(a.overrides).length > 1 ? "s" : ""}</span>` : ""}`,
+        num(a.sites),
+        num(a.members),
+        usageCell(a),
+        num(a.usage.ai_runs),
+        new Date(a.created_at).toLocaleDateString(),
+      ])
+    )}
+    <div id="account-detail"></div>
+
+    <h2>Create an account</h2>
+    <form class="card row" id="new-account">
+      <label class="field">Name <input name="name" required placeholder="Bolt Bikes"></label>
+      <label class="field">Owner's email <input name="owner_email" type="email" required></label>
+      <label class="field narrow">Plan <select name="plan">${o.plans.map((p) => `<option ${p.is_default ? "selected" : ""}>${esc(p.key)}</option>`).join("")}</select></label>
+      <button class="primary" type="submit">Create</button>
+    </form>
+    <div id="new-account-result"></div>
+
+    <h2>Plan templates</h2>
+    <p class="hint">Changing a template changes every account on it, except limits an account overrides. Empty means no limit.</p>
+    <div class="table-wrap"><table><thead><tr><th>Plan</th>${LIMIT_KEYS.map((k) => `<th>${esc(labels[k])}</th>`).join("")}<th>Default</th><th></th></tr></thead><tbody>
+      ${o.plans
+        .map(
+          (p) => `<tr data-plan="${esc(p.key)}"><td><input name="name" value="${esc(p.name)}" aria-label="Name"><br><code>${esc(p.key)}</code></td>
+            ${LIMIT_KEYS.map((k) => `<td>${limitInput(k, p.limits[k])}</td>`).join("")}
+            <td><input type="radio" name="default-plan" value="${esc(p.key)}" ${p.is_default ? "checked" : ""} aria-label="Default plan"></td>
+            <td><button data-save-plan="${esc(p.key)}">Save</button></td></tr>`
+        )
+        .join("")}
+    </tbody></table></div>
+    <p class="hint">New accounts (sign-ups and accounts created without a plan) get the default plan.</p>`;
+
+  view.querySelectorAll("[data-account]").forEach((a) =>
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      showAccount(Number(a.dataset.account), o);
+    })
+  );
+  view.querySelectorAll("[data-save-plan]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const row = b.closest("tr");
+      const limits = Object.fromEntries(LIMIT_KEYS.map((k) => [k, row.querySelector(`[name=${k}]`).value === "" ? null : Number(row.querySelector(`[name=${k}]`).value)]));
+      await api(`/operator/plans/${b.dataset.savePlan}`, { method: "PUT", body: JSON.stringify({ name: row.querySelector("[name=name]").value, limits }) });
+      toast(`Saved ${b.dataset.savePlan}`);
+      renderAdmin();
+    })
+  );
+  view.querySelectorAll("[name=default-plan]").forEach((r) =>
+    r.addEventListener("change", async () => {
+      await post("/operator/plans/default", { key: r.value });
+      toast(`New accounts now get ${r.value}`);
+    })
+  );
+  onSubmit(view.querySelector("#new-account"), async (fd) => {
+    const r = await post("/operator/accounts", { name: fd.get("name"), owner_email: fd.get("owner_email"), plan: fd.get("plan") });
+    const link = `${location.origin}/#/invite/${r.invite_token}`;
+    await renderAdmin();
+    view.querySelector("#new-account-result").innerHTML = `<div class="card"><p>Send this link to <strong>${esc(r.owner_email)}</strong>: it makes them the account's owner. It works once and expires in 7 days.</p>
+      <div class="copy-row"><pre class="snippet">${esc(link)}</pre><button data-copy="${esc(link)}">Copy</button></div></div>`;
+    view.querySelector("#new-account-result [data-copy]").addEventListener("click", async (e) => (await copyText(e.target.dataset.copy)) && toast("Copied"));
+  });
+}
+
+async function showAccount(id, o) {
+  const d = await api(`/operator/accounts/${id}`);
+  const a = d.account;
+  const plan = o.plans.find((p) => p.key === a.plan);
+  const labels = Object.fromEntries(o.limits);
+  const box = view.querySelector("#account-detail");
+  box.innerHTML = `
+    <div class="card">
+      <h2>${esc(a.name)}</h2>
+      <h3>People</h3>
+      ${table(
+        [{ label: "Person" }, { label: "Role" }, { label: "Two-step" }, { label: "Last sign-in" }],
+        d.people.map((u) => [`${esc(u.name || u.email)}<br><span class="hint">${esc(u.email)}</span>${u.is_operator ? ` <span class="chip">operator</span>` : ""}`, esc(u.role), u.totp_enabled ? "on" : "off", esc(ago(u.last_login_at))]),
+        "Nobody yet."
+      )}
+      ${d.invites.length ? `<p class="hint">Pending invites: ${d.invites.map((i) => `${esc(i.email)} (${esc(i.role)})`).join(", ")}</p>` : ""}
+      <h3>Websites</h3>
+      ${table(
+        [{ label: "Website" }, { label: "Collecting from" }, { label: "Status" }],
+        d.sites.map((s) => [`${esc(s.name)} <code>${esc(s.slug)}</code>`, esc(s.origins.join(", ") || "–"), s.collecting ? `<span class="delta good">● collecting</span>` : `<span class="hint">last event ${esc(ago(s.last_event_at))}</span>`]),
+        "No websites."
+      )}
+      <h3>Plan and limits</h3>
+      <form id="account-plan" class="stack">
+        <label class="field narrow">Plan <select name="plan">${o.plans.map((p) => `<option ${p.key === a.plan ? "selected" : ""}>${esc(p.key)}</option>`).join("")}</select></label>
+        <div class="table-wrap"><table><thead><tr><th>Limit</th><th>From the plan</th><th>For this account</th><th>Used this month</th></tr></thead><tbody>
+        ${LIMIT_KEYS.map((k) => {
+          const has = Object.prototype.hasOwnProperty.call(a.overrides, k);
+          const mode = !has ? "inherit" : a.overrides[k] == null ? "none" : "custom";
+          const used = { monthly_events: a.usage.events, monthly_ai_runs: a.usage.ai_runs, max_sites: a.sites, max_members: a.members }[k];
+          return `<tr data-limit="${k}"><td>${esc(labels[k])}</td><td>${plan.limits[k] == null ? "no limit" : num(plan.limits[k])}</td>
+            <td><select name="mode" aria-label="${esc(labels[k])}"><option value="inherit" ${mode === "inherit" ? "selected" : ""}>Same as plan</option><option value="none" ${mode === "none" ? "selected" : ""}>No limit</option><option value="custom" ${mode === "custom" ? "selected" : ""}>Custom</option></select>
+              ${limitInput("value", has ? a.overrides[k] : null, "")}</td><td>${used == null ? "–" : num(used)}</td></tr>`;
+        }).join("")}
+        </tbody></table></div>
+        <div><button type="submit">Save plan and limits</button></div>
+      </form>
+    </div>`;
+  box.scrollIntoView({ behavior: "smooth", block: "start" });
+  onSubmit(box.querySelector("#account-plan"), async (fd) => {
+    if (fd.get("plan") !== a.plan) await post(`/operator/accounts/${id}/plan`, { plan: fd.get("plan") });
+    const overrides = {};
+    box.querySelectorAll("[data-limit]").forEach((row) => {
+      const mode = row.querySelector("[name=mode]").value;
+      const value = row.querySelector("[name=value]").value;
+      if (mode === "none") overrides[row.dataset.limit] = null;
+      if (mode === "custom" && value !== "") overrides[row.dataset.limit] = Number(value);
+    });
+    await post(`/operator/accounts/${id}/overrides`, { overrides });
+    toast("Saved");
+    const fresh = await api("/operator/overview");
+    showAccount(id, fresh);
+  });
+}
+
+// Decides between the sign-in screens and the app.
+async function boot() {
+  try {
+    auth = await api("/auth/state");
+  } catch (e) {
+    view.innerHTML = `<div class="empty">Couldn't reach the Trace server: ${esc(e.message)}</div>`;
+    return;
+  }
+  const hash = location.hash;
+  if (auth.needs_setup) return renderWelcome(hash.startsWith("#/welcome/") ? hash.slice("#/welcome/".length) : "");
+  if (!auth.user) {
+    if (hash.startsWith("#/invite/")) return renderInvite(hash.slice("#/invite/".length));
+    return hash === "#/signup" && auth.allow_signup ? renderSignup() : renderLogin();
+  }
+  if (auth.step === "verify") return renderVerify();
+  if (auth.step === "enroll") return renderEnroll();
+  document.body.classList.remove("auth");
+  if (/^#\/(welcome|invite)\//.test(hash) || hash === "#/signup") history.replaceState(null, "", "#/");
+  applyRole();
+  try {
+    await loadSites();
+  } catch (e) {
+    view.innerHTML = `<div class="empty">Couldn't load your websites: ${esc(e.message)}</div>`;
+    return;
+  }
+  route();
+}
+
+const routes = {
+  start: renderStart,
+  insights: renderInsights,
+  kpis: renderKpis,
+  behaviour: renderBehaviour,
+  privacy: renderPrivacy,
+  setup: renderSetup,
+  account: renderAccount,
+  team: renderTeam,
+  plan: renderPlan,
+  admin: renderAdmin,
+};
+
+function renderNoSites() {
+  view.innerHTML = `<div class="empty"><h1>No websites yet</h1>
+    <p>${can("admin") ? "Add the first website this account will monitor." : "Ask an admin of your account to add a website."}</p>
+    ${can("admin") ? `<button class="primary" id="first-site">Add a website</button>` : ""}</div>`;
+  view.querySelector("#first-site")?.addEventListener("click", async () => {
+    try {
+      if (await addWebsite()) switchSite(currentSite);
+    } catch (e) {
+      toast(e.message, true);
+    }
+  });
+}
+
+// Pages about the account rather than one website.
+const ACCOUNT_PAGES = ["account", "team", "plan", "admin"];
+
+async function route() {
+  if (!auth || !auth.user || auth.step) return boot();
+  const page = location.hash.replace(/^#\//, "");
+  if (!sites.length && !ACCOUNT_PAGES.includes(page)) return renderNoSites();
+  if (!project && !ACCOUNT_PAGES.includes(page)) {
+    try {
+      await loadProject();
+    } catch (e) {
+      view.innerHTML = `<div class="empty">Couldn't load this page: ${esc(e.message)}</div>`;
+      return;
+    }
+  }
+  // Land on Setup until data is arriving, on Insights after.
+  const name = page.split("/")[0] || (project && project.collection.active ? "insights" : "start");
+  if (!location.hash || location.hash === "#/") history.replaceState(null, "", `#/${name}`);
+  const render = routes[name] || renderInsights;
+  if (project && !ACCOUNT_PAGES.includes(name) && name !== "start") loadChecklist();
+  document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.view === name));
+  try {
+    await render();
+  } catch (e) {
+    view.innerHTML = `<div class="empty">Couldn't load this page: ${esc(e.message)}</div>`;
+  }
+}
+
+document.getElementById("run-analysis").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = "Analysing…";
+  try {
+    const r = await post("/analyze");
+    const n = r.created.length;
+    toast(
+      `${n} new insight${n === 1 ? "" : "s"} via ${r.engine}${r.duplicates ? `, ${r.duplicates} already known` : ""}.` +
+        (r.warning ? ` ${r.warning}` : ""),
+      Boolean(r.warning && !n)
+    );
+    insightTab = "new";
+    if (location.hash === "#/insights" || !location.hash) route();
+    else location.hash = "#/insights";
+  } catch (err) {
+    toast(`Analysis failed: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Run analysis";
+  }
+});
+
+window.addEventListener("hashchange", route);
+window.addEventListener("unhandledrejection", (e) => toast(e.reason?.message || String(e.reason), true));
+boot();

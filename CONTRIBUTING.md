@@ -1,4 +1,4 @@
-# Contributing to Diagnostic
+# Contributing to Trace
 
 Thanks for helping. Contributions to the community edition come in as **OpenSpec changes**, filed as GitHub issues: you explore the problem and write the proposal, and maintainers review it and build it. That keeps every change thought through before code is written, especially for privacy and for the effect on visitors' browsers, which matter more here than anything else.
 
@@ -22,7 +22,7 @@ Bugs work the same way: the proposal describes what happens, what should happen 
 npm install -g @fission-ai/openspec
 
 # 2. A fresh checkout of main
-git clone https://github.com/OWNER/diagnostic && cd diagnostic
+git clone https://github.com/dobrinov/tracetells && cd tracetells
 openspec init --tools <your-agent>   # only if you don't use Claude Code; adds the /opsx commands for your tool
 
 # 3. In your agent
@@ -42,9 +42,9 @@ A check runs on every new or edited issue. It rebuilds your change from the issu
 
 Maintainers then review valid proposals against [`openspec/config.yaml`](openspec/config.yaml). The questions they ask:
 
-- **Privacy first.** Does it collect, store or expose anything new? Could anything identify a person? Diagnostic studies patterns, not people: no session replays, nothing typed, no per-user views.
+- **Privacy first.** Does it collect, store or expose anything new? Could anything identify a person? Trace studies patterns, not people: no session replays, nothing typed, no per-user views.
 - **No cost to visitors.** Does the collector get bigger or do more work? Handlers stay passive and real work happens when the browser is idle.
-- **Fits the model.** KPIs and events live in `diagnostic.json`; the community edition stays one binary on SQLite.
+- **Fits the model.** KPIs and events live in `trace.json`; the community edition stays one binary on SQLite.
 
 Accepted changes are applied with `/opsx:apply` and archived into `openspec/specs/` when they ship. If you'd like to build your own accepted proposal, say so on the issue.
 

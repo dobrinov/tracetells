@@ -437,62 +437,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
 
 [[package]]
-name = "diagnostic-agent"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "diagnostic-core",
- "reqwest",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "diagnostic-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "argon2",
- "data-encoding",
- "getrandom 0.2.17",
- "hmac",
- "qrcode",
- "regex",
- "serde",
- "serde_json",
- "sha1",
- "sha2",
- "sqlx",
- "subtle",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "diagnostic-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "brotli",
- "clap",
- "diagnostic-agent",
- "diagnostic-core",
- "flate2",
- "reqwest",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
- "tower-http",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1943,6 +1887,64 @@ name = "tower-service"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
+
+[[package]]
+name = "trace-agent"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "trace-core",
+ "tracing",
+]
+
+[[package]]
+name = "trace-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "data-encoding",
+ "getrandom 0.2.17",
+ "hmac",
+ "qrcode",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "sqlx",
+ "subtle",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "trace-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "brotli",
+ "clap",
+ "flate2",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tower",
+ "tower-http",
+ "trace-agent",
+ "trace-core",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "tracing"

@@ -19,7 +19,7 @@ import pathlib
 import re
 import sys
 
-FIELDS = ["Diagnostic version", "Environment", "Change id", "Exploration", "proposal.md", "Spec deltas", "design.md", "tasks.md", "Checklist"]
+FIELDS = ["Trace version", "Environment", "Change id", "Exploration", "proposal.md", "Spec deltas", "design.md", "tasks.md", "Checklist"]
 CHANGE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 SPEC_PATH = re.compile(r"^specs/[a-z0-9][a-z0-9/_-]*/spec\.md$")
 FILE_MARKER = re.compile(r"^<!--\s*file:\s*(\S+)\s*-->\s*$")

@@ -1,20 +1,20 @@
 schema: spec-driven
 
-# Constraints every Diagnostic change must respect. Contributors' agents read
+# Constraints every Trace change must respect. Contributors' agents read
 # this before exploring the code; maintainers review proposals against it.
 context: |
-  Diagnostic is privacy-first web analytics for improving a site's UX. It studies
+  Trace is privacy-first web analytics for improving a site's UX. It studies
   aggregated behaviour patterns, never individual people.
   Privacy is the first priority:
   - Never collect what users type, page titles, query strings, DOM snapshots or session replays.
   - New collection must say which pattern it reveals; when in doubt, don't collect.
-  - Anything that could identify a person must be scrubbed in the browser (crates/diagnostic-server/assets/d.js)
-    and again on the server (crates/diagnostic-core/src/privacy.rs), or not collected at all.
+  - Anything that could identify a person must be scrubbed in the browser (crates/trace-server/assets/d.js)
+    and again on the server (crates/trace-core/src/privacy.rs), or not collected at all.
   - The dashboard, HTTP API, MCP tools and analyst digest expose aggregates only: no per-user or per-session views.
   The collector must never slow down or break the host page:
   - Event handlers stay passive and cheap; real work runs when the browser is idle; nothing reads layout on the hot path.
   - Collector errors are swallowed; the collector stays ES5 with no build step and no dependencies.
-  KPIs and the custom-event catalogue are defined in code (diagnostic.json), not in the dashboard.
+  KPIs and the custom-event catalogue are defined in code (trace.json), not in the dashboard.
   The community edition is a single Rust binary on SQLite; it must keep working with no external services.
 
 rules:

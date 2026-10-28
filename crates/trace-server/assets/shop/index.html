@@ -1,0 +1,938 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stride: running shoes</title>
+    <!-- The only thing a site needs to be instrumented with Trace: -->
+    <script src="{{TRACE_URL}}/d.js?k={{WRITE_KEY}}" data-key="{{WRITE_KEY}}" data-routes="/products/:id" defer></script>
+    <script src="/shop.js" defer></script>
+    <style>
+      :root {
+        --bg: #f6f4f0;
+        --surface: #ffffff;
+        --ink: #15130f;
+        --muted: #5f5a52;
+        --line: #e5e0d6;
+        --field: #d9d3c7;
+        --brand: #ff5a26;
+        --brand-hover: #ff7347;
+        --brand-ink: #15130f;
+        --accent: #c2390e;
+        --soft: #ffe3d6;
+        --ghost: #ffcdb5;
+        --chip: #ebe6dc;
+        --inverse: #15130f;
+        --inverse-ink: #f6f4f0;
+        --inverse-muted: #c9c3b8;
+        --inverse-line: #2c2924;
+        --display: "Avenir Next Condensed", "Roboto Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #12110e;
+          --surface: #1c1a16;
+          --ink: #f3efe7;
+          --muted: #a8a197;
+          --line: #2e2b25;
+          --field: #3d3931;
+          --brand: #ff6a3a;
+          --brand-hover: #ff8459;
+          --brand-ink: #15130f;
+          --accent: #ff8a5c;
+          --soft: #33201a;
+          --ghost: #4a2a1e;
+          --chip: #26231e;
+          --inverse: #26231e;
+          --inverse-ink: #f3efe7;
+          --inverse-muted: #c9c3b8;
+          --inverse-line: #4a453c;
+          color-scheme: dark;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      a {
+        color: inherit;
+      }
+      a:hover {
+        color: var(--accent);
+      }
+      img {
+        max-width: 100%;
+      }
+      svg {
+        flex: none;
+      }
+      .demo-bar {
+        background: #10141d;
+        color: #c9d1e0;
+        font-size: 13px;
+        padding: 9px 16px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        text-align: center;
+      }
+      .demo-bar a {
+        color: #8ea3ff;
+        font-weight: 600;
+      }
+      .site-header {
+        background: var(--surface);
+        border-bottom: 1px solid var(--line);
+      }
+      .wrap {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+      .site-header .wrap {
+        display: flex;
+        align-items: center;
+        gap: 36px;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        flex-wrap: wrap;
+      }
+      .logo {
+        font-family: var(--display);
+        font-stretch: condensed;
+        font-weight: 800;
+        font-size: 30px;
+        line-height: 1;
+        letter-spacing: 0.01em;
+        text-transform: uppercase;
+        text-decoration: none;
+      }
+      .logo span {
+        color: var(--brand);
+      }
+      .site-header nav {
+        display: flex;
+        gap: 28px;
+        flex: 1;
+        flex-wrap: wrap;
+      }
+      .site-header nav a {
+        text-decoration: none;
+        font-size: 15px;
+        font-weight: 500;
+        padding: 12px 0;
+      }
+      .cart-link {
+        margin-left: auto;
+        border: 1px solid var(--inverse-line);
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 44px;
+        padding: 0 8px 0 18px;
+        border-radius: 999px;
+        background: var(--inverse);
+        color: var(--inverse-ink);
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .cart-link:hover {
+        color: var(--inverse-ink);
+      }
+      .cart-link .count {
+        min-width: 28px;
+        height: 28px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: var(--brand);
+        color: var(--brand-ink);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .promo {
+        background: var(--soft);
+        font-size: 13px;
+        font-weight: 500;
+        text-align: center;
+        padding: 8px 16px;
+      }
+      main {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 56px 24px 96px;
+      }
+      h1,
+      .display {
+        font-family: var(--display);
+        font-stretch: condensed;
+        font-weight: 800;
+        font-size: 80px;
+        line-height: 0.92;
+        letter-spacing: -0.01em;
+        text-transform: uppercase;
+        margin: 0 0 16px;
+      }
+      h2.display-2 {
+        font-family: var(--display);
+        font-stretch: condensed;
+        font-weight: 800;
+        font-size: 52px;
+        line-height: 1;
+        text-transform: uppercase;
+        margin: 0;
+      }
+      .accent {
+        color: var(--accent);
+      }
+      .lead {
+        color: var(--muted);
+        font-size: 19px;
+        line-height: 1.55;
+        margin: 0 0 28px;
+        max-width: 48ch;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .eyebrow {
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: 52px;
+        padding: 0 28px;
+        font: inherit;
+        font-weight: 700;
+        border: 1.5px solid var(--brand);
+        border-radius: 999px;
+        background: var(--brand);
+        color: var(--brand-ink);
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .btn:hover {
+        background: var(--brand-hover);
+        border-color: var(--brand-hover);
+        color: var(--brand-ink);
+      }
+      .btn.secondary {
+        background: transparent;
+        border-color: var(--ink);
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .btn.secondary:hover {
+        background: var(--chip);
+        color: var(--ink);
+      }
+      .btn.block {
+        display: flex;
+        width: 100%;
+        min-height: 56px;
+        font-size: 17px;
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .perks {
+        display: flex;
+        gap: 24px;
+        flex-wrap: wrap;
+        font-size: 14px;
+        color: var(--muted);
+        margin-top: 24px;
+      }
+      .perks span {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        border-radius: 999px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 24px;
+      }
+      .chip .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--brand);
+      }
+      .hero {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
+        gap: 48px;
+        align-items: center;
+        margin-bottom: 80px;
+      }
+      .hero h1 {
+        font-size: 96px;
+        margin-bottom: 24px;
+      }
+      .hero-art {
+        position: relative;
+        background: var(--soft);
+        border-radius: 32px;
+        padding: 56px 32px 24px;
+        overflow: hidden;
+      }
+      .hero-art .ghost {
+        position: absolute;
+        top: 20px;
+        left: 28px;
+        font-family: var(--display);
+        font-stretch: condensed;
+        font-weight: 800;
+        font-size: 150px;
+        line-height: 0.8;
+        text-transform: uppercase;
+        color: var(--ghost);
+      }
+      .hero-art img {
+        position: relative;
+        display: block;
+        width: 100%;
+      }
+      .hero-tag {
+        position: relative;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        background: var(--surface);
+        border-radius: 18px;
+        padding: 14px 18px;
+        margin-top: 8px;
+      }
+      .hero-tag div {
+        display: flex;
+        flex-direction: column;
+      }
+      .hero-tag span {
+        font-size: 14px;
+      }
+      .hero-tag a {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 44px;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      .section-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 28px;
+      }
+      .more {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 44px;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .page-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 20px;
+        margin-bottom: 32px;
+      }
+      .page-meta .lead {
+        margin: 0;
+        font-size: 18px;
+      }
+      .page-meta span {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+        gap: 24px;
+      }
+      .product-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        overflow: hidden;
+      }
+      /* Planted problem: the image looks clickable but does nothing. */
+      .product-card > img {
+        display: block;
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        cursor: pointer;
+        transition: transform 0.2s;
+      }
+      .product-card > img:hover {
+        transform: scale(1.03);
+      }
+      .product-card .info {
+        position: relative;
+        background: var(--surface);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 18px 22px 22px;
+      }
+      .product-card h3 {
+        margin: 0 0 4px;
+        font-size: 18px;
+      }
+      .product-card h3 a {
+        text-decoration: none;
+      }
+      .swatch-line {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .swatch {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+      .price {
+        font-weight: 700;
+        font-size: 18px;
+      }
+      .banner {
+        margin-top: 80px;
+        background: var(--inverse);
+        color: var(--inverse-ink);
+        border-radius: 32px;
+        padding: 56px 48px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+        gap: 32px;
+        align-items: center;
+      }
+      .banner .eyebrow {
+        color: #ff7a4d;
+      }
+      .banner h2 {
+        margin: 14px 0;
+        font-size: 60px;
+        line-height: 0.95;
+      }
+      .banner p {
+        margin: 0;
+        color: var(--inverse-muted);
+        font-size: 17px;
+        max-width: 44ch;
+      }
+      .banner-cta {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+        justify-self: end;
+        color: var(--inverse-muted);
+      }
+      .banner-cta strong {
+        font-size: 32px;
+        color: var(--inverse-ink);
+      }
+      .banner .btn.secondary,
+      .plan.featured .btn.secondary {
+        border-color: var(--inverse-ink);
+        color: var(--inverse-ink);
+      }
+      .banner .btn.secondary:hover {
+        background: var(--inverse-line);
+      }
+      .breadcrumb {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 14px;
+        color: var(--muted);
+        margin: -28px 0 24px;
+      }
+      .breadcrumb a {
+        text-decoration: none;
+        font-weight: 500;
+      }
+      .detail {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
+        gap: 56px;
+        align-items: start;
+      }
+      .detail > img {
+        display: block;
+        width: 100%;
+        border-radius: 32px;
+      }
+      .detail h1 {
+        font-size: 76px;
+        margin-bottom: 12px;
+      }
+      .detail-meta {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+      }
+      .detail-meta .price {
+        font-size: 26px;
+      }
+      .detail-meta .muted {
+        font-size: 15px;
+      }
+      .detail p.desc {
+        color: var(--muted);
+        font-size: 17px;
+        line-height: 1.6;
+        margin: 0 0 24px;
+        max-width: 48ch;
+      }
+      .field-label {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .sizes {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 8px;
+        margin: 10px 0 24px;
+      }
+      .sizes button {
+        font: inherit;
+        height: 52px;
+        border: 1px solid var(--field);
+        background: var(--surface);
+        color: var(--ink);
+        border-radius: 12px;
+        cursor: pointer;
+      }
+      .sizes button.on {
+        border-color: var(--ink);
+        background: var(--ink);
+        color: var(--bg);
+        font-weight: 700;
+      }
+      .info-list {
+        border-top: 1px solid var(--line);
+        margin-top: 24px;
+      }
+      .info-list div {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 16px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 15px;
+      }
+      .info-list svg {
+        margin-top: 2px;
+      }
+      .cart-layout {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 32px;
+        align-items: flex-start;
+      }
+      .cart-items {
+        flex: 999 1 560px;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .cart-item {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        padding: 16px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+      .cart-item img {
+        width: 140px;
+        border-radius: 16px;
+        display: block;
+      }
+      .cart-item div {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .cart-item a {
+        font-weight: 700;
+        font-size: 18px;
+        text-decoration: none;
+      }
+      .cart-item .price {
+        padding-right: 8px;
+      }
+      .panel {
+        flex: 1 1 340px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        padding: 28px;
+      }
+      .panel h2 {
+        margin: 0 0 8px;
+        font-size: 20px;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 15px;
+      }
+      .row.total {
+        border-bottom: 0;
+        padding: 16px 0 20px;
+        font-size: 20px;
+        font-weight: 700;
+      }
+      .note {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--muted);
+        margin: 16px 0 0;
+      }
+      .pricing-head {
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+      .pricing-head h1 {
+        font-size: 88px;
+        margin: 0;
+      }
+      .pricing-head .lead {
+        margin: 4px 0 16px;
+      }
+      .toggle {
+        display: inline-flex;
+        background: var(--chip);
+        border-radius: 999px;
+        padding: 4px;
+      }
+      .toggle button {
+        font: inherit;
+        font-size: 15px;
+        min-height: 44px;
+        border: 0;
+        background: none;
+        color: var(--ink);
+        padding: 0 22px;
+        border-radius: 999px;
+        cursor: pointer;
+      }
+      .toggle button.on {
+        background: var(--surface);
+        font-weight: 600;
+      }
+      .toggle .save {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .plans {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+        gap: 24px;
+        max-width: 912px;
+        margin: 36px auto 0;
+      }
+      .plan {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        padding: 32px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .plan.featured {
+        background: var(--inverse);
+        border-color: var(--inverse);
+        color: var(--inverse-ink);
+      }
+      .plan h3 {
+        margin: 0;
+        font-size: 22px;
+      }
+      .plan .plan-price {
+        margin: 0;
+        font-family: var(--display);
+        font-stretch: condensed;
+        font-weight: 800;
+        font-size: 48px;
+        line-height: 1;
+      }
+      .plan ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        font-size: 15px;
+      }
+      .plan li {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .plan .btn {
+        margin-top: auto;
+      }
+      .signup-layout {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 48px;
+        align-items: flex-start;
+      }
+      .signup-intro {
+        flex: 1 1 360px;
+      }
+      .signup-intro img {
+        display: block;
+        width: 100%;
+        border-radius: 28px;
+      }
+      form.signup {
+        flex: 999 1 520px;
+        min-width: 0;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        padding: 36px;
+        display: grid;
+        gap: 18px;
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+        gap: 16px;
+      }
+      form.signup label {
+        display: grid;
+        gap: 6px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      form.signup input,
+      form.signup select {
+        font: inherit;
+        font-weight: 400;
+        height: 48px;
+        color: var(--ink);
+        background: var(--surface);
+        border: 1px solid var(--field);
+        border-radius: 12px;
+        padding: 0 14px;
+      }
+      form.signup input:focus,
+      form.signup select:focus,
+      .btn:focus-visible,
+      .sizes button:focus-visible,
+      .toggle button:focus-visible {
+        outline: 2px solid var(--brand);
+        outline-offset: 2px;
+      }
+      form.signup .btn {
+        margin-top: 6px;
+      }
+      .error {
+        margin: 0;
+        padding: 12px 16px;
+        border-radius: 12px;
+        background: var(--soft);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .error[hidden] {
+        display: none;
+      }
+      .site-footer {
+        background: var(--inverse);
+        color: var(--inverse-muted);
+        padding: 56px 0 32px;
+      }
+      .site-footer .cols {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+        gap: 32px;
+      }
+      .site-footer .logo {
+        color: var(--inverse-ink);
+        display: block;
+        margin-bottom: 12px;
+      }
+      .site-footer h2 {
+        margin: 0 0 10px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #8f897e;
+      }
+      .site-footer nav {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .site-footer nav a {
+        color: var(--inverse-ink);
+        text-decoration: none;
+        font-size: 15px;
+      }
+      .site-footer nav a:hover {
+        color: #ff7a4d;
+      }
+      .site-footer .fine {
+        border-top: 1px solid var(--inverse-line);
+        margin-top: 40px;
+        padding-top: 20px;
+        font-size: 13px;
+      }
+      @media (max-width: 720px) {
+        h1,
+        .display,
+        .detail h1,
+        .pricing-head h1 {
+          font-size: 56px;
+        }
+        .hero h1 {
+          font-size: 64px;
+        }
+        h2.display-2,
+        .banner h2 {
+          font-size: 40px;
+        }
+        .hero-art .ghost {
+          font-size: 96px;
+        }
+        main {
+          padding: 32px 16px 64px;
+        }
+        .wrap {
+          padding: 0 16px;
+        }
+        .site-header .wrap {
+          gap: 8px 20px;
+        }
+        .site-header nav {
+          order: 3;
+          flex-basis: 100%;
+          gap: 20px;
+        }
+        .banner {
+          padding: 36px 24px;
+        }
+        .banner-cta {
+          justify-self: start;
+        }
+        .sizes {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        .cart-item img {
+          width: 96px;
+        }
+        form.signup {
+          padding: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="demo-bar">
+      <svg width="22" height="12" viewBox="2 15.5 60 33" aria-hidden="true"><rect x="3.5" y="25" width="14" height="14" rx="4.5" fill="#45c75b"/><rect x="13.5" y="21" width="22" height="22" rx="6" fill="#2a9ba3" stroke="#10141d" stroke-width="2.6"/><rect x="30.5" y="17" width="30" height="30" rx="8" fill="#4a6cff" stroke="#10141d" stroke-width="2.6"/></svg>
+      <span>Demo shop instrumented with Trace. Click around, then</span>
+      <a href="{{TRACE_URL}}/#/behaviour" target="_blank" rel="noopener">see what Trace recorded →</a>
+    </div>
+    <header class="site-header">
+      <div class="wrap">
+        <a class="logo" href="/" data-link>Stride<span>.</span></a>
+        <nav aria-label="Main">
+          <a href="/products" data-link>Shoes</a>
+          <a href="/pricing" data-link>Stride+</a>
+          <a href="/signup" data-link>Sign up</a>
+        </nav>
+        <a class="cart-link" href="/cart" data-link>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8h14l-1.2 12H6.2z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>
+          Cart <span class="count" id="cart-count">0</span>
+        </a>
+      </div>
+    </header>
+    <div class="promo">Free shipping over €100 · Free returns within 30 days</div>
+    <main id="app"></main>
+    <footer class="site-footer">
+      <div class="wrap">
+        <div class="cols">
+          <div>
+            <span class="logo">Stride<span>.</span></span>
+            <span>Five shoes, designed by runners.</span>
+          </div>
+          <!-- Plain links: these do a full page reload, like a multi-page site. -->
+          <nav aria-label="Shop">
+            <h2>Shop</h2>
+            <a href="/products">All shoes</a>
+            <a href="/pricing">Stride+ membership</a>
+            <a href="/signup">Sign up</a>
+          </nav>
+          <nav aria-label="Help">
+            <h2>Help</h2>
+            <a href="/help">Shipping &amp; returns</a>
+          </nav>
+        </div>
+        <div class="fine">Stride is a fictional shop. Nothing here is for sale.</div>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        **Bug report.** Describe what happens, what should happen and how to reproduce it in the proposal; add a spec scenario that fails today. Diagnostic takes contributions as **OpenSpec changes**: explore the problem, then propose it.
+        **Bug report.** Describe what happens, what should happen and how to reproduce it in the proposal; add a spec scenario that fails today. Trace takes contributions as **OpenSpec changes**: explore the problem, then propose it.
         The quickest way is to run `scripts/openspec-issue.sh <change-id>`, which validates your change and opens this issue for you.
         See [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) for the steps.
 
@@ -15,8 +15,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: Diagnostic version
-      description: Output of `diagnostic --version`, or the commit you ran.
+      label: Trace version
+      description: Output of `trace --version`, or the commit you ran.
     validations:
       required: true
   - type: input

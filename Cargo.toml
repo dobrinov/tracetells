@@ -5,6 +5,8 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+license = "AGPL-3.0-only"
+repository = "https://github.com/dobrinov/tracetells"
 
 [workspace.dependencies]
 argon2 = { version = "0.5", features = ["std"] }
@@ -15,8 +17,8 @@ qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 sha1 = "0.10"
 sha2 = "0.10"
 subtle = "2"
-diagnostic-core = { path = "crates/diagnostic-core" }
-diagnostic-agent = { path = "crates/diagnostic-agent" }
+trace-core = { path = "crates/trace-core" }
+trace-agent = { path = "crates/trace-agent" }
 anyhow = "1"
 axum = "0.8"
 clap = { version = "4", features = ["derive", "env"] }

@@ -1,0 +1,27 @@
+[package]
+name = "trace-core"
+description = "Storage, KPI measurement, behaviour digests and impact evaluation for Trace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+tracing.workspace = true
+argon2.workspace = true
+data-encoding.workspace = true
+getrandom.workspace = true
+hmac.workspace = true
+qrcode.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

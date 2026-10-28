@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        **Improvement, refactor, docs or tooling.** Diagnostic takes contributions as **OpenSpec changes**: explore the problem, then propose it.
+        **Improvement, refactor, docs or tooling.** Trace takes contributions as **OpenSpec changes**: explore the problem, then propose it.
         The quickest way is to run `scripts/openspec-issue.sh <change-id>`, which validates your change and opens this issue for you.
         See [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) for the steps.
 
