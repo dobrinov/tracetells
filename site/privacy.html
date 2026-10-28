@@ -26,8 +26,8 @@
 <script>try{var t=localStorage.getItem('trace-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<!-- Trace on its own site: nothing is stored or sent until the visitor clicks Allow. -->
-<script src="https://app.tracetells.com/d.js?k=2ccf78ff3217411cb0027317dc5c616e" data-key="2ccf78ff3217411cb0027317dc5c616e" data-consent="banner" data-consent-link="https://tracetells.com/privacy.html" defer></script>
+<!-- Trace on its own site, cookieless: nothing is stored on the visitor's device. -->
+<script src="https://app.tracetells.com/d.js?k=2ccf78ff3217411cb0027317dc5c616e" data-key="2ccf78ff3217411cb0027317dc5c616e" defer></script>
 <!-- Privacy-friendly analytics by Plausible -->
 <script async src="https://stats.aparatnata.com/js/pa-bozD2DJNoa8xOtm2eSY4T.js"></script>
 <script>
@@ -66,27 +66,27 @@
 <main id="main">
   <article class="wrap legal">
     <h1 class="display">Privacy policy</h1>
-    <p class="legal-meta">Last updated 28 October 2026</p>
+    <p class="legal-meta">Last updated 29 October 2026</p>
 
     <p>Trace is analytics that studies patterns, not people, and this policy follows the same idea: it says plainly what is collected, why, and where it goes. Trace is run by Deyan Dobrinov, an individual, not a company. Questions, or requests about your data: <a href="mailto:hello@tracetells.com">hello@tracetells.com</a>.</p>
 
     <h2>On this website (tracetells.com)</h2>
-    <p>This site measures itself with Trace, but only if you click <strong>Allow</strong> on the bar at the bottom of the page. Until you do, and if you click <strong>No thanks</strong>, Trace stores nothing on your device and sends nothing. Your answer itself is kept in your browser (as <code>trc_consent</code>) so the bar doesn't ask again. You can change it any time with <strong>Privacy choices</strong> at the bottom of every page. Browsers that send Global Privacy Control are treated as a no.</p>
-    <p>If you allow it, Trace keeps a random visitor id and session id in your browser's local storage, and records:</p>
+    <p>This site measures itself with Trace, without cookies and without storing anything on your device. To tell one visit from another, Trace's server computes a hash of your IP address, your browser and this website, with a random value that changes every day. Your IP address is never stored, and the daily values are deleted after two days, so the hash can't be traced back to you or linked to your visits on other days. Trace records:</p>
     <ul>
       <li>the pages you view, with ids in addresses grouped and query strings removed;</li>
       <li>clicks on buttons and links (which element, not what you type), scrolling, time on page and JavaScript errors;</li>
       <li>the website you came from (its address only), your browser's user-agent string and a rough device size.</li>
     </ul>
     <p>It never records what you type, page titles, the content of pages or a replay of your visit, and it does not store your IP address. The data is used only to see, in aggregate, how this site is used and what to improve. It is not sold, shared for advertising or combined with other data.</p>
-    <p>The demo shop at <a href="/demo/">tracetells.com/demo</a> is part of this site and works the same way: it asks first, and its answer is shared with the rest of the site.</p>
+    <p>The demo shop at <a href="/demo/">tracetells.com/demo</a> is part of this site and works the same way.</p>
+    <p>Until 29 October 2026 this site asked first, with a bar at the bottom of the page. If you allowed it then, the ids Trace kept in your browser are deleted the next time you visit. If you said no, Trace still records nothing from your browser.</p>
     <p>What Trace has learned about this site and the demo shop is public, as an example of what Trace shows: <a href="https://app.tracetells.com/p/JeAQW-f1JsGQF5FA8_ILQc2NaXEZ220n">this site's analytics</a> and <a href="https://app.tracetells.com/p/uDVoTzUDXjSybPZF5ANLG78-USVvW2TU">the demo shop's</a>. They show only aggregates: counts and rates across visits, never one visit or one visitor, and any row built from fewer than 5 visits is left out.</p>
     <p>Separately, the site counts visits with <a href="https://plausible.io/data-policy">Plausible Analytics</a>, an open-source tool that uses no cookies and stores nothing on your device, so it doesn't ask first. It runs on a server at stats.aparatnata.com and records the page, the referring site, and your browser, operating system, device type and country. It uses your IP address and user-agent only to tell visits apart within a day, through a hash that changes daily and isn't stored, and it keeps no personal data.</p>
     <p>The site itself is hosted on GitHub Pages and loads its fonts from Google Fonts, so GitHub and Google receive the usual technical details of your request, such as your IP address, under their own policies.</p>
 
     <h2>If you use the hosted service (app.tracetells.com)</h2>
     <p>To run your account, Trace stores your email address, your name if you give one, a hash of your password (never the password itself), your two-step verification secret if you turn it on, your sign-in sessions and API tokens (as hashes), and an activity log of changes made in your account. It sends no email: no newsletters and no marketing.</p>
-    <p>The websites you connect send their visitors' behaviour to Trace, as described above. You decide which websites send data and whether they ask visitors for consent first; Trace stores and processes that data only to provide the service to you. Raw events are deleted when they are older than your plan keeps (30 days on Free); the insights and evaluations made from them are kept with your account.</p>
+    <p>The websites you connect send their visitors' behaviour to Trace, as described above. By default Trace's script stores nothing on their visitors' devices. To tell visits apart, the server uses a visitor's IP address and browser only to compute a hash with the website and a random value that changes every day; the IP address is never stored, and those daily values are deleted after two days, so the hashes can't be traced back. You decide which websites send data, and a website that already asks its visitors for consent can make Trace wait for it. Trace stores and processes that data only to provide the service to you. Raw events are deleted when they are older than your plan keeps (30 days on Free); the insights and evaluations made from them are kept with your account.</p>
     <p>Analysis is done by your own coding agent, over Trace's MCP server, with the model you choose. Trace sends no data to an AI provider itself.</p>
 
     <h2>Where the data is</h2>
@@ -94,7 +94,7 @@
 
     <h2>Your choices</h2>
     <ul>
-      <li>On this site: <strong>Privacy choices</strong>, at the bottom of every page, or clearing this site's data in your browser.</li>
+      <li>On this site: Trace keeps nothing new on your device. Write to <a href="mailto:hello@tracetells.com">hello@tracetells.com</a> with any question about what was recorded.</li>
       <li>For your account: write to <a href="mailto:hello@tracetells.com">hello@tracetells.com</a> to get a copy of your data, correct it, or delete your account and everything collected for it.</li>
       <li>If you visited a website that uses Trace, that website decides what it collects: ask its owner.</li>
     </ul>
@@ -117,7 +117,6 @@
       <a data-trace-event="view_public" data-trace-props='{"view":"site"}' href="https://app.tracetells.com/p/JeAQW-f1JsGQF5FA8_ILQc2NaXEZ220n" target="_blank" rel="noopener">This site's analytics</a>
       <a href="privacy.html">Privacy policy</a>
       <a href="terms.html">Terms</a>
-      <a href="#" data-trace-consent>Privacy choices</a>
     </nav>
   </div>
 </footer>

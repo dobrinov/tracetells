@@ -20,9 +20,9 @@ mkdir -p "$out/demo/api/reviews"
 cp -R "$root/site/." "$out/"
 
 # The shop under /demo: static reviews (one in three requests asks for a file
-# that doesn't exist, a real failed request), and the consent bar like the rest
-# of tracetells.com.
-consent=' data-consent="banner" data-consent-link="https://tracetells.com/privacy.html"'
+# that doesn't exist, a real failed request), cookieless like the rest of
+# tracetells.com.
+consent=''
 sed -e "s#{{TRACE_URL}}#${TRACE_URL%/}#g" \
     -e "s#{{WRITE_KEY}}#$SHOP_WRITE_KEY#g" \
     -e "s#{{BASE}}#/demo#g" \
