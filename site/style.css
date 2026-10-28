@@ -246,6 +246,71 @@ pre { margin: 0; }
 .faq h3 { margin: 0; font-size: 16px; }
 
 /* Small screens */
+/* How it works: three lanes. The diagram keeps one shape (1168 × 510) at every
+   width, so cards, labels and arrows are placed in units of that box. */
+.how .section-title { max-width: 40ch; }
+.lanes {
+  --w: 1168; --h: 510;
+  position: relative; aspect-ratio: 1168 / 510; container-type: inline-size;
+  border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+}
+.lane { position: absolute; left: 0; right: 0; height: calc(100% / 3); }
+.lane-site { top: 0; background: var(--surface); }
+.lane-trace { top: calc(100% / 3); background: var(--accent-faint); border-top: 1px solid var(--accent-line); border-bottom: 1px solid var(--accent-line); }
+.lane-agent { top: calc(200% / 3); background: var(--surface-2); }
+.lane-name {
+  position: absolute; left: 1.7%; top: 9.4%;
+  font-size: clamp(9px, 1.03cqi, 12px); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+}
+.lane-trace .lane-name { color: var(--link); }
+.lane-arrows { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.lane-arrows marker path { fill: var(--muted); stroke: none; }
+.lane-card {
+  position: absolute; box-sizing: border-box;
+  left: calc(var(--x) / var(--w) * 100%); top: calc(var(--y) / var(--h) * 100%);
+  width: calc(164 / 1168 * 100%); height: calc(96 / 510 * 100%);
+  padding: 1.03cqi 1.2cqi; display: flex; flex-direction: column; justify-content: center; gap: .2cqi;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: 1.03cqi;
+  font-size: clamp(9px, 1.11cqi, 13px); line-height: 1.38; color: var(--muted);
+}
+.lane-card b { font-size: clamp(11px, 1.28cqi, 15px); color: var(--text); }
+.lane-card.is-trace { border: 1.5px solid var(--link); }
+.lane-card.is-check { border: 1.5px solid #45c75b; }
+.lane-card.is-agent { background: #10141d; border-color: #3a4458; color: #b7bfcd; }
+.lane-card.is-agent b { color: #ffffff; }
+.lane-label {
+  position: absolute; left: calc(var(--x) / var(--w) * 100%); top: calc(var(--y) / var(--h) * 100%);
+  font-size: clamp(9px, 1.11cqi, 13px); color: var(--text-2);
+}
+.lane-label[style*="--center"] { transform: translateX(-50%); }
+.how-note { margin: 20px 0 0; color: var(--muted); font-size: 15px; line-height: 1.55; max-width: 72ch; }
+.how-note b { color: var(--text); }
+
+/* The same steps as a list: for screen readers always, on screen when narrow. */
+.lanes-list {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+@media (max-width: 860px) {
+  .lanes { display: none; }
+  .lanes-list {
+    position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal;
+    display: grid; gap: 10px; counter-reset: step;
+  }
+  .lanes-list li {
+    counter-increment: step; display: grid; grid-template-columns: auto 1fr; column-gap: 12px; row-gap: 2px;
+    padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    color: var(--muted); font-size: 15px; line-height: 1.5;
+  }
+  .lanes-list li::before {
+    content: counter(step); grid-row: span 3; width: 26px; height: 26px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 13px; font-weight: 700; background: var(--surface-2); color: var(--text);
+  }
+  .lanes-list b { color: var(--text); font-size: 16px; }
+  .lane-tag { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .lane-tag.is-trace { color: var(--link); }
+  .lane-tag.is-agent { color: var(--text-2); }
+}
+
 @media (max-width: 720px) {
   .header-inner { gap: 12px 16px; }
   .brand { order: 0; }

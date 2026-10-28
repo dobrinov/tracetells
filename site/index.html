@@ -10,7 +10,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Trace">
 <meta property="og:title" content="Trace: web analytics that tells your coding agent what to fix next">
-<meta property="og:description" content="Open-source, privacy-first web analytics. Patterns, not people: insights tied to your KPIs, handed to your agent as a ready prompt, then measured.">
+<meta property="og:description" content="Open-source, privacy-first web analytics. Patterns, not people: your coding agent analyses them over MCP, ships the fix, and Trace measures whether it worked.">
 <meta property="og:locale" content="en_US">
 <meta property="og:image" content="https://tracetells.com/og.png">
 <meta property="og:image:type" content="image/png">
@@ -19,7 +19,7 @@
 <meta property="og:image:alt" content="Trace: web analytics that tells your coding agent what to fix next. A terminal shows trace insights, trace prompt 6 piped to claude, and checkout conversion improving from 36% to 56%.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Trace: web analytics that tells your coding agent what to fix next">
-<meta name="twitter:description" content="Open-source, privacy-first web analytics. Patterns, not people: insights tied to your KPIs, handed to your agent as a ready prompt, then measured.">
+<meta name="twitter:description" content="Open-source, privacy-first web analytics. Patterns, not people: your coding agent analyses them over MCP, ships the fix, and Trace measures whether it worked.">
 <meta name="twitter:image" content="https://tracetells.com/og.png">
 <meta name="twitter:image:alt" content="Trace: web analytics that tells your coding agent what to fix next. A terminal shows trace insights, trace prompt 6 piped to claude, and checkout conversion improving from 36% to 56%.">
 <meta name="theme-color" content="#10141d">
@@ -65,7 +65,7 @@
       <div class="hero-copy">
         <span class="pill">Patterns, not people</span>
         <h1 class="display">Web analytics that tells your coding agent what to fix next.</h1>
-        <p class="hero-lede">Trace watches how people use your site in aggregate, turns friction into specific insights tied to your KPIs, hands each one to your agent as a ready prompt, and then measures whether the change worked.</p>
+        <p class="hero-lede">Trace watches how people use your site, in aggregate. Your coding agent reads that over MCP with its own model, finds what to fix and makes the change, and Trace measures whether it worked.</p>
         <div class="actions">
           <a class="btn btn-primary" href="https://app.tracetells.com/#/signup" data-app-link data-trace-event="start_free">Start free, hosted</a>
           <a class="btn btn-ink" href="https://github.com/dobrinov/tracetells" data-trace-event="self_host">Self-host the open source edition</a>
@@ -89,35 +89,42 @@
     </div>
   </section>
 
-  <section class="wrap section loop" aria-labelledby="loop-title">
-    <h2 id="loop-title" class="display section-title">One loop, from behaviour to a shipped fix</h2>
-    <ol class="grid-auto bare-list" style="--min: 200px">
-      <li class="card">
-        <span class="step-label">01 Collect</span>
-        <h3>One script tag</h3>
-        <span class="card-text">Clicks, rage and dead clicks, errors, scroll, forms. Single-page apps and full reloads.</span>
-      </li>
-      <li class="card">
-        <span class="step-label">02 Measure</span>
-        <h3>KPIs in your repo</h3>
-        <span class="card-text">trace.json lives next to the code that sends the events, checked in CI.</span>
-      </li>
-      <li class="card">
-        <span class="step-label">03 Analyse</span>
-        <h3>Insights, not charts</h3>
-        <span class="card-text">An analyst agent reads the aggregate digest and proposes changes with evidence.</span>
-      </li>
-      <li class="card">
-        <span class="step-label">04 Ship</span>
-        <h3>Copy as a prompt</h3>
-        <span class="card-text">Each insight is a complete task for Claude Code, Cursor or any agent, via MCP too.</span>
-      </li>
-      <li class="card">
-        <span class="step-label">05 Evaluate</span>
-        <h3>Did it work?</h3>
-        <span class="card-text">Before and after, with a significance test. Improved, regressed or no change.</span>
-      </li>
+  <section id="how" class="wrap section how" aria-labelledby="how-title">
+    <h2 id="how-title" class="display section-title">Trace measures, your agent improves, Trace checks</h2>
+
+    <!-- The diagram is drawn for sighted desktop readers; the list below says the same and is what phones and screen readers get. -->
+    <div class="lanes" aria-hidden="true">
+      <div class="lane lane-site"><span class="lane-name">Your website</span></div>
+      <div class="lane lane-trace"><span class="lane-name">Trace</span></div>
+      <div class="lane lane-agent"><span class="lane-name">Your coding agent</span></div>
+      <svg class="lane-arrows" viewBox="0 0 1168 510">
+        <defs><marker id="lane-head" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z"/></marker></defs>
+        <path d="M226 133 V255 H351" marker-end="url(#lane-head)"/>
+        <path d="M438 303 V425 H563" marker-end="url(#lane-head)"/>
+        <path d="M732 425 H775" marker-end="url(#lane-head)"/>
+        <path d="M862 377 V138" marker-end="url(#lane-head)"/>
+        <path d="M944 85 H1074 V202" marker-end="url(#lane-head)"/>
+      </svg>
+      <div class="lane-card" style="--x: 144; --y: 37"><b>People use it</b><span>Clicks, scrolls, forms, errors.</span></div>
+      <div class="lane-card is-trace" style="--x: 356; --y: 207"><b>Collect</b><span>Aggregates only, with consent.</span></div>
+      <div class="lane-card is-agent" style="--x: 568; --y: 377"><b>Analyse</b><span>Reads the summary, saves an insight.</span></div>
+      <div class="lane-card is-agent" style="--x: 780; --y: 377"><b>Implement</b><span>Makes the change in your repo.</span></div>
+      <div class="lane-card" style="--x: 780; --y: 37"><b>The fix ships</b><span>Marked released in Trace.</span></div>
+      <div class="lane-card is-check" style="--x: 992; --y: 207"><b>Evaluate</b><span>The KPI, before and after.</span></div>
+      <span class="lane-label" style="--x: 503; --y: 397; --center: 1">over MCP</span>
+      <span class="lane-label" style="--x: 874; --y: 247">a release</span>
+    </div>
+
+    <ol class="lanes-list bare-list">
+      <li><span class="lane-tag">Your website</span><b>People use it</b><span>Clicks, scrolls, forms and errors.</span></li>
+      <li><span class="lane-tag is-trace">Trace</span><b>Collect</b><span>Aggregates only, and only after visitors allow it.</span></li>
+      <li><span class="lane-tag is-agent">Your coding agent</span><b>Analyse</b><span>Over MCP, it reads Trace's aggregated summary and your KPIs, and saves an insight with its evidence.</span></li>
+      <li><span class="lane-tag is-agent">Your coding agent</span><b>Implement</b><span>It makes the change in your repo.</span></li>
+      <li><span class="lane-tag">Your website</span><b>The fix ships</b><span>You mark the insight released in Trace.</span></li>
+      <li><span class="lane-tag is-trace">Trace</span><b>Evaluate</b><span>The KPI before and after the release, with a significance test.</span></li>
     </ol>
+
+    <p class="how-note"><b>Patterns, not people.</b> Only aggregates leave the browser, and only after visitors allow it. Your agent analyses with its own model, over MCP, and sees the same summaries you do.</p>
   </section>
 
   <section id="privacy" class="wrap section" aria-labelledby="privacy-title">
@@ -179,7 +186,7 @@
       </div>
       <div class="card">
         <h3>An MCP server, built in</h3>
-        <span class="card-text">Your agent reads KPIs, picks an insight, implements it and marks it released. Trace measures the impact. Aggregates only, scoped to one website.</span>
+        <span class="card-text">Your agent reads the aggregated summary and KPIs, saves what it finds as insights, implements one and marks it released. Trace measures the impact. Aggregates only, scoped to one website.</span>
         <pre class="snippet snippet-wrap">claude mcp add --transport http trace \
   https://app.tracetells.com/mcp</pre>
       </div>

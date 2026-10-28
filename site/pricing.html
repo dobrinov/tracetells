@@ -60,7 +60,7 @@
 <main id="main">
   <section class="wrap pricing-hero">
     <h1 class="display">Run it yourself, or let me run it.</h1>
-    <p>Every edition has the whole product: the collector, KPIs as code, the analyst, prompts, MCP and evaluation. Editions differ only in who runs the server and how much data it keeps.</p>
+    <p>Every edition has the whole product: the collector, KPIs as code, the MCP server your agent analyses through, prompts and evaluation. Editions differ only in who runs the server and how much data it keeps.</p>
   </section>
 
   <section class="wrap plans-section" aria-label="Editions">
@@ -77,7 +77,7 @@
             <li>No limits: websites, events, people, data kept</li>
             <li>Your data never leaves your infrastructure</li>
             <li>One Rust binary: SQLite to try it, Postgres for production</li>
-            <li>Claude analyst with your own API key, heuristics without one</li>
+            <li>Your coding agent analyses, with its own model; built-in checks without one</li>
           </ul>
           <code class="plan-cmd">trace init &amp;&amp; trace serve</code>
           <a class="btn btn-block" href="https://github.com/dobrinov/tracetells" data-trace-event="self_host">Get the code</a>
@@ -100,7 +100,7 @@
               <li>1 website</li>
               <li>100,000 events a month</li>
               <li>3 people</li>
-              <li>5 Claude analyses a month, heuristics unlimited</li>
+              <li>Analysis by your coding agent, unlimited</li>
             </ul>
             <a class="btn btn-primary btn-block" href="https://app.tracetells.com/#/signup" data-app-link data-trace-event="start_free">Start free</a>
           </div>
@@ -139,8 +139,8 @@
         <span class="card-text">Yes. It is the same software. Your trace.json and snippet stay the same; only the server address changes.</span>
       </div>
       <div class="card">
-        <h3>Does Claude see my users?</h3>
-        <span class="card-text">No. The analyst reads the same aggregate digest you see on the Behaviour page: counts and rates per page, never sessions.</span>
+        <h3>Does my agent see my users?</h3>
+        <span class="card-text">No. Over MCP your agent reads the same aggregate summary you see on the Behaviour page: counts and rates per page, never sessions or people. It analyses with its own model, so the summary goes only where you send it.</span>
       </div>
     </div>
   </section>
