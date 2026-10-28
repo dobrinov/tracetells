@@ -268,7 +268,8 @@ async fn token(
     };
     let issued = async {
         let user = auth::get_user(&state.pool, grant.account_id, grant.user_id).await?.ok_or_else(|| anyhow::anyhow!("that person is no longer in the account"))?;
-        let name = format!("{} (signed in {})", grant.client_name, trace_core::util::date(trace_core::util::now_ms()));
+        let access = if grant.read_only { ", read-only" } else { "" };
+        let name = format!("{} (signed in {}{access})", grant.client_name, trace_core::util::date(trace_core::util::now_ms()));
         let (t, secret) = auth::create_api_token(&state.pool, grant.account_id, &user, &name, grant.read_only).await?;
         let access = if grant.read_only { "read-only".to_string() } else { format!("acts as {}", user.role) };
         auth::audit(&state.pool, grant.account_id, &user.email, "token.created", &format!("{} ({access}), by signing in from an MCP client", t.name)).await?;

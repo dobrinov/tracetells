@@ -1984,19 +1984,28 @@ async function renderConnect() {
   }
   const name = esc(info.client_name);
   const changes = can("admin")
-    ? "add websites, push your KPIs, set privacy rules, save insights and mark them released"
-    : "save insights and mark them released";
+    ? "save the insights it finds, mark them released, and set up tracking, KPIs and privacy rules"
+    : "save the insights it finds and mark them released";
+  // Two plain choices, full access already picked: a lone "Read only" box read as the only option.
   view.innerHTML = `<div class="connect">
     <h1>Connect ${name} to Trace</h1>
-    <p>${name} is asking to work with Trace as you${info.account ? ` in <strong>${esc(info.account)}</strong>` : ""}, with your role (${esc(info.role)}). It will be able to read your websites' aggregated behaviour, KPIs and insights, and ${changes}.</p>
-    <p class="hint">It can't see individual visitors: Trace has none to show. It can't manage people or tokens. You can disconnect it any time under Account.</p>
-    <label class="check-row"><input type="checkbox" id="connect-read-only"> Read only: it can look, but can't change anything</label>
+    <p>${name} is asking to work with Trace as you${info.account ? ` in <strong>${esc(info.account)}</strong>` : ""}. How much can it do?</p>
+    <fieldset class="access-choice">
+      <legend class="visually-hidden">Access</legend>
+      <label class="choice"><input type="radio" name="access" value="full" checked>
+        <span><strong>Full access</strong> <span class="hint">(recommended)</span><br>
+        <span class="hint">Look at your websites' analytics, answer your questions, ${changes}. It acts with your role (${esc(info.role)}).</span></span></label>
+      <label class="choice"><input type="radio" name="access" value="read">
+        <span><strong>Read only</strong><br>
+        <span class="hint">Look at your websites' analytics and answer your questions, but never save or change anything.</span></span></label>
+    </fieldset>
+    <p class="hint">Either way it sees only aggregated patterns, never individual visitors, and it can't manage people or tokens. You can disconnect it any time under Account.</p>
     <p class="hint">Only allow it if you started this from ${name} yourself. Afterwards you go back to <code>${esc(info.back_to)}</code>.</p>
     <div class="actions"><button class="primary" id="connect-allow">Allow</button><button class="quiet" id="connect-cancel">Cancel</button></div>
   </div>`;
   const answer = async (approve) => {
     try {
-      const r = await post("/account/connect", { ...req, read_only: view.querySelector("#connect-read-only").checked, approve });
+      const r = await post("/account/connect", { ...req, read_only: view.querySelector('input[name="access"]:checked').value === "read", approve });
       view.innerHTML = `<div class="empty"><h1>${approve ? `${name} is connected` : "Cancelled"}</h1><p>${approve ? `You can go back to ${name}.` : "Nothing was connected."}</p></div>`;
       location.href = r.redirect;
     } catch (e) {

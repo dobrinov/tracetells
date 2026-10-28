@@ -1509,3 +1509,7 @@ ul.checklist li::before {
 .connect .actions { display: flex; gap: 12px; margin-top: 20px; }
 /* Prose meant to be pasted (prompts) wraps instead of scrolling. */
 .snippet.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+.access-choice { border: 0; padding: 0; margin: 20px 0; display: grid; gap: 10px; }
+.access-choice .choice { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border: 1px solid var(--line-strong); border-radius: 12px; cursor: pointer; }
+.access-choice .choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.access-choice input { margin-top: 4px; }
