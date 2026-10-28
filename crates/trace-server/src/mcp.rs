@@ -294,6 +294,15 @@ pub fn tools() -> Vec<Value> {
             false,
         ),
         tool(
+            "refresh_insight",
+            "Refresh an insight",
+            "Measure an insight's evidence again with fresh data, over the same number of days as when it was found, and \
+             return each item's history. Trace also does this daily. The insight's text doesn't change.",
+            json!({ "id": id }),
+            &["id"],
+            false,
+        ),
+        tool(
             "update_insight_status",
             "Update insight status",
             "Move an insight through new → selected → in_progress → released, or dismiss it. Mark it released once the change is live, with `released_at` if it went live earlier than now (the deploy's time): Trace compares the KPI over the 14 days before and after that moment, and gives its verdict once the 14 days after have passed. When dismissing, give the reason; the analyst learns from it.",
@@ -658,6 +667,31 @@ async fn call(ctx: &Context<'_>, name: &str, args: &Value) -> anyhow::Result<Too
                 "refused": refused,
                 "next": "list_insights shows them; get_insight_prompt turns one into a task. Trace re-measures their evidence daily.",
             }))
+        }
+        "refresh_insight" => {
+            need(ctx, Role::User)?;
+            let insight = insights::get(pool, p, arg_id(args)?).await?.ok_or_else(|| anyhow::anyhow!("no insight with that id"))?;
+            let readings = insights::refresh(pool, p, &insight).await?;
+            if readings.is_empty() {
+                anyhow::bail!("insight #{} has no measured evidence to refresh (its evidence is notes)", insight.id);
+            }
+            let fresh = insights::get(pool, p, insight.id).await?.expect("just refreshed");
+            let evidence: Vec<Value> = fresh
+                .evidence
+                .iter()
+                .enumerate()
+                .filter(|(_, e)| e.metric().is_some())
+                .map(|(i, e)| {
+                    let history: Vec<Value> = fresh
+                        .readings
+                        .iter()
+                        .filter(|r| r.item == i)
+                        .map(|r| json!({ "kind": r.kind, "value": r.formatted, "sessions": r.sessions, "measured": trace_core::util::date(r.at) }))
+                        .collect();
+                    json!({ "claim": e.text(), "history": history })
+                })
+                .collect();
+            ToolOutput::Json(json!({ "id": fresh.id, "title": fresh.title, "evidence": evidence }))
         }
         "update_insight_status" => {
             need(ctx, Role::User)?;

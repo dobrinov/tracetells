@@ -1514,3 +1514,4 @@ ul.checklist li::before {
 .access-choice .choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
 .access-choice input { margin-top: 4px; }
 .history { margin-top: 2px; font-variant-numeric: tabular-nums; }
+.verdict.item { margin-top: 6px; }

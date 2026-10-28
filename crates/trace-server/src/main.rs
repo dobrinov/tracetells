@@ -330,6 +330,12 @@ async fn run() -> Result<()> {
                             Ok(_) => {}
                             Err(e) => tracing::error!(error = %format!("{e:#}"), "retention purge failed"),
                         }
+                        // Every insight's evidence, measured again once a day.
+                        match insights::refresh_due(&pool, 200).await {
+                            Ok(n) if n > 0 => tracing::info!("refreshed the evidence of {n} insight(s)"),
+                            Ok(_) => {}
+                            Err(e) => tracing::error!(error = %format!("{e:#}"), "refreshing insights failed"),
+                        }
                         if evaluate_every > 0
                             && let Err(e) = evaluate_all(&pool).await
                         {

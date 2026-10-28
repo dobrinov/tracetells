@@ -35,6 +35,9 @@ pub async fn run(pool: &Pool, project_id: i64, opts: Options) -> Result<Vec<Eval
     let mut out = Vec::new();
     let released = insights::list(pool, project_id, Some(InsightStatus::Released)).await?;
     for insight in &released {
+        if let Some(released_at) = insight.released_at {
+            evaluate_items(pool, project_id, insight, released_at, opts).await?;
+        }
         let (Some(kpi_id), Some(released_at)) = (insight.kpi_id, insight.released_at) else { continue };
         if let Some(e) = insight.evaluation.as_ref().filter(|e| e.settled_at.is_some()) {
             out.push(e.clone());
@@ -153,6 +156,60 @@ pub async fn run(pool: &Pool, project_id: i64, opts: Options) -> Result<Vec<Eval
         out.push(eval);
     }
     Ok(out)
+}
+
+/// Judges each measured evidence item over the 14 days before and after the
+/// release, once the window has passed, the way the KPI is judged; with the
+/// item's goal as the direction. Settled items are left as they are.
+async fn evaluate_items(pool: &Pool, project_id: i64, insight: &Insight, released_at: i64, opts: Options) -> Result<()> {
+    let window = i64::from(opts.window_days) * DAY_MS;
+    let ends_at = released_at + window;
+    if now_ms() < ends_at || !insight.item_verdicts.is_empty() {
+        return Ok(());
+    }
+    let now = now_ms();
+    for (item, e) in insight.evidence.iter().enumerate() {
+        let crate::model::Evidence::Measured { claim, metric, goal } = e else { continue };
+        let before = crate::query::measure(pool, project_id, metric, released_at - window, released_at).await?;
+        let after = crate::query::measure(pool, project_id, metric, released_at, ends_at).await?;
+        let reading = |kind: &str, v: &crate::query::Value1, from: i64, to: i64| crate::model::Reading {
+            item,
+            kind: kind.into(),
+            value: v.value,
+            formatted: v.value.map(|x| metric.format_value(x)),
+            sessions: v.sessions,
+            from,
+            to,
+            at: now,
+        };
+        insights::store_readings(pool, insight.id, &[reading("before", &before, released_at - window, released_at), reading("after", &after, released_at, ends_at)]).await?;
+        let fmt = |v: Option<f64>| v.map(|v| metric.format_value(v)).unwrap_or_else(|| "n/a".into());
+        let (verdict, summary) = if !metric.measure.is_rate() && metric.measure != crate::query::Measure::PerSession {
+            (Verdict::InsufficientData, format!("{claim}: {} before, {} after. Counts aren't compared for significance.", fmt(before.value), fmt(after.value)))
+        } else {
+            let a = crate::query::samples(pool, project_id, metric, released_at - window, released_at).await?;
+            let b = crate::query::samples(pool, project_id, metric, released_at, ends_at).await?;
+            if a.len() < opts.min_sessions || b.len() < opts.min_sessions {
+                (Verdict::InsufficientData, format!("{claim}: not enough sessions to tell ({} before, {} after; needs {} each).", a.len(), b.len(), opts.min_sessions))
+            } else {
+                let (delta, p) = welch(&a, &b);
+                let better = delta * goal.sign() > 0.0;
+                let verdict = match (p < opts.alpha, better) {
+                    (false, _) => Verdict::NoChange,
+                    (true, true) => Verdict::Improved,
+                    (true, false) => Verdict::Regressed,
+                };
+                let word = match verdict {
+                    Verdict::Improved => "better",
+                    Verdict::Regressed => "worse",
+                    _ => "no significant change",
+                };
+                (verdict, format!("{claim}: {} → {} ({word}, p={p:.3}, n={} vs {}).", fmt(before.value), fmt(after.value), a.len(), b.len()))
+            }
+        };
+        insights::store_item_verdict(pool, insight.id, &crate::model::ItemVerdict { item, verdict, summary, settled_at: now }).await?;
+    }
+    Ok(())
 }
 
 /// Other released insights on the same KPI whose release falls inside this
@@ -311,6 +368,73 @@ mod tests {
         // Correcting the release time starts the measurement over.
         release(ids[0], day(18)).await.unwrap();
         assert!(insights::get(&pool, site.id, ids[0]).await.unwrap().unwrap().evaluation.is_none());
+        crate::db::drop_test_target(&target).await;
+    }
+
+    #[tokio::test]
+    async fn evidence_is_judged_next_to_the_kpi_and_refreshed() {
+        let target = crate::db::test_target("items").await;
+        let pool = crate::db::connect(&target).await.unwrap();
+        let (_, site) = crate::db::create_account_with_site(&pool, "Shop", None).await.unwrap();
+        let cfg = crate::config::parse(r#"{"kpis":{"done":{"conversion":{"from":{"pageview":"/"},"to":{"pageview":"/done"}},"goal":"increase"}}}"#).unwrap();
+        crate::config::apply(&pool, site.id, &cfg, "test").await.unwrap();
+        let kpi_id = kpi::list(&pool, site.id).await.unwrap()[0].id;
+        let now = now_ms();
+        let day = |d: i64| now - d * DAY_MS;
+        // Before the release: half rage-click Pay and half finish. After: few rage-click, fewer finish.
+        let mut n = 0;
+        for (start, rage, done) in [(day(30), 20, 20), (day(16) + 1000, 2, 8)] {
+            for i in 0..40 {
+                n += 1;
+                let (sid, t) = (format!("s{n}"), start + i as i64 * 3_600_000);
+                sqlx::query("INSERT INTO sessions (id, project_id, started_at, last_seen_at) VALUES ($1, $2, $3, $3)").bind(&sid).bind(site.id).bind(t).execute(&pool).await.unwrap();
+                let mut ev = vec![("pageview", "/")];
+                if i < rage { ev.push(("rage_click", "/")); }
+                if i < done { ev.push(("pageview", "/done")); }
+                for (k, (kind, path)) in ev.into_iter().enumerate() {
+                    sqlx::query("INSERT INTO events (project_id, session_id, ts, type, path, selector) VALUES ($1, $2, $3, $4, $5, 'button#pay')")
+                        .bind(site.id).bind(&sid).bind(t + k as i64 * 1000).bind(kind).bind(path).execute(&pool).await.unwrap();
+                }
+            }
+        }
+        let rage = crate::query::Metric::parse(&serde_json::json!({ "measure": "session_rate", "match": { "rage_click": "button#pay" } })).unwrap();
+        let new = crate::model::NewInsight {
+            title: "Make Pay now respond".into(), problem: "p".into(), proposal: "x".into(), kpi_id: Some(kpi_id), source: "agent".into(),
+            evidence: vec![
+                crate::model::Evidence::Measured { claim: "Visitors rage-click Pay now".into(), metric: rage, goal: crate::model::Direction::Decrease },
+                crate::model::Evidence::note("From support tickets"),
+            ],
+            ..Default::default()
+        };
+        let id = insights::insert(&pool, site.id, &new).await.unwrap().unwrap();
+        sqlx::query("UPDATE insights SET created_at = $1 WHERE id = $2").bind(day(40)).bind(id).execute(&pool).await.unwrap();
+        let first = insights::get(&pool, site.id, id).await.unwrap().unwrap();
+        assert_eq!((first.readings.len(), first.readings[0].kind.as_str()), (1, "first"), "the note isn't measured");
+
+        // Refreshing adds to the history and leaves the text alone; the daily run skips it while it's fresh.
+        insights::refresh(&pool, site.id, &first).await.unwrap();
+        let refreshed = insights::get(&pool, site.id, id).await.unwrap().unwrap();
+        assert_eq!(refreshed.readings.iter().map(|r| r.kind.as_str()).collect::<Vec<_>>(), ["first", "refresh"]);
+        assert_eq!((refreshed.title.as_str(), refreshed.evidence.len()), ("Make Pay now respond", 2));
+        assert_eq!(insights::refresh_due(&pool, 200).await.unwrap(), 0, "measured less than a day ago");
+        sqlx::query("UPDATE insight_measurements SET measured_at = $1").bind(day(2)).execute(&pool).await.unwrap();
+        assert_eq!(insights::refresh_due(&pool, 200).await.unwrap(), 1);
+
+        // Released 16 days ago: better locally, worse overall, and both are shown as they are.
+        insights::set_status(&pool, site.id, id, InsightStatus::Released, None, Some(day(16))).await.unwrap();
+        run(&pool, site.id, Options::default()).await.unwrap();
+        let judged = insights::get(&pool, site.id, id).await.unwrap().unwrap();
+        assert_eq!(judged.evaluation.as_ref().unwrap().verdict, Verdict::Regressed, "{}", judged.evaluation.as_ref().unwrap().summary);
+        assert_eq!(judged.item_verdicts.len(), 1, "only the measured item is judged");
+        let v = &judged.item_verdicts[0];
+        assert_eq!(v.verdict, Verdict::Improved, "{}", v.summary);
+        assert!(v.summary.starts_with("Visitors rage-click Pay now: 50.0% → 5.0% (better"), "{}", v.summary);
+        assert!(judged.readings.iter().any(|r| r.kind == "before") && judged.readings.iter().any(|r| r.kind == "after"));
+        // Settled: running again changes nothing; correcting the release time starts over.
+        run(&pool, site.id, Options::default()).await.unwrap();
+        assert_eq!(insights::get(&pool, site.id, id).await.unwrap().unwrap().item_verdicts, judged.item_verdicts);
+        insights::set_status(&pool, site.id, id, InsightStatus::Released, None, Some(day(15))).await.unwrap();
+        assert!(insights::get(&pool, site.id, id).await.unwrap().unwrap().item_verdicts.is_empty());
         crate::db::drop_test_target(&target).await;
     }
 

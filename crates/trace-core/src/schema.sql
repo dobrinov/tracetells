@@ -175,6 +175,17 @@ CREATE TABLE IF NOT EXISTS insight_measurements (
 );
 CREATE INDEX IF NOT EXISTS insight_measurements_insight ON insight_measurements(insight_id, measured_at);
 
+-- Each measured evidence item of a released insight, judged over the same
+-- fixed windows as its KPI: did the problem it describes shrink?
+CREATE TABLE IF NOT EXISTS evaluation_items (
+  insight_id INTEGER NOT NULL REFERENCES insights(id) ON DELETE CASCADE,
+  item INTEGER NOT NULL,
+  verdict TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  settled_at INTEGER NOT NULL,
+  PRIMARY KEY (insight_id, item)
+);
+
 -- Insights an agent proposed and Trace measured, waiting for the person to
 -- approve them. Deleted when saved, and after an hour.
 CREATE TABLE IF NOT EXISTS insight_drafts (

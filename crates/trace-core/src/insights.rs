@@ -7,7 +7,7 @@ use sqlx::any::AnyRow;
 use sqlx::Row;
 use crate::Pool;
 
-use crate::model::{Evaluation, Evidence, Insight, InsightStatus, NewInsight, Reading};
+use crate::model::{Evaluation, Evidence, Insight, InsightStatus, ItemVerdict, NewInsight, Reading};
 use crate::util::{DAY_MS, now_ms};
 
 const COLS: &str = "id, title, problem, evidence, proposal, acceptance_criteria, pages, kpi_id, expected_impact,
@@ -60,7 +60,81 @@ fn from_row(row: &AnyRow) -> Result<Insight> {
         measured_from: row.try_get("measured_from")?,
         measured_to: row.try_get("measured_to")?,
         readings: Vec::new(),
+        item_verdicts: Vec::new(),
     })
+}
+
+async fn item_verdicts(pool: &Pool, project_id: i64, only: Option<i64>) -> Result<HashMap<i64, Vec<ItemVerdict>>> {
+    let rows: Vec<(i64, i64, String, String, i64)> = sqlx::query_as(
+        "SELECT v.insight_id, v.item, v.verdict, v.summary, v.settled_at FROM evaluation_items v JOIN insights i ON i.id = v.insight_id
+         WHERE i.project_id = $1 AND ($2 < 0 OR i.id = $2) ORDER BY v.item",
+    )
+    .bind(project_id)
+    .bind(only.unwrap_or(-1))
+    .fetch_all(pool)
+    .await?;
+    let mut out: HashMap<i64, Vec<ItemVerdict>> = HashMap::new();
+    for (insight, item, verdict, summary, settled_at) in rows {
+        out.entry(insight).or_default().push(ItemVerdict { item: item as usize, verdict: verdict.parse()?, summary, settled_at });
+    }
+    Ok(out)
+}
+
+/// Re-measures an insight's evidence over the same number of days as its
+/// first measurement, ending now. The text stays as it was approved.
+pub async fn refresh(pool: &Pool, project_id: i64, insight: &Insight) -> Result<Vec<Reading>> {
+    let days = match (insight.measured_from, insight.measured_to) {
+        (Some(f), Some(t)) if t > f => (((t - f) as f64 / DAY_MS as f64).round() as u32).clamp(1, 90),
+        _ => 14,
+    };
+    let readings = measure_evidence(pool, project_id, &insight.evidence, days, "refresh").await?;
+    store_readings(pool, insight.id, &readings).await?;
+    if insight.measured_from.is_none() && !readings.is_empty() {
+        // Evidence measured for the first time (an older insight): this is its window.
+        sqlx::query("UPDATE insights SET measured_from = $1, measured_to = $2 WHERE id = $3")
+            .bind(readings[0].from)
+            .bind(readings[0].to)
+            .bind(insight.id)
+            .execute(pool)
+            .await?;
+    }
+    Ok(readings)
+}
+
+/// Refreshes insights that aren't dismissed and weren't measured in the last
+/// day, at most `limit` of them. Returns how many were refreshed.
+pub async fn refresh_due(pool: &Pool, limit: i64) -> Result<usize> {
+    let due: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT i.id, i.project_id FROM insights i
+         WHERE i.status <> 'dismissed'
+           AND EXISTS (SELECT 1 FROM insight_measurements m WHERE m.insight_id = i.id)
+           AND (SELECT MAX(m.measured_at) FROM insight_measurements m WHERE m.insight_id = i.id AND m.kind IN ('first', 'refresh')) < $1
+         ORDER BY i.id LIMIT $2",
+    )
+    .bind(now_ms() - DAY_MS)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    let mut n = 0;
+    for (id, project_id) in due {
+        if let Some(insight) = get(pool, project_id, id).await? {
+            refresh(pool, project_id, &insight).await?;
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
+pub async fn store_item_verdict(pool: &Pool, insight_id: i64, v: &ItemVerdict) -> Result<()> {
+    sqlx::query("INSERT INTO evaluation_items (insight_id, item, verdict, summary, settled_at) VALUES ($1, $2, $3, $4, $5)")
+        .bind(insight_id)
+        .bind(v.item as i64)
+        .bind(v.verdict.as_str())
+        .bind(&v.summary)
+        .bind(v.settled_at)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 type ReadingRow = (i64, i64, String, Option<f64>, i64, i64, i64, i64);
@@ -185,10 +259,12 @@ pub async fn list(pool: &Pool, project_id: i64, status: Option<InsightStatus>) -
     let rows = q.fetch_all(pool).await?;
     let mut evals = evaluations(pool, project_id).await?;
     let mut all = readings(pool, project_id, None).await?;
+    let mut verdicts = item_verdicts(pool, project_id, None).await?;
     rows.iter()
         .map(|r| {
             let mut insight = from_row(r)?;
             insight.evaluation = evals.remove(&insight.id);
+            insight.item_verdicts = verdicts.remove(&insight.id).unwrap_or_default();
             let rs = all.remove(&insight.id);
             Ok(with_readings(insight, rs))
         })
@@ -204,6 +280,7 @@ pub async fn get(pool: &Pool, project_id: i64, id: i64) -> Result<Option<Insight
     let Some(row) = row else { return Ok(None) };
     let mut insight = from_row(&row)?;
     insight.evaluation = evaluations(pool, project_id).await?.remove(&id);
+    insight.item_verdicts = item_verdicts(pool, project_id, Some(id)).await?.remove(&id).unwrap_or_default();
     let rs = readings(pool, project_id, Some(id)).await?.remove(&id);
     Ok(Some(with_readings(insight, rs)))
 }
@@ -351,6 +428,8 @@ async fn snapshot_release(pool: &Pool, id: i64) -> Result<()> {
     .execute(pool)
     .await?;
     sqlx::query("DELETE FROM evaluations WHERE insight_id = $1").bind(id).execute(pool).await?;
+    sqlx::query("DELETE FROM evaluation_items WHERE insight_id = $1").bind(id).execute(pool).await?;
+    sqlx::query("DELETE FROM insight_measurements WHERE insight_id = $1 AND kind IN ('before', 'after')").bind(id).execute(pool).await?;
     Ok(())
 }
 

@@ -52,12 +52,12 @@
 
 ## 4. History and releases
 
-- [ ] 4.1 `insights::refresh`: re-measure measured items over the first window's length ending now, and store `refresh` rows; `refresh_due` in the hourly loop (insights that aren't dismissed and weren't refreshed in 24 hours, at most 200 per run)
-- [ ] 4.2 `refresh_insight` (MCP), `POST /api/sites/{site}/insights/{id}/refresh`; insight responses include each item's history
-- [ ] 4.3 `evaluate::run` measures items over the release's before and after windows, and stores `before`/`after` rows and `evaluation_items` verdicts (Welch, with the item's goal), settling with the KPI evaluation; released insights without a KPI still get item verdicts
+- [x] 4.1 `insights::refresh`: re-measure measured items over the first window's length ending now, and store `refresh` rows; `refresh_due` in the hourly loop (insights that aren't dismissed and weren't refreshed in 24 hours, at most 200 per run)
+- [x] 4.2 `refresh_insight` (MCP), `POST /api/sites/{site}/insights/{id}/refresh`; insight responses include each item's history
+- [x] 4.3 `evaluate::run` measures items over the release's before and after windows, and stores `before`/`after` rows and `evaluation_items` verdicts (Welch, with the item's goal), settling with the KPI evaluation; released insights without a KPI still get item verdicts
 - [x] 4.4a Heuristics emit measured evidence (rage, dead clicks, errors: of sessions viewing the page; forms: start → submit)
-- [ ] 4.4b The Claude analyst's output schema gains the evidence object (its evidence is notes until then)
-- [ ] 4.5 Tests:
+- [x] 4.4b The Claude analyst's output schema gains the evidence object (its evidence is notes until then)
+- [x] 4.5 Tests:
   - refreshing adds history and keeps the text;
   - daily refresh selection;
   - item verdicts before and after a release, including "better locally, worse overall";
@@ -65,14 +65,14 @@
 
 ## 5. Dashboard, public view and copy
 
-- [ ] 5.1 Insight card:
+- [x] 5.1 Insight card:
   - measured evidence with Trace's number, sessions and dates;
   - notes marked "not measured";
   - a small history per item;
   - "Found by … on …";
   - a Refresh button for users
-- [ ] 5.2 Released insights: item verdicts next to the KPI verdict
-- [ ] 5.3 Public view: measured evidence and history with the 5-session suppression, and `created_via` and the date but not the person; extend the leak test
+- [x] 5.2 Released insights: item verdicts next to the KPI verdict
+- [x] 5.3 Public view: measured evidence and history with the 5-session suppression, and `created_via` and the date but not the person; extend the leak test
 - [x] 5.4 Connect screen: replace the "Read only" checkbox with two choices, Full access (the default, described) and Read only (described); the token name says which
-- [ ] 5.5 Check the dashboard in a browser: draft and save over MCP, refresh, a released insight's verdicts, the public view
-- [ ] 5.6 README: `query_behaviour` with examples, measured evidence, draft-then-save, refresh and history, the removal of `add_insights`
+- [x] 5.5 Check the dashboard in a browser: measured evidence, refresh and its history, a released insight's KPI and evidence verdicts (draft and save over MCP are covered by tests, not yet by a real Claude Code session)
+- [x] 5.6 README: `query_behaviour` with examples, measured evidence, draft-then-save, refresh and history, the removal of `add_insights`

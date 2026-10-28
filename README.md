@@ -90,6 +90,8 @@ Trace tries hard not to tell you a change worked when it was noise.
 - **The KPI as it was.** A release is judged by its KPI's definition at the moment it shipped. If `trace.json` changes the KPI later, the verdict says it was measured with the earlier definition. Linking another KPI, or correcting the release time, starts the measurement over.
 - **When it really went live.** The before/after split is the release time, so give the deploy's time rather than the moment someone remembered to click: the dashboard asks for it, `update_insight_status` takes `released_at`, `trace status 12 released --at 2026-10-28T14:05:00Z` does it from the CLI, and a deploy pipeline can do it itself (below). A release time before Trace found the insight is refused: that change can't have been its fix.
 - **Other changes.** When another change aimed at the same KPI shipped within 14 days, the verdict names it: part of the difference may be its doing.
+- **The problem itself.** Each measured evidence item gets its own verdict over the same windows, next to the KPI's: did the thing the insight describes (say, rage clicks on Pay now) shrink? The two can disagree. "Better locally, worse overall" is worth knowing, and both are shown as they are.
+- **History.** Trace measures every insight's evidence again once a day, and on demand: the **Refresh** button, `refresh_insight` over MCP, or `POST /api/sites/{site}/insights/{id}/refresh`. It keeps every measurement, so you can watch an insight's numbers before and after a change. Refreshing never changes the insight's text.
 
 It is still a before/after comparison, not an experiment: a campaign, a season or an outage in either window can move a KPI too.
 
@@ -207,6 +209,7 @@ In Claude Code it's the slash command `/mcp__trace__analyse_website`. Saving, ev
 | `list_insights`, `get_insight`, `get_insight_prompt` | Find work, and get it as a complete implementation task |
 | `query_behaviour` | Ask a question: a measure of matching events, optionally broken down by path, selector, device or day, and compared with the window before. Read-only connections can ask |
 | `draft_insights`, `save_insights` | Propose insights; Trace measures their evidence and returns drafts. Save the ones the person approves. (`add_insights` was replaced by these) |
+| `refresh_insight` | Measure an insight's evidence again with fresh data, and get each item's history |
 | `update_insight_status` | Select, start, release or dismiss an insight |
 | `run_analysis`, `evaluate_releases` | Trace's own analysis (built-in checks, or Claude when the server has an API key); measure released ones |
 | `add_site`, `get_install_snippet`, `get_setup_status` | Add a website (admins), get its snippet with instructions, see whether events arrive and what's left to set up |

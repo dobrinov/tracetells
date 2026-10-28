@@ -153,7 +153,7 @@ fn required_role(method: &Method, path: &str) -> Role {
         || path == "/evaluate"
         || path == "/releases"
         || path == "/query"
-        || (path.starts_with("/insights/") && (path.ends_with("/status") || path.ends_with("/kpi")));
+        || (path.starts_with("/insights/") && (path.ends_with("/status") || path.ends_with("/kpi") || path.ends_with("/refresh")));
     match () {
         _ if path.starts_with("/team") || path.starts_with("/audit") => Role::Admin,
         _ if path.starts_with("/account") => Role::User,

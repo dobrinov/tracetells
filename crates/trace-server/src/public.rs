@@ -119,6 +119,7 @@ fn insight_json(i: &Insight) -> Value {
                     "formatted": if shown { r.formatted.clone() } else { None }, "sessions": r.sessions,
                     "from": r.from, "to": r.to, "at": r.at })
         }).collect::<Vec<_>>(),
+        "item_verdicts": i.item_verdicts.iter().map(|v| json!({ "item": v.item, "verdict": v.verdict, "summary": v.summary })).collect::<Vec<_>>(),
         "evaluation": i.evaluation.as_ref().map(|e| json!({
             "verdict": e.verdict, "summary": e.summary, "baseline": e.baseline, "current": e.current,
             "p_value": e.p_value, "window_days": e.window_days, "settled_at": e.settled_at,

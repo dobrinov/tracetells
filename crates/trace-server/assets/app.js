@@ -250,13 +250,29 @@ function insightActions(insight) {
   return "";
 }
 
+const VERDICTS = { measuring: "Measuring", improved: "Improved", regressed: "Regressed", no_change: "No change", insufficient_data: "Not enough data" };
+
+// The KPI's verdict, and each measured evidence item's: did the problem itself shrink?
 function verdictBlock(insight) {
   if (insight.status !== "released") return "";
-  if (!insight.kpi_id) return `<div class="verdict"><span class="badge">Not measured</span><span>Link a KPI to measure the impact of this release.</span></div>`;
-  const e = insight.evaluation;
-  if (!e) return `<div class="verdict"><span class="badge">Pending</span><span>Not evaluated yet. Trace checks released insights every hour.</span></div>`;
-  const label = { measuring: "Measuring", improved: "Improved", regressed: "Regressed", no_change: "No change", insufficient_data: "Not enough data" }[e.verdict] || e.verdict;
-  return `<div class="verdict ${esc(e.verdict)}"><span class="badge">${esc(label)}</span><span>${esc(e.summary)}</span></div>`;
+  const measured = insight.evidence.some((e) => e.metric);
+  let kpi;
+  if (!insight.kpi_id) {
+    kpi = measured ? "" : `<div class="verdict"><span class="badge">Not measured</span><span>Link a KPI to measure the impact of this release.</span></div>`;
+  } else if (!insight.evaluation) {
+    kpi = `<div class="verdict"><span class="badge">Pending</span><span>Not evaluated yet. Trace checks released insights every hour.</span></div>`;
+  } else {
+    const e = insight.evaluation;
+    kpi = `<div class="verdict ${esc(e.verdict)}"><span class="badge">${esc(VERDICTS[e.verdict] || e.verdict)}</span><span>${esc(e.summary)}</span></div>`;
+  }
+  const items = (insight.item_verdicts || []).map(
+    (v) => `<div class="verdict ${esc(v.verdict)} item"><span class="badge">${esc(v.verdict === "regressed" ? "Worse" : v.verdict === "improved" ? "Better" : VERDICTS[v.verdict] || v.verdict)}</span><span>${esc(v.summary)}</span></div>`
+  );
+  if (!items.length && measured && insight.released_at) {
+    const due = shortDate(insight.released_at + 14 * 86400000);
+    items.push(`<div class="verdict measuring item"><span class="badge">Measuring</span><span>The evidence is compared over the 14 days before and after the release; the result comes on ${esc(due)}.</span></div>`);
+  }
+  return kpi + items.join("");
 }
 
 let focusedInsight = null;
@@ -303,7 +319,11 @@ function insightCard(insight) {
     <div class="actions">
       <button class="${focused ? "primary" : ""}" data-copy>Copy as prompt</button>
       <span class="spacer"></span>
-      ${can("user") ? `<select data-kpi aria-label="KPI this insight should move">${kpiOptions}</select>${insightActions(insight)}` : ""}
+      ${
+        can("user")
+          ? `${insight.evidence.some((e) => e.metric) && insight.status !== "dismissed" ? `<button class="quiet" data-refresh title="Measure the evidence again with fresh data">Refresh</button>` : ""}<select data-kpi aria-label="KPI this insight should move">${kpiOptions}</select>${insightActions(insight)}`
+          : ""
+      }
     </div>
   </article>`;
 }
@@ -402,6 +422,16 @@ async function renderInsights() {
       await post(`/insights/${id}/kpi`, { kpi_id: e.target.value ? Number(e.target.value) : null });
       toast("KPI updated");
       renderInsights();
+    });
+    card.querySelector("[data-refresh]")?.addEventListener("click", async (e) => {
+      e.currentTarget.disabled = true;
+      try {
+        await post(`/insights/${id}/refresh`);
+        toast("Measured again with fresh data");
+        renderInsights();
+      } catch (err) {
+        toast(err.message, true);
+      }
     });
     card.querySelectorAll("[data-status]").forEach((btn) =>
       btn.addEventListener("click", async () => {

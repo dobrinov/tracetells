@@ -263,6 +263,15 @@ pub struct Reading {
     pub at: i64,
 }
 
+/// The verdict on one evidence item after a release.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ItemVerdict {
+    pub item: usize,
+    pub verdict: Verdict,
+    pub summary: String,
+    pub settled_at: i64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Insight {
     pub id: i64,
@@ -290,6 +299,8 @@ pub struct Insight {
     pub measured_to: Option<i64>,
     /// Every measurement of its evidence, oldest first.
     pub readings: Vec<Reading>,
+    /// After a release: whether each measured evidence item moved the way the insight wants.
+    pub item_verdicts: Vec<ItemVerdict>,
 }
 
 /// An insight produced by the analyst (LLM or heuristics) before it is stored.

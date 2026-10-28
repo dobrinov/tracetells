@@ -98,6 +98,7 @@ pub fn router(state: AppStateRef) -> Router {
         .route("/insights/{id}/prompt", get(get_prompt))
         .route("/insights/{id}/status", post(set_status))
         .route("/insights/{id}/kpi", post(set_kpi))
+        .route("/insights/{id}/refresh", post(refresh_insight))
         .route("/releases", post(record_release))
         .route("/query", get(query_get).post(query_post))
         .merge(crate::public::admin_routes())
@@ -632,6 +633,13 @@ async fn record_release(
     Ok(Json(json!({ "released": released, "skipped": skipped, "released_at": at })))
 }
 
+async fn refresh_insight(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
+    let insight = insights::get(&state.pool, site.id, id).await?.ok_or_else(|| ApiError::not_found("insight"))?;
+    insights::refresh(&state.pool, site.id, &insight).await?;
+    let fresh = insights::get(&state.pool, site.id, id).await?.ok_or_else(|| ApiError::not_found("insight"))?;
+    Ok(Json(serde_json::to_value(fresh).map_err(anyhow::Error::from)?))
+}
+
 #[derive(Deserialize)]
 struct KpiLinkBody {
     kpi_id: Option<i64>,
@@ -919,7 +927,7 @@ mod isolation_tests {
     /// Every endpoint about one website, as (method, path below the website).
     const SITE_ROUTES: &[(&str, &str)] = &[
         ("GET", "project"), ("GET", "config"), ("POST", "config"), ("GET", "digest"), ("GET", "kpis"),
-        ("GET", "insights"), ("GET", "insights/1"), ("GET", "insights/1/prompt"), ("POST", "insights/1/status"), ("POST", "insights/1/kpi"), ("POST", "releases"), ("GET", "query"), ("GET", "publish"), ("POST", "publish"), ("DELETE", "publish"), ("POST", "publish/rotate"),
+        ("GET", "insights"), ("GET", "insights/1"), ("GET", "insights/1/prompt"), ("POST", "insights/1/status"), ("POST", "insights/1/kpi"), ("POST", "insights/1/refresh"), ("POST", "releases"), ("GET", "query"), ("GET", "publish"), ("POST", "publish"), ("DELETE", "publish"), ("POST", "publish/rotate"),
         ("POST", "analyze"), ("POST", "evaluate"), ("GET", "runs"), ("GET", "privacy"), ("POST", "privacy/rules"),
         ("POST", "privacy/rules/1"), ("DELETE", "privacy/rules/1"), ("POST", "privacy/test"),
         ("GET", "onboarding"), ("POST", "onboarding/privacy-reviewed"), ("GET", "analysis"),
@@ -1162,7 +1170,7 @@ mod isolation_tests {
         let (acme, shop) = db::create_account_with_site(&state.pool, "Acme", None).await.unwrap();
         let owner = person(&state, acme.id, "owner@acme.example", Role::Owner).await;
         let user = person(&state, acme.id, "user@acme.example", Role::User).await;
-        sqlx::query("INSERT INTO insights (project_id, title, problem, proposal, source, status, dismiss_reason, created_at, updated_at) VALUES ($1, 'Kept', 'p', 'x', 'test', 'new', NULL, 1, 1), ($1, 'Dropped', 'p', 'x', 'test', 'dismissed', 'SECRET REASON', 1, 1)")
+        sqlx::query("INSERT INTO insights (project_id, title, problem, proposal, source, status, dismiss_reason, created_by, created_at, updated_at) VALUES ($1, 'Kept', 'p', 'x', 'agent', 'new', NULL, 'person@secret.example via Claude Code', 1, 1), ($1, 'Dropped', 'p', 'x', 'test', 'dismissed', 'SECRET REASON', NULL, 1, 1)")
             .bind(shop.id).execute(&state.pool).await.unwrap();
         let get = |uri: String| Request::builder().uri(uri).body(axum::body::Body::empty()).unwrap();
         let raw = |req: Request| {
@@ -1191,7 +1199,7 @@ mod isolation_tests {
             assert_eq!(status, StatusCode::OK, "{part}: {body}");
             everything.push_str(&body);
         }
-        for secret in [shop.write_key.as_str(), "acme.example", "SECRET REASON", "Dropped", "write_key", "\"slug\""] {
+        for secret in [shop.write_key.as_str(), "acme.example", "secret.example", "created_by", "SECRET REASON", "Dropped", "write_key", "\"slug\""] {
             assert!(!everything.contains(secret), "public view leaks {secret:?}");
         }
         assert!(everything.contains("\"Kept\"") && everything.contains("\"suppressed_below\":5"));
