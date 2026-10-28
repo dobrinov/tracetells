@@ -19,13 +19,24 @@ const SHOP_JS: &str = include_str!("../assets/shop/shop.js");
 /// The shop's own trace.json, as it would live in the shop's repository.
 pub const SHOP_CONFIG: &str = include_str!("../assets/shop/trace.json");
 
+/// The line of shop.js that throws when someone picks Annual on /pricing,
+/// as a browser would report it.
+fn annual_error_line() -> usize {
+    SHOP_JS.lines().position(|l| l.contains("pricing.yearly.annual")).expect("shop.js still has the Annual bug") + 1
+}
+
 /// The Stride shop as a single-page app: every path serves the same page,
 /// which loads the collector from `trace_url` with the project's write key.
 pub fn site(trace_url: &str, write_key: &str) -> Router {
+    let trace_url = trace_url.trim_end_matches('/');
     let html: &'static str = Box::leak(
         SHOP_HTML
-            .replace("{{TRACE_URL}}", trace_url.trim_end_matches('/'))
+            .replace("{{TRACE_URL}}", trace_url)
             .replace("{{WRITE_KEY}}", write_key)
+            .replace("{{BASE}}", "")
+            .replace("{{REVIEWS}}", "api")
+            .replace("{{CONSENT}}", "")
+            .replace("{{RECORDED_URL}}", &format!("{trace_url}/#/behaviour"))
             .into_boxed_str(),
     );
     Router::new()
@@ -200,7 +211,7 @@ pub async fn seed(pool: &Pool, sessions: usize) -> Result<()> {
                     Ev {
                         kind: "error",
                         path: "/pricing".into(),
-                        selector: Some("/shop.js:315".into()),
+                        selector: Some(format!("/shop.js:{}", annual_error_line())),
                         text: Some("Uncaught TypeError: Cannot read properties of undefined (reading 'annual')".into()),
                         name: Some("exception".into()),
                         ..Default::default()
@@ -339,4 +350,21 @@ pub async fn seed(pool: &Pool, sessions: usize) -> Result<()> {
     println!("Seeded {sessions} sessions and {n_events} events over 30 days, applied the shop's trace.json (3 KPIs, 3 events) and 1 released insight.");
     println!("Next: `trace analyze`, then `trace serve --demo-site 127.0.0.1:4319` and open both.");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn the_shop_is_served_with_everything_filled_in() {
+        let req = axum::http::Request::builder().uri("/products/shoe-2").body(axum::body::Body::empty()).unwrap();
+        let res = site("http://127.0.0.1:4318", "k123").oneshot(req).await.unwrap();
+        let html = String::from_utf8(axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap().to_vec()).unwrap();
+        assert!(!html.contains("{{"), "a placeholder is left");
+        assert!(html.contains(r#"data-key="k123" data-routes="/products/:id" defer"#) && html.contains(r#"src="/shop.js""#));
+        // The simulated Annual error points at the line that really throws.
+        assert!(SHOP_JS.lines().nth(annual_error_line() - 1).unwrap().contains("pricing.yearly"));
+    }
 }

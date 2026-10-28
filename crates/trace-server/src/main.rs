@@ -6,6 +6,7 @@ mod guard;
 mod mcp;
 mod oauth;
 mod operator;
+mod public;
 mod setup;
 
 use std::net::SocketAddr;
@@ -220,6 +221,18 @@ enum SiteAction {
         /// The website's name, to confirm.
         #[arg(long)]
         confirm: String,
+    },
+    /// Publish a read-only public view of a website's aggregated analytics, and print its link.
+    Publish {
+        slug: String,
+        #[arg(long)]
+        account: Option<String>,
+        /// Replace the link; the current one stops working.
+        #[arg(long)]
+        replace: bool,
+        /// Withdraw the public view.
+        #[arg(long, conflicts_with = "replace")]
+        withdraw: bool,
     },
 }
 
@@ -710,6 +723,30 @@ async fn site_command(pool: &Pool, action: SiteAction) -> Result<()> {
             db::delete_site(pool, a.id, s.id).await?;
             trace_core::auth::audit(pool, a.id, "cli", "site.removed", &format!("{} ({}) and all its data", s.name, s.slug)).await?;
             println!("Removed {} and all its data.", s.name);
+        }
+        SiteAction::Publish { slug, account, replace, withdraw } => {
+            let a = resolve_account(pool, account.as_deref()).await?;
+            let s = db::site_by_slug(pool, a.id, &slug).await?.with_context(|| format!("no website {slug:?} in {}", a.name))?;
+            if withdraw {
+                trace_core::public::withdraw(pool, s.id).await?;
+                trace_core::auth::audit_site(pool, a.id, Some(s.id), "cli", "site.public_off", &s.name).await?;
+                println!("{} is private again; its public link no longer works.", s.name);
+                return Ok(());
+            }
+            let l = if replace {
+                let l = trace_core::public::replace(pool, s.id, "cli").await?;
+                trace_core::auth::audit_site(pool, a.id, Some(s.id), "cli", "site.public_rotated", &s.name).await?;
+                l
+            } else {
+                let was = trace_core::public::link(pool, s.id).await?;
+                let l = trace_core::public::publish(pool, s.id, "cli").await?;
+                if was.is_none() {
+                    trace_core::auth::audit_site(pool, a.id, Some(s.id), "cli", "site.public_on", &s.name).await?;
+                }
+                l
+            };
+            let origin = std::env::var("TRACE_PUBLIC_URL").unwrap_or_else(|_| "http://127.0.0.1:4318".into());
+            println!("{}/p/{}", origin.trim_end_matches('/'), l.token);
         }
     }
     Ok(())

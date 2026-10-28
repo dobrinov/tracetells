@@ -16,6 +16,21 @@ const PRODUCTS = [
 ];
 const SHIPPING = 7.5;
 
+// Where the shop lives: "" at a server's root, "/demo" on tracetells.com.
+const BASE = document.documentElement.dataset.base || "";
+// "api" asks the server's flaky reviews API; "static" (GitHub Pages) reads
+// JSON files and sometimes asks for one that doesn't exist.
+const REVIEWS = document.documentElement.dataset.reviews || "api";
+
+// Links are written from the root; under a base path they get it added.
+function rebase(root) {
+  if (!BASE) return;
+  root.querySelectorAll('a[href^="/"]').forEach((a) => {
+    const href = a.getAttribute("href");
+    if (href !== BASE && !href.startsWith(`${BASE}/`)) a.setAttribute("href", BASE + href);
+  });
+}
+
 const app = document.getElementById("app");
 const cart = JSON.parse(sessionStorage.getItem("stride_cart") || "[]");
 
@@ -51,7 +66,7 @@ function saveCart() {
 }
 
 function navigate(path) {
-  history.pushState({}, "", path);
+  history.pushState({}, "", path === BASE || path.startsWith(`${BASE}/`) ? path : BASE + path);
   render();
   window.scrollTo(0, 0);
 }
@@ -253,9 +268,10 @@ function productPage(id) {
 }
 
 function render() {
-  const path = location.pathname;
+  const path = (BASE && location.pathname.startsWith(BASE) ? location.pathname.slice(BASE.length) : location.pathname) || "/";
   const page = path.startsWith("/products/") ? () => productPage(path.split("/")[2]) : pages[path] || (() => `<h1>Not found</h1>`);
   app.innerHTML = page();
+  rebase(app);
   document.title = `Stride: ${path === "/" ? "running shoes" : path.slice(1)}`;
   bind(path);
 }
@@ -264,7 +280,11 @@ function bind(path) {
   if (path.startsWith("/products/")) {
     const reviewId = 101 + PRODUCTS.findIndex((p) => p.id === path.split("/")[2]);
     const reviews = app.querySelector("#reviews");
-    fetch(`/api/reviews/${reviewId}`)
+    const url =
+      REVIEWS === "static"
+        ? `${BASE}/api/reviews/${reviewId}${Math.random() < 0.3 ? "-unavailable" : ""}.json`
+        : `/api/reviews/${reviewId}`;
+    fetch(url)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -335,5 +355,6 @@ function bind(path) {
   }
 }
 
+rebase(document);
 saveCart();
 render();

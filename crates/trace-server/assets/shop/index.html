@@ -1,12 +1,15 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-base="{{BASE}}" data-reviews="{{REVIEWS}}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Stride: running shoes</title>
     <!-- The only thing a site needs to be instrumented with Trace: -->
-    <script src="{{TRACE_URL}}/d.js?k={{WRITE_KEY}}" data-key="{{WRITE_KEY}}" data-routes="/products/:id" defer></script>
-    <script src="/shop.js" defer></script>
+    <!-- On GitHub Pages a deep link lands on 404.html, which keeps the path and sends the
+         browser here; put it back before the collector records the first page. -->
+    <script>try{var p=sessionStorage.getItem("stride_path");if(p){sessionStorage.removeItem("stride_path");history.replaceState(null,"",p)}}catch(e){}</script>
+    <script src="{{TRACE_URL}}/d.js?k={{WRITE_KEY}}" data-key="{{WRITE_KEY}}" data-routes="{{BASE}}/products/:id"{{CONSENT}} defer></script>
+    <script src="{{BASE}}/shop.js" defer></script>
     <style>
       :root {
         --bg: #f6f4f0;
@@ -894,7 +897,7 @@
     <div class="demo-bar">
       <svg width="22" height="12" viewBox="2 15.5 60 33" aria-hidden="true"><rect x="3.5" y="25" width="14" height="14" rx="4.5" fill="#45c75b"/><rect x="13.5" y="21" width="22" height="22" rx="6" fill="#2a9ba3" stroke="#10141d" stroke-width="2.6"/><rect x="30.5" y="17" width="30" height="30" rx="8" fill="#4a6cff" stroke="#10141d" stroke-width="2.6"/></svg>
       <span>Demo shop instrumented with Trace. Click around, then</span>
-      <a href="{{TRACE_URL}}/#/behaviour" target="_blank" rel="noopener">see what Trace recorded →</a>
+      <a href="{{RECORDED_URL}}" target="_blank" rel="noopener">see what Trace recorded →</a>
     </div>
     <header class="site-header">
       <div class="wrap">

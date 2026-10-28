@@ -43,15 +43,21 @@ function toast(message, isError = false) {
   toastTimer = setTimeout(() => (toastEl.hidden = true), isError ? 8000 : 4000);
 }
 
+// A website's public, read-only view lives at /p/{token}: no session, only
+// the aggregated pages, read from /v1/public/{token}/....
+const PUBLIC = (location.pathname.match(/^\/p\/([A-Za-z0-9_-]{20,})\/?$/) || [])[1] || null;
+const PUBLIC_PAGES = ["insights", "kpis", "behaviour"];
+
 // Every request is JSON: the server rejects cookie-authenticated writes that
 // aren't, which is what stops other sites from forging requests (CSRF).
 async function api(path, opts = {}) {
   // The selected website goes with every call; account-level endpoints ignore it.
   const siteHeader = currentSite ? { "X-Trace-Site": currentSite } : {};
-  const res = await fetch(`/api${path}`, { ...opts, headers: { "Content-Type": "application/json", ...siteHeader, ...(opts.headers || {}) } });
+  const url = PUBLIC ? `/v1/public/${PUBLIC}${path}` : `/api${path}`;
+  const res = await fetch(url, { ...opts, headers: { "Content-Type": "application/json", ...siteHeader, ...(opts.headers || {}) } });
   const type = res.headers.get("content-type") || "";
   const body = type.includes("json") ? await res.json() : await res.text();
-  if (res.status === 401 && !path.startsWith("/auth/")) {
+  if (res.status === 401 && !PUBLIC && !path.startsWith("/auth/")) {
     // Session ended or a second factor is due: back to the sign-in flow.
     auth = null;
     project = null;
@@ -203,6 +209,7 @@ document.addEventListener("click", (e) => {
 async function loadProject() {
   project = await api("/project");
   showCollection();
+  if (PUBLIC) return;
   loadChecklist();
   // Events dropped because of the monthly limit: say so on every page.
   const notice = document.getElementById("notice");
@@ -316,7 +323,11 @@ async function renderInsights() {
   if (!shown.some((i) => i.id === focusedInsight)) focusedInsight = shown.length ? shown[0].id : null;
   view.innerHTML = `
     <h1>Insights</h1>
-    <p class="sub">What your coding agent (or Trace's built-in checks) found in real behaviour, with the change it suggests. Copy one as a prompt, move it along as you work, and once it's released Trace measures whether it moved its KPI.</p>
+    <p class="sub">${
+      PUBLIC
+        ? `What a coding agent (or Trace's built-in checks) found in how people use ${esc(project.name)}, with the change it suggests, and for released ones whether it moved its KPI. Each one is also a ready prompt for a coding agent.`
+        : "What your coding agent (or Trace's built-in checks) found in real behaviour, with the change it suggests. Copy one as a prompt, move it along as you work, and once it's released Trace measures whether it moved its KPI."
+    }</p>
     ${
       analysis
         ? `<div class="analysis-status${analysis.ready ? " ready" : ""}"><strong>${analysis.ready ? "Ready for analysis" : "Analysis"}</strong> <span class="hint">${esc(analysis.message)}${
@@ -325,7 +336,7 @@ async function renderInsights() {
         : ""
     }
     <div class="chips" role="tablist" aria-label="Status">
-      ${STATUSES.map(
+      ${STATUSES.filter(([s]) => !(PUBLIC && s === "dismissed")).map(
         ([s, label]) =>
           `<button role="tab" data-tab="${s}" class="${s === insightTab ? "active" : ""}" aria-selected="${s === insightTab}">${label}<span class="count">${counts[s]}</span></button>`
       ).join("")}
@@ -341,7 +352,9 @@ async function renderInsights() {
             </aside>
           </div>`
         : `<div class="empty">${
-            insightTab === "new"
+            PUBLIC
+              ? "Nothing here yet."
+              : insightTab === "new"
               ? `No new insights. Ask your coding agent to analyse the site (<a href="#/setup">connect it over MCP</a>), or click <strong>Run analysis</strong> for Trace's quick built-in checks.`
               : `Nothing here yet.`
           }</div>`
@@ -515,7 +528,7 @@ async function renderKpis() {
         )}
         <p class="hint">Send events with <code>trace.track("name")</code>, or without JavaScript using <code>data-trace-event="name"</code> on a button, link or form.</p>
       </div>
-      <div class="dark-panel">
+      <div class="dark-panel" ${PUBLIC ? "hidden" : ""}>
         <strong>Change a KPI in your repo</strong>
         <span>Edit <code>trace.json</code> next to the code that sends the events, then:</span>
         <pre>${esc(steps)}</pre>
@@ -718,8 +731,18 @@ It asks visitors for consent first (data-consent="banner"): a small bar with All
   }`;
 }
 
+// The public view card: off, or on with its link.
+function publicCard(pub) {
+  const what = `Anyone with the link sees ${esc(project.name)}'s KPIs, behaviour, errors and insights, read-only. Never settings, people, tokens, the write key or privacy rules, and rows from fewer than 5 sessions are left out.`;
+  if (!pub || !pub.public)
+    return `<p class="hint">Off. ${what}</p>${can("admin") ? `<button id="public-on">Make public</button>` : ""}`;
+  return `<p class="hint">On since ${esc(new Date(pub.since).toLocaleDateString())}. ${what}</p>
+    <div class="copy-row"><pre class="snippet">${esc(pub.url)}</pre><button data-copy="${esc(pub.url)}">Copy</button></div>
+    ${can("admin") ? `<div class="actions"><button class="quiet" id="public-rotate">Replace link</button><button class="quiet danger" id="public-off">Make private</button></div>` : ""}`;
+}
+
 async function renderSetup() {
-  const runs = await api("/runs");
+  const [runs, pub] = await Promise.all([api("/runs"), api("/publish").catch(() => null)]);
   const { installs, mcpCommand, mcpJson, setupPrompt, custom, analysisHook } = setupSnippets();
   let installTab = store("trace_install") || "site";
   if (!installs[installTab]) installTab = "site";
@@ -758,6 +781,9 @@ async function renderSetup() {
     <p class="hint">Trace says a website is worth analysing once it has 100 new sessions since the last analysis (30 after a week); the Insights page shows it too. To hear it from Claude Code each time you start it, add this to <code>~/.claude/settings.json</code> and put your token in the <code>TRACE_TOKEN</code> environment variable (in your shell profile, not in the file). It prints nothing until there's something to analyse.</p>
     <div class="copy-row"><pre class="snippet">${esc(analysisHook)}</pre><button data-copy="${esc(analysisHook)}">Copy</button></div>
 
+    <h2>Public view</h2>
+    <div id="public-card">${publicCard(pub)}</div>
+
     ${
       can("admin")
         ? `<h2>Remove this website</h2>
@@ -789,6 +815,30 @@ async function renderSetup() {
       if (await copyText(b.dataset.copy)) toast("Copied");
     })
   );
+  // `fresh`: the card was re-rendered, so its Copy button needs binding too.
+  const bindPublic = (fresh) => {
+    const card = view.querySelector("#public-card");
+    const act = async (method, path, done) => {
+      try {
+        const r = await api(path, { method });
+        card.innerHTML = publicCard(method === "DELETE" ? null : r);
+        bindPublic(true);
+        toast(done);
+      } catch (e) {
+        toast(e.message, true);
+      }
+    };
+    card.querySelector("#public-on")?.addEventListener("click", () => act("POST", "/publish", "Public link created"));
+    card.querySelector("#public-rotate")?.addEventListener("click", () => {
+      if (confirm("Replace the link? The current one stops working at once.")) act("POST", "/publish/rotate", "New link created; the old one no longer works");
+    });
+    card.querySelector("#public-off")?.addEventListener("click", () => {
+      if (confirm(`Make ${project.name} private? The link stops working at once.`)) act("DELETE", "/publish", "Public view switched off");
+    });
+    if (fresh) card.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => (await copyText(b.dataset.copy)) && toast("Copied")));
+  };
+  bindPublic(false);
+
   view.querySelector("#remove-site")?.addEventListener("click", async () => {
     const typed = prompt(`Type the website's name, "${project.name}", to delete it and all its data:`);
     if (typed === null) return;
@@ -1876,7 +1926,25 @@ async function showAccount(id, o) {
 }
 
 // Decides between the sign-in screens and the app.
+async function bootPublic() {
+  document.body.classList.add("public");
+  document.querySelectorAll("#nav a").forEach((a) => (a.hidden = !PUBLIC_PAGES.includes(a.dataset.view)));
+  for (const id of ["run-analysis", "me", "site-menu"]) document.getElementById(id).hidden = true;
+  try {
+    await loadProject();
+  } catch {
+    view.innerHTML = `<div class="empty"><h1>This public link doesn't work</h1><p>It may have been replaced or withdrawn. Ask whoever shared it for a new one.</p></div>`;
+    return;
+  }
+  document.getElementById("collect-status").removeAttribute("href");
+  const notice = document.getElementById("notice");
+  notice.hidden = false;
+  notice.innerHTML = `<div><span><strong>A public, read-only view of ${esc(project.name)}.</strong> Trace studies patterns, not people: everything here is aggregated, and rows from fewer than ${project.suppressed_below} sessions are left out.</span> <a href="https://tracetells.com/">What is Trace?</a></div>`;
+  route();
+}
+
 async function boot() {
+  if (PUBLIC) return bootPublic();
   try {
     auth = await api("/auth/state");
   } catch (e) {
@@ -1970,9 +2038,14 @@ function renderNoSites() {
 const ACCOUNT_PAGES = ["account", "team", "plan", "admin", "connect"];
 
 async function route() {
-  if (!auth || !auth.user || auth.step) return boot();
+  if (!PUBLIC && (!auth || !auth.user || auth.step)) return boot();
   const page = location.hash.replace(/^#\//, "");
-  if (!sites.length && !ACCOUNT_PAGES.includes(page)) return renderNoSites();
+  if (PUBLIC && !project) return;
+  if (PUBLIC && !PUBLIC_PAGES.includes(page.split(/[/?]/)[0])) {
+    history.replaceState(null, "", "#/insights");
+    return route();
+  }
+  if (!PUBLIC && !sites.length && !ACCOUNT_PAGES.includes(page)) return renderNoSites();
   if (!project && !ACCOUNT_PAGES.includes(page)) {
     try {
       await loadProject();
@@ -1985,7 +2058,7 @@ async function route() {
   const name = page.split(/[/?]/)[0] || (project && project.collection.active ? "insights" : "start");
   if (!location.hash || location.hash === "#/") history.replaceState(null, "", `#/${name}`);
   const render = routes[name] || renderInsights;
-  if (project && !ACCOUNT_PAGES.includes(name) && name !== "start") loadChecklist();
+  if (!PUBLIC && project && !ACCOUNT_PAGES.includes(name) && name !== "start") loadChecklist();
   document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.view === name));
   try {
     await render();

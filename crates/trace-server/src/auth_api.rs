@@ -140,7 +140,7 @@ fn set_cookie(res: &mut Response, token: Option<&str>, secure: bool) {
 
 /// Paths about one website; everything else is about the account.
 fn is_site_path(path: &str) -> bool {
-    ["/project", "/config", "/digest", "/kpis", "/insights", "/analyze", "/analysis", "/releases", "/evaluate", "/runs", "/privacy", "/onboarding"]
+    ["/project", "/config", "/digest", "/kpis", "/insights", "/analyze", "/analysis", "/releases", "/publish", "/evaluate", "/runs", "/privacy", "/onboarding"]
         .iter()
         .any(|p| path == *p || path.starts_with(&format!("{p}/")))
 }

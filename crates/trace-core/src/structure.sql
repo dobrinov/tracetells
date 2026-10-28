@@ -59,7 +59,12 @@ CREATE TABLE IF NOT EXISTS projects (
   privacy_reviewed_at BIGINT,
   privacy_reviewed_by TEXT,
   -- When the website was last analysed (an agent saving insights, or Trace's own analysis).
-  analysed_at BIGINT
+  analysed_at BIGINT,
+  -- The public, read-only link to this website's aggregated analytics, if
+  -- published: its random token, when, and by whom.
+  public_token TEXT UNIQUE,
+  public_since BIGINT,
+  public_by TEXT
 );
 
 -- The sites (origins) the collector is sending from: the dashboard's proof

@@ -355,6 +355,14 @@ pub fn tools() -> Vec<Value> {
             false,
         ),
         tool(
+            "public_view",
+            "Public view",
+            "A read-only public link to this website's aggregated analytics, for showing it to others: status (default), publish (admins; keeps an existing link), replace (a new link; the old one stops working) or withdraw. Only publish when the person asks.",
+            json!({ "action": { "type": "string", "enum": ["status", "publish", "replace", "withdraw"] } }),
+            &[],
+            false,
+        ),
+        tool(
             "confirm_privacy_review",
             "Confirm the privacy review",
             "Record that the person has checked what Trace collects on their pages (the last setup step). Only call it when the person says they've reviewed it, never on your own judgement.",
@@ -673,6 +681,32 @@ async fn call(ctx: &Context<'_>, name: &str, args: &Value) -> anyhow::Result<Too
             rules_changed(ctx, p).await?;
             trace_core::auth::audit_site(pool, ctx.account_id, Some(p), &ctx.actor, "privacy.rule_removed", &format!("{} {}", rule.kind.as_str(), rule.pattern)).await?;
             ToolOutput::Json(json!({ "removed": rule.id }))
+        }
+        "public_view" => {
+            let action = args.get("action").and_then(Value::as_str).unwrap_or("status");
+            let link = match action {
+                "status" => trace_core::public::link(pool, p).await?,
+                "publish" | "replace" | "withdraw" => {
+                    need(ctx, Role::Admin)?;
+                    let name = &site.as_ref().expect("a website tool").name;
+                    let (l, event) = match action {
+                        "publish" => (Some(trace_core::public::publish(pool, p, &ctx.actor).await?), "site.public_on"),
+                        "replace" => (Some(trace_core::public::replace(pool, p, &ctx.actor).await?), "site.public_rotated"),
+                        _ => {
+                            trace_core::public::withdraw(pool, p).await?;
+                            (None, "site.public_off")
+                        }
+                    };
+                    trace_core::auth::audit_site(pool, ctx.account_id, Some(p), &ctx.actor, event, name).await?;
+                    l
+                }
+                other => anyhow::bail!("`action` is status, publish, replace or withdraw, not {other:?}"),
+            };
+            ToolOutput::Json(match link {
+                Some(l) => json!({ "public": true, "url": format!("{}/p/{}", ctx.origin, l.token), "since": l.since,
+                    "shows": "KPIs, behaviour and errors (rows from fewer than 5 sessions left out), and insights with their verdicts. Never settings, people, tokens, the write key or privacy rules." }),
+                None => json!({ "public": false }),
+            })
         }
         "confirm_privacy_review" => {
             need(ctx, Role::Admin)?;

@@ -74,6 +74,7 @@ pub struct PageStat {
 pub struct Transition {
     pub from: String,
     pub to: String,
+    /// Sessions that went from `from` to `to`.
     pub count: i64,
 }
 
@@ -235,8 +236,8 @@ pub async fn build(pool: &Pool, project_id: i64, days: u32) -> Result<Digest> {
     .collect();
 
     let transitions = sqlx::query_as::<_, (String, String, i64)>(
-        "SELECT prev, path, COUNT(*) FROM (
-           SELECT path, LAG(path) OVER (PARTITION BY session_id ORDER BY ts) AS prev FROM events
+        "SELECT prev, path, COUNT(DISTINCT session_id) FROM (
+           SELECT session_id, path, LAG(path) OVER (PARTITION BY session_id ORDER BY ts) AS prev FROM events
            WHERE project_id = $1 AND type = 'pageview' AND ts >= $2 AND ts < $3
          ) AS steps WHERE prev IS NOT NULL AND prev <> path GROUP BY prev, path ORDER BY 3 DESC LIMIT 25",
     )

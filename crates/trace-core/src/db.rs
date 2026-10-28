@@ -261,6 +261,9 @@ async fn migrate(pool: &Pool, path: &str) -> Result<()> {
         ("projects", "privacy_reviewed_at", "INTEGER"),
         ("projects", "privacy_reviewed_by", "TEXT"),
         ("projects", "analysed_at", "INTEGER"),
+        ("projects", "public_token", "TEXT"),
+        ("projects", "public_since", "INTEGER"),
+        ("projects", "public_by", "TEXT"),
         ("kpis", "key", "TEXT"),
         ("kpis", "archived_at", "INTEGER"),
         ("insights", "released_definition", "TEXT"),
@@ -284,6 +287,7 @@ async fn migrate(pool: &Pool, path: &str) -> Result<()> {
     sqlx::raw_sql(
         "CREATE UNIQUE INDEX IF NOT EXISTS kpis_project_key ON kpis(project_id, key);
          CREATE UNIQUE INDEX IF NOT EXISTS projects_account_slug ON projects(account_id, slug);
+         CREATE UNIQUE INDEX IF NOT EXISTS projects_public_token ON projects(public_token);
          CREATE INDEX IF NOT EXISTS users_account ON users(account_id);
          CREATE INDEX IF NOT EXISTS audit_account ON audit_log(account_id, id);",
     )

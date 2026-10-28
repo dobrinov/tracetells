@@ -76,7 +76,7 @@ impl AppState {
     }
 }
 
-const INDEX_HTML: &str = include_str!("../assets/index.html");
+pub(crate) const INDEX_HTML: &str = include_str!("../assets/index.html");
 const APP_JS: &str = include_str!("../assets/app.js");
 const STYLE_CSS: &str = include_str!("../assets/style.css");
 const COLLECTOR_JS: &str = include_str!("../assets/d.js");
@@ -99,6 +99,7 @@ pub fn router(state: AppStateRef) -> Router {
         .route("/insights/{id}/status", post(set_status))
         .route("/insights/{id}/kpi", post(set_kpi))
         .route("/releases", post(record_release))
+        .merge(crate::public::admin_routes())
         .route("/analyze", post(analyze))
         .route("/evaluate", post(run_evaluate))
         .route("/runs", get(list_runs))
@@ -122,6 +123,7 @@ pub fn router(state: AppStateRef) -> Router {
         .route("/mcp", post(mcp_http).get(|| async { (StatusCode::METHOD_NOT_ALLOWED, "this MCP endpoint takes POST requests") }))
         .merge(collector)
         .merge(crate::oauth::routes())
+        .merge(crate::public::routes())
         .with_state(state)
         .layer(middleware::from_fn(|req, next| crate::guard::security_headers(&DASHBOARD_CSP, req, next)))
         // Brotli or gzip, whichever the client accepts: the collector goes from ~32 KB to ~6 KB on the wire.
@@ -295,10 +297,10 @@ fn asset(content_type: &'static str, body: &'static str, cache: &'static str) ->
     ([(header::CONTENT_TYPE, content_type), (header::CACHE_CONTROL, cache)], body).into_response()
 }
 
-pub struct ApiError(StatusCode, String);
+pub struct ApiError(pub StatusCode, pub String);
 
 impl ApiError {
-    fn not_found(what: &str) -> Self {
+    pub fn not_found(what: &str) -> Self {
         Self(StatusCode::NOT_FOUND, format!("{what} not found"))
     }
     pub fn not_found_msg(msg: &str) -> Self {
@@ -437,9 +439,9 @@ async fn get_project(State(state): State<AppStateRef>, Extension(CurrentSite(sit
 }
 
 #[derive(Deserialize)]
-struct DaysQuery {
+pub(crate) struct DaysQuery {
     #[serde(default = "default_days")]
-    days: u32,
+    pub days: u32,
 }
 
 fn default_days() -> u32 {
@@ -450,7 +452,7 @@ async fn get_digest(State(state): State<AppStateRef>, Extension(CurrentSite(site
     Ok(Json(digest::build(&state.pool, site.id, q.days.clamp(1, 365)).await?))
 }
 
-async fn list_kpis(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<DaysQuery>) -> ApiResult<Json<Value>> {
+pub(crate) async fn list_kpis(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<DaysQuery>) -> ApiResult<Json<Value>> {
     let now = trace_core::util::now_ms();
     let span = q.days.clamp(1, 365) as i64 * trace_core::util::DAY_MS;
     let mut out = Vec::new();
@@ -891,7 +893,7 @@ mod isolation_tests {
     /// Every endpoint about one website, as (method, path below the website).
     const SITE_ROUTES: &[(&str, &str)] = &[
         ("GET", "project"), ("GET", "config"), ("POST", "config"), ("GET", "digest"), ("GET", "kpis"),
-        ("GET", "insights"), ("GET", "insights/1"), ("GET", "insights/1/prompt"), ("POST", "insights/1/status"), ("POST", "insights/1/kpi"), ("POST", "releases"),
+        ("GET", "insights"), ("GET", "insights/1"), ("GET", "insights/1/prompt"), ("POST", "insights/1/status"), ("POST", "insights/1/kpi"), ("POST", "releases"), ("GET", "publish"), ("POST", "publish"), ("DELETE", "publish"), ("POST", "publish/rotate"),
         ("POST", "analyze"), ("POST", "evaluate"), ("GET", "runs"), ("GET", "privacy"), ("POST", "privacy/rules"),
         ("POST", "privacy/rules/1"), ("DELETE", "privacy/rules/1"), ("POST", "privacy/test"),
         ("GET", "onboarding"), ("POST", "onboarding/privacy-reviewed"), ("GET", "analysis"),
@@ -1093,6 +1095,68 @@ mod isolation_tests {
         assert_eq!(stored, 5);
         let u = trace_core::usage::get(&state.pool, acme.id, &trace_core::usage::this_month()).await.unwrap();
         assert_eq!((u.events, u.events_dropped), (5, 4));
+        trace_core::db::drop_test_target(&path).await;
+    }
+
+    #[tokio::test]
+    async fn public_views_show_aggregates_and_nothing_else() {
+        let (app, state, path) = app().await;
+        let (acme, shop) = db::create_account_with_site(&state.pool, "Acme", None).await.unwrap();
+        let owner = person(&state, acme.id, "owner@acme.example", Role::Owner).await;
+        let user = person(&state, acme.id, "user@acme.example", Role::User).await;
+        sqlx::query("INSERT INTO insights (project_id, title, problem, proposal, source, status, dismiss_reason, created_at, updated_at) VALUES ($1, 'Kept', 'p', 'x', 'test', 'new', NULL, 1, 1), ($1, 'Dropped', 'p', 'x', 'test', 'dismissed', 'SECRET REASON', 1, 1)")
+            .bind(shop.id).execute(&state.pool).await.unwrap();
+        let get = |uri: String| Request::builder().uri(uri).body(axum::body::Body::empty()).unwrap();
+        let raw = |req: Request| {
+            let app = app.clone();
+            async move {
+                let res = app.oneshot(req).await.unwrap();
+                let status = res.status();
+                (status, String::from_utf8(axum::body::to_bytes(res.into_body(), 1 << 22).await.unwrap().to_vec()).unwrap())
+            }
+        };
+        let publish = format!("/api/sites/{}/publish", shop.slug);
+
+        let (status, _) = send(&app, json_req("POST", &publish, ("cookie", &user), json!({}))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "users can't publish");
+        let (_, off) = send(&app, json_req("GET", &publish, ("cookie", &user), json!({}))).await;
+        assert_eq!(off["public"], false);
+        let (status, on) = send(&app, json_req("POST", &publish, ("cookie", &owner), json!({}))).await;
+        assert_eq!(status, StatusCode::OK, "{on}");
+        let token = on["url"].as_str().unwrap().rsplit('/').next().unwrap().to_string();
+
+        let (status, page) = raw(get(format!("/p/{token}"))).await;
+        assert!(status == StatusCode::OK && page.contains("<html"), "the dashboard is served");
+        let mut everything = String::new();
+        for part in ["project", "kpis", "config", "digest", "insights"] {
+            let (status, body) = raw(get(format!("/v1/public/{token}/{part}"))).await;
+            assert_eq!(status, StatusCode::OK, "{part}: {body}");
+            everything.push_str(&body);
+        }
+        for secret in [shop.write_key.as_str(), "acme.example", "SECRET REASON", "Dropped", "write_key", "\"slug\""] {
+            assert!(!everything.contains(secret), "public view leaks {secret:?}");
+        }
+        assert!(everything.contains("\"Kept\"") && everything.contains("\"suppressed_below\":5"));
+        let kept: i64 = sqlx::query_scalar("SELECT id FROM insights WHERE title = 'Kept'").fetch_one(&state.pool).await.unwrap();
+        let dropped: i64 = sqlx::query_scalar("SELECT id FROM insights WHERE title = 'Dropped'").fetch_one(&state.pool).await.unwrap();
+        assert_eq!(raw(get(format!("/v1/public/{token}/insights/{kept}/prompt"))).await.0, StatusCode::OK);
+        assert_eq!(raw(get(format!("/v1/public/{token}/insights/{dropped}/prompt"))).await.0, StatusCode::NOT_FOUND);
+
+        // Nothing writes through the public view, and other paths aren't there.
+        let post = Request::builder().method("POST").uri(format!("/v1/public/{token}/insights")).body(axum::body::Body::empty()).unwrap();
+        assert_eq!(raw(post).await.0, StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(raw(get(format!("/v1/public/{token}/privacy"))).await.0, StatusCode::NOT_FOUND);
+
+        // Replacing and withdrawing stop the old links.
+        let (_, rotated) = send(&app, json_req("POST", &format!("{publish}/rotate"), ("cookie", &owner), json!({}))).await;
+        assert_ne!(rotated["url"], on["url"]);
+        assert_eq!(raw(get(format!("/v1/public/{token}/project"))).await.0, StatusCode::NOT_FOUND);
+        let new_token = rotated["url"].as_str().unwrap().rsplit('/').next().unwrap().to_string();
+        let (status, _) = send(&app, json_req("DELETE", &publish, ("cookie", &owner), json!({}))).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert_eq!(raw(get(format!("/v1/public/{new_token}/project"))).await.0, StatusCode::NOT_FOUND);
+        let log: Vec<String> = sqlx::query_scalar("SELECT action FROM audit_log WHERE action LIKE 'site.public%' ORDER BY id").fetch_all(&state.pool).await.unwrap();
+        assert_eq!(log, ["site.public_on", "site.public_rotated", "site.public_off"]);
         trace_core::db::drop_test_target(&path).await;
     }
 
