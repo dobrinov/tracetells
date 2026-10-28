@@ -7,11 +7,29 @@ use sqlx::any::AnyRow;
 use sqlx::Row;
 use crate::Pool;
 
-use crate::model::{Evaluation, Insight, InsightStatus, NewInsight};
-use crate::util::now_ms;
+use crate::model::{Evaluation, Evidence, Insight, InsightStatus, NewInsight, Reading};
+use crate::util::{DAY_MS, now_ms};
 
 const COLS: &str = "id, title, problem, evidence, proposal, acceptance_criteria, pages, kpi_id, expected_impact,
-  confidence, status, dismiss_reason, source, fingerprint, created_at, updated_at, released_at";
+  confidence, status, dismiss_reason, source, fingerprint, created_at, updated_at, released_at,
+  created_by, measured_from, measured_to";
+
+/// How long a draft waits for the person's approval.
+pub const DRAFT_TTL_MS: i64 = 60 * 60 * 1000;
+
+/// Evidence as stored: measured items and notes, or (from before evidence was
+/// measured) plain strings, which read as notes.
+fn evidence_list(row: &AnyRow) -> Result<Vec<Evidence>> {
+    let raw: String = row.try_get("evidence")?;
+    let items: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap_or_default();
+    Ok(items
+        .into_iter()
+        .map(|v| match v {
+            serde_json::Value::String(s) => Evidence::note(s),
+            other => serde_json::from_value(other.clone()).unwrap_or_else(|_| Evidence::note(other.to_string())),
+        })
+        .collect())
+}
 
 fn json_list(row: &AnyRow, col: &str) -> Result<Vec<String>> {
     let raw: String = row.try_get(col)?;
@@ -23,7 +41,7 @@ fn from_row(row: &AnyRow) -> Result<Insight> {
         id: row.try_get("id")?,
         title: row.try_get("title")?,
         problem: row.try_get("problem")?,
-        evidence: json_list(row, "evidence")?,
+        evidence: evidence_list(row)?,
         proposal: row.try_get("proposal")?,
         acceptance_criteria: json_list(row, "acceptance_criteria")?,
         pages: json_list(row, "pages")?,
@@ -38,7 +56,87 @@ fn from_row(row: &AnyRow) -> Result<Insight> {
         updated_at: row.try_get("updated_at")?,
         released_at: row.try_get("released_at")?,
         evaluation: None,
+        created_by: row.try_get("created_by")?,
+        measured_from: row.try_get("measured_from")?,
+        measured_to: row.try_get("measured_to")?,
+        readings: Vec::new(),
     })
+}
+
+type ReadingRow = (i64, i64, String, Option<f64>, i64, i64, i64, i64);
+
+/// Every reading of a website's insights (or one insight's), by insight, oldest first.
+async fn readings(pool: &Pool, project_id: i64, only: Option<i64>) -> Result<HashMap<i64, Vec<Reading>>> {
+    let rows: Vec<ReadingRow> = sqlx::query_as(
+        "SELECT m.insight_id, m.item, m.kind, m.value, m.sessions, m.window_from, m.window_to, m.measured_at
+         FROM insight_measurements m JOIN insights i ON i.id = m.insight_id
+         WHERE i.project_id = $1 AND ($2 < 0 OR i.id = $2) ORDER BY m.measured_at, m.id",
+    )
+    .bind(project_id)
+    .bind(only.unwrap_or(-1))
+    .fetch_all(pool)
+    .await?;
+    let mut out: HashMap<i64, Vec<Reading>> = HashMap::new();
+    for (insight, item, kind, value, sessions, from, to, at) in rows {
+        out.entry(insight).or_default().push(Reading { item: item as usize, kind, value, formatted: None, sessions, from, to, at });
+    }
+    Ok(out)
+}
+
+/// Attaches readings, with each value formatted as its metric shows it.
+fn with_readings(mut insight: Insight, readings: Option<Vec<Reading>>) -> Insight {
+    let mut rs = readings.unwrap_or_default();
+    for r in &mut rs {
+        r.formatted = r.value.zip(insight.evidence.get(r.item).and_then(Evidence::metric)).map(|(v, m)| m.format_value(v));
+    }
+    insight.readings = rs;
+    insight
+}
+
+/// Measures every measured evidence item over the last `days`.
+pub async fn measure_evidence(pool: &Pool, project_id: i64, evidence: &[Evidence], days: u32, kind: &str) -> Result<Vec<Reading>> {
+    let to = now_ms();
+    let from = to - i64::from(days) * DAY_MS;
+    measure_window(pool, project_id, evidence, from, to, kind).await
+}
+
+pub async fn measure_window(pool: &Pool, project_id: i64, evidence: &[Evidence], from: i64, to: i64, kind: &str) -> Result<Vec<Reading>> {
+    let mut out = Vec::new();
+    for (item, e) in evidence.iter().enumerate() {
+        let Some(metric) = e.metric() else { continue };
+        let v = crate::query::measure(pool, project_id, metric, from, to).await?;
+        out.push(Reading {
+            item,
+            kind: kind.to_string(),
+            formatted: v.value.map(|x| metric.format_value(x)),
+            value: v.value,
+            sessions: v.sessions,
+            from,
+            to,
+            at: now_ms(),
+        });
+    }
+    Ok(out)
+}
+
+pub async fn store_readings(pool: &Pool, insight_id: i64, readings: &[Reading]) -> Result<()> {
+    for r in readings {
+        sqlx::query(
+            "INSERT INTO insight_measurements (insight_id, item, kind, value, sessions, window_from, window_to, measured_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        )
+        .bind(insight_id)
+        .bind(r.item as i64)
+        .bind(&r.kind)
+        .bind(crate::db::Real(r.value))
+        .bind(r.sessions)
+        .bind(r.from)
+        .bind(r.to)
+        .bind(r.at)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
 }
 
 type EvalRow = (i64, i64, Option<f64>, Option<f64>, i64, i64, Option<f64>, String, String, f64, i64, Option<i64>);
@@ -86,11 +184,13 @@ pub async fn list(pool: &Pool, project_id: i64, status: Option<InsightStatus>) -
     }
     let rows = q.fetch_all(pool).await?;
     let mut evals = evaluations(pool, project_id).await?;
+    let mut all = readings(pool, project_id, None).await?;
     rows.iter()
         .map(|r| {
             let mut insight = from_row(r)?;
             insight.evaluation = evals.remove(&insight.id);
-            Ok(insight)
+            let rs = all.remove(&insight.id);
+            Ok(with_readings(insight, rs))
         })
         .collect()
 }
@@ -104,30 +204,72 @@ pub async fn get(pool: &Pool, project_id: i64, id: i64) -> Result<Option<Insight
     let Some(row) = row else { return Ok(None) };
     let mut insight = from_row(&row)?;
     insight.evaluation = evaluations(pool, project_id).await?.remove(&id);
-    Ok(Some(insight))
+    let rs = readings(pool, project_id, Some(id)).await?.remove(&id);
+    Ok(Some(with_readings(insight, rs)))
 }
 
-/// Inserts an insight unless one with the same fingerprint or title already exists
-/// (in any status, so dismissed insights stay dismissed). Returns the new id.
-pub async fn insert(pool: &Pool, project_id: i64, insight: &NewInsight) -> Result<Option<i64>> {
-    let existing: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM insights WHERE project_id = $1
+/// An existing insight with this fingerprint or title, in any status, so
+/// dismissed findings stay dismissed.
+pub async fn duplicate(pool: &Pool, project_id: i64, fingerprint: Option<&str>, title: &str) -> Result<Option<(i64, InsightStatus)>> {
+    let row: Option<(i64, String)> = sqlx::query_as(
+        "SELECT id, status FROM insights WHERE project_id = $1
            AND ((fingerprint IS NOT NULL AND fingerprint = $2) OR lower(trim(title)) = lower(trim($3)))
          LIMIT 1",
     )
     .bind(project_id)
-    .bind(insight.fingerprint.as_deref())
-    .bind(&insight.title)
+    .bind(fingerprint)
+    .bind(title)
     .fetch_optional(pool)
     .await?;
-    if existing.is_some() {
+    row.map(|(id, s)| Ok((id, s.parse()?))).transpose()
+}
+
+/// Keeps a measured, validated insight until the person approves it. Returns its id.
+pub async fn create_draft(pool: &Pool, project_id: i64, insight: &NewInsight) -> Result<String> {
+    let now = now_ms();
+    sqlx::query("DELETE FROM insight_drafts WHERE created_at < $1").bind(now - DRAFT_TTL_MS).execute(pool).await?;
+    let id = format!("draft_{}", crate::auth::random_token(12));
+    sqlx::query("INSERT INTO insight_drafts (id, project_id, payload, created_at) VALUES ($1, $2, $3, $4)")
+        .bind(&id)
+        .bind(project_id)
+        .bind(serde_json::to_string(insight)?)
+        .bind(now)
+        .execute(pool)
+        .await?;
+    Ok(id)
+}
+
+/// Takes a draft out, if it belongs to this website and is less than an hour old.
+pub async fn take_draft(pool: &Pool, project_id: i64, id: &str) -> Result<Option<NewInsight>> {
+    let row: Option<(String, i64)> = sqlx::query_as("DELETE FROM insight_drafts WHERE id = $1 AND project_id = $2 RETURNING payload, created_at")
+        .bind(id)
+        .bind(project_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(match row {
+        Some((payload, at)) if at >= now_ms() - DRAFT_TTL_MS => Some(serde_json::from_str(&payload)?),
+        _ => None,
+    })
+}
+
+/// Inserts an insight unless one with the same fingerprint or title already exists
+/// (in any status, so dismissed insights stay dismissed). Returns the new id.
+/// Measured evidence without readings (an insight from Trace's own analysis)
+/// is measured now, over the last 14 days.
+pub async fn insert(pool: &Pool, project_id: i64, insight: &NewInsight) -> Result<Option<i64>> {
+    if duplicate(pool, project_id, insight.fingerprint.as_deref(), &insight.title).await?.is_some() {
         return Ok(None);
     }
+    let readings = if insight.readings.is_empty() {
+        measure_evidence(pool, project_id, &insight.evidence, 14, "first").await?
+    } else {
+        insight.readings.clone()
+    };
     let now = now_ms();
-    let id = sqlx::query_scalar(
+    let id: i64 = sqlx::query_scalar(
         "INSERT INTO insights (project_id, title, problem, evidence, proposal, acceptance_criteria, pages, kpi_id,
-           expected_impact, confidence, status, source, fingerprint, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new', $11, $12, $13, $14) RETURNING id",
+           expected_impact, confidence, status, source, fingerprint, created_at, updated_at, created_by, measured_from, measured_to)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new', $11, $12, $13, $14, $15, $16, $17) RETURNING id",
     )
     .bind(project_id)
     .bind(insight.title.trim())
@@ -143,8 +285,12 @@ pub async fn insert(pool: &Pool, project_id: i64, insight: &NewInsight) -> Resul
     .bind(insight.fingerprint.as_deref())
     .bind(now)
     .bind(now)
+    .bind(insight.created_by.as_deref())
+    .bind(readings.iter().map(|r| r.from).min())
+    .bind(readings.iter().map(|r| r.to).max())
     .fetch_one(pool)
     .await?;
+    store_readings(pool, id, &readings).await?;
     Ok(Some(id))
 }
 

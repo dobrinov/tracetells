@@ -25,23 +25,23 @@
 
 ## 3. Evidence, drafts and saving
 
-- [ ] 3.1 `model::Evidence` (`Measured { claim, metric, goal }` or `Note`); read old string arrays as notes; `insights` columns `created_by`, `measured_from`, `measured_to`; the `insight_drafts` and `insight_measurements` tables (both schemas and the migration)
-- [ ] 3.2 `draft_insights`:
+- [x] 3.1 `model::Evidence` (`Measured { claim, metric, goal }` or `Note`); read old string arrays as notes; `insights` columns `created_by`, `measured_from`, `measured_to`; the `insight_drafts` and `insight_measurements` tables (both schemas and the migration)
+- [x] 3.2 `draft_insights`:
   - validate;
   - measure every item;
   - refuse insights with no measured item, or whose metrics all cover zero sessions;
   - check fingerprints and titles;
   - store drafts for an hour and return them with Trace's numbers and an instruction to show them
-- [ ] 3.3 `save_insights { draft_ids }`:
+- [x] 3.3 `save_insights { draft_ids }`:
   - needs write access;
   - saves drafts exactly as drafted, with the first measurements as history;
   - refuses unknown, expired or other-website ids
-- [ ] 3.4 Remove `add_insights` (calls get an error naming the two new tools); update `analyse_website` and the server `INSTRUCTIONS` to draft, show, then save
-- [ ] 3.5 Provenance:
+- [x] 3.4 Remove `add_insights` (calls get an error naming the two new tools); update `analyse_website` and the server `INSTRUCTIONS` to draft, show, then save
+- [x] 3.5 Provenance:
   - the actor string reads as `<email> via <token name>`;
   - built-in checks and the Claude analyst record their own names;
   - show it in the API, MCP (`list_insights`, `get_insight`) and the task prompt
-- [ ] 3.6 Tests:
+- [x] 3.6 Tests:
   - draft then save two of three;
   - an expired draft;
   - an all-notes insight refused;
@@ -55,7 +55,8 @@
 - [ ] 4.1 `insights::refresh`: re-measure measured items over the first window's length ending now, and store `refresh` rows; `refresh_due` in the hourly loop (insights that aren't dismissed and weren't refreshed in 24 hours, at most 200 per run)
 - [ ] 4.2 `refresh_insight` (MCP), `POST /api/sites/{site}/insights/{id}/refresh`; insight responses include each item's history
 - [ ] 4.3 `evaluate::run` measures items over the release's before and after windows, and stores `before`/`after` rows and `evaluation_items` verdicts (Welch, with the item's goal), settling with the KPI evaluation; released insights without a KPI still get item verdicts
-- [ ] 4.4 Heuristics emit measured evidence (rage, dead clicks, errors, forms); the Claude analyst's output schema gains the evidence object
+- [x] 4.4a Heuristics emit measured evidence (rage, dead clicks, errors: of sessions viewing the page; forms: start → submit)
+- [ ] 4.4b The Claude analyst's output schema gains the evidence object (its evidence is notes until then)
 - [ ] 4.5 Tests:
   - refreshing adds history and keeps the text;
   - daily refresh selection;

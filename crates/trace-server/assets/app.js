@@ -261,6 +261,20 @@ function verdictBlock(insight) {
 
 let focusedInsight = null;
 
+const shortDate = (ms) => new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+
+// One evidence item: a claim with Trace's latest measurement and its history, or a note.
+function evidenceItem(insight, e, i) {
+  if (e.note !== undefined) return `<li>${esc(e.note)} <span class="hint">(not measured)</span></li>`;
+  const rs = (insight.readings || []).filter((r) => r.item === i && (r.kind === "first" || r.kind === "refresh"));
+  const last = rs[rs.length - 1];
+  const value = last
+    ? `<strong>${esc(last.formatted || "no data")}</strong> <span class="hint">of ${num(last.sessions)} sessions, ${shortDate(last.from)} to ${shortDate(last.to)}</span>`
+    : `<span class="hint">not measured yet</span>`;
+  const history = rs.length > 1 ? `<div class="history hint">${rs.map((r) => `<span title="${esc(shortDate(r.at))}">${esc(r.formatted || "–")}</span>`).join(" → ")}</div>` : "";
+  return `<li>${esc(e.claim)}: ${value}${history}</li>`;
+}
+
 function insightCard(insight) {
   const kpi = kpiCache.find((k) => k.id === insight.kpi_id);
   const focused = insight.id === focusedInsight;
@@ -272,14 +286,14 @@ function insightCard(insight) {
   <article class="card ${focused ? "focused" : ""}" data-id="${insight.id}">
     <div class="meta">
       <span class="chip ${esc(insight.confidence)}">${esc(insight.confidence)} confidence</span>
-      <span>#${insight.id} · via ${esc(insight.source)}${released}</span>
+      <span>#${insight.id} · ${insight.created_by ? `by ${esc(insight.created_by)}` : `via ${esc(insight.source)}`} · ${shortDate(insight.created_at)}${released}</span>
       ${kpi ? `<span class="kpi-name" title="KPI this insight should move">${esc(kpi.name)}</span>` : ""}
     </div>
     <h3>${esc(insight.title)}</h3>
     <p class="problem">${esc(insight.problem)}</p>
     ${
       insight.evidence.length
-        ? `<details><summary>Evidence (${insight.evidence.length})</summary><ul>${insight.evidence.map((e) => `<li>${esc(e)}</li>`).join("")}</ul></details>`
+        ? `<details><summary>Evidence (${insight.evidence.length})</summary><ul>${insight.evidence.map((e, i) => evidenceItem(insight, e, i)).join("")}</ul></details>`
         : ""
     }
     <div class="proposal"><strong>Proposed change</strong>${esc(insight.proposal)}</div>

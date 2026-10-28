@@ -151,9 +151,38 @@ CREATE TABLE IF NOT EXISTS insights (
   -- the linked KPI as it was defined then: the release is judged by it.
   released_at INTEGER,
   released_definition TEXT,
-  released_direction TEXT
+  released_direction TEXT,
+  -- Who created it (a person and the app they used, or a part of Trace), and
+  -- the window its evidence was first measured over.
+  created_by TEXT,
+  measured_from INTEGER,
+  measured_to INTEGER
 );
 CREATE INDEX IF NOT EXISTS insights_project_status ON insights(project_id, status);
+
+-- Every measurement of an insight's evidence items: when first measured,
+-- on each refresh, and before and after a release.
+CREATE TABLE IF NOT EXISTS insight_measurements (
+  id INTEGER PRIMARY KEY,
+  insight_id INTEGER NOT NULL REFERENCES insights(id) ON DELETE CASCADE,
+  item INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  value REAL,
+  sessions INTEGER NOT NULL,
+  window_from INTEGER NOT NULL,
+  window_to INTEGER NOT NULL,
+  measured_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS insight_measurements_insight ON insight_measurements(insight_id, measured_at);
+
+-- Insights an agent proposed and Trace measured, waiting for the person to
+-- approve them. Deleted when saved, and after an hour.
+CREATE TABLE IF NOT EXISTS insight_drafts (
+  id TEXT PRIMARY KEY,
+  project_id INTEGER NOT NULL,
+  payload TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
 
 -- Before/after measurement of a released insight against its KPI. Measuring
 -- until the fixed window after the release has passed; then settled_at is set

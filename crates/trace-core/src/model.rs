@@ -214,12 +214,61 @@ impl FromStr for InsightStatus {
     }
 }
 
+/// One piece of an insight's evidence: a claim with the measurement behind
+/// it, which Trace takes itself, or a written note ("not measured").
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+// An insight has at most ten of these, so the measured variant's size doesn't matter.
+#[allow(clippy::large_enum_variant)]
+pub enum Evidence {
+    Measured {
+        claim: String,
+        metric: crate::query::Metric,
+        /// Which way the number moves if the problem is fixed.
+        goal: Direction,
+    },
+    Note { note: String },
+}
+
+impl Evidence {
+    pub fn note(text: impl Into<String>) -> Self {
+        Self::Note { note: text.into() }
+    }
+    pub fn text(&self) -> &str {
+        match self {
+            Self::Measured { claim, .. } => claim,
+            Self::Note { note } => note,
+        }
+    }
+    pub fn metric(&self) -> Option<&crate::query::Metric> {
+        match self {
+            Self::Measured { metric, .. } => Some(metric),
+            Self::Note { .. } => None,
+        }
+    }
+}
+
+/// One measurement of an evidence item (`item` is its index).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Reading {
+    pub item: usize,
+    /// first, refresh, before or after (a release).
+    pub kind: String,
+    pub value: Option<f64>,
+    pub formatted: Option<String>,
+    /// The sessions the value is about.
+    pub sessions: i64,
+    pub from: i64,
+    pub to: i64,
+    pub at: i64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Insight {
     pub id: i64,
     pub title: String,
     pub problem: String,
-    pub evidence: Vec<String>,
+    pub evidence: Vec<Evidence>,
     pub proposal: String,
     pub acceptance_criteria: Vec<String>,
     pub pages: Vec<String>,
@@ -234,14 +283,21 @@ pub struct Insight {
     pub updated_at: i64,
     pub released_at: Option<i64>,
     pub evaluation: Option<Evaluation>,
+    /// Who created it: a person and the app they used, or which part of Trace.
+    pub created_by: Option<String>,
+    /// The window its evidence was first measured over.
+    pub measured_from: Option<i64>,
+    pub measured_to: Option<i64>,
+    /// Every measurement of its evidence, oldest first.
+    pub readings: Vec<Reading>,
 }
 
 /// An insight produced by the analyst (LLM or heuristics) before it is stored.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NewInsight {
     pub title: String,
     pub problem: String,
-    pub evidence: Vec<String>,
+    pub evidence: Vec<Evidence>,
     pub proposal: String,
     pub acceptance_criteria: Vec<String>,
     pub pages: Vec<String>,
@@ -251,6 +307,10 @@ pub struct NewInsight {
     pub source: String,
     /// Stable key for heuristic findings so re-running analysis does not duplicate them.
     pub fingerprint: Option<String>,
+    pub created_by: Option<String>,
+    /// The first measurements, when they were taken before saving (a draft).
+    #[serde(default)]
+    pub readings: Vec<Reading>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

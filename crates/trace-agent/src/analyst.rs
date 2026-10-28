@@ -159,7 +159,8 @@ async fn ask_claude(
         .map(|i| NewInsight {
             title: i.title,
             problem: i.problem,
-            evidence: i.evidence,
+            // Notes until the analyst's output gives measurements (see add-measured-insights).
+            evidence: i.evidence.into_iter().map(trace_core::model::Evidence::note).collect(),
             proposal: i.proposal,
             acceptance_criteria: i.acceptance_criteria,
             pages: i.pages,
@@ -167,6 +168,8 @@ async fn ask_claude(
             expected_impact: i.expected_impact,
             confidence: i.confidence,
             source: "claude".into(),
+            created_by: Some("Trace's Claude analyst".into()),
+            readings: Vec::new(),
             fingerprint: None,
         })
         .collect();

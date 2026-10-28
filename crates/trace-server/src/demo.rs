@@ -325,7 +325,13 @@ pub async fn seed(pool: &Pool, sessions: usize) -> Result<()> {
         &NewInsight {
             title: "Show the shipping cost on the cart page".into(),
             problem: "Shoppers only saw the shipping cost on the payment step, and many left there.".into(),
-            evidence: vec!["62% of sessions that reached /checkout did not complete payment".into()],
+            evidence: vec![trace_core::model::Evidence::Measured {
+                claim: "Sessions that reach /checkout and pay".into(),
+                metric: trace_core::query::Metric::parse(&serde_json::json!({
+                    "measure": "conversion", "from": { "pageview": "/checkout" }, "to": { "event": "purchase" }
+                }))?,
+                goal: trace_core::model::Direction::Increase,
+            }],
             proposal: "Show the shipping estimate and the order total on /cart, before the checkout button.".into(),
             acceptance_criteria: vec!["/cart shows shipping and total before checkout".into()],
             pages: vec!["/cart".into(), "/checkout".into()],
@@ -334,6 +340,8 @@ pub async fn seed(pool: &Pool, sessions: usize) -> Result<()> {
             confidence: "medium".into(),
             source: "demo".into(),
             fingerprint: Some("demo:shipping-on-cart".into()),
+            created_by: Some("Trace demo".into()),
+            readings: Vec::new(),
         },
     )
     .await?

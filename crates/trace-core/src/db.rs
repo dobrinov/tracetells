@@ -269,6 +269,9 @@ async fn migrate(pool: &Pool, path: &str) -> Result<()> {
         ("insights", "released_definition", "TEXT"),
         ("insights", "released_direction", "TEXT"),
         ("evaluations", "settled_at", "INTEGER"),
+        ("insights", "created_by", "TEXT"),
+        ("insights", "measured_from", "INTEGER"),
+        ("insights", "measured_to", "INTEGER"),
     ] {
         if !has_column(pool, table, column).await? {
             let ty = if pg { ty.replace("INTEGER", "BIGINT").replace("REAL", "DOUBLE PRECISION") } else { ty.to_string() };

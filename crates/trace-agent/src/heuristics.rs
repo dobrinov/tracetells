@@ -2,7 +2,8 @@
 //! and form abandonment. Used when no API key is set, and as a fallback.
 
 use trace_core::digest::{Digest, ErrorStat};
-use trace_core::model::{Kpi, NewInsight, pattern_matches};
+use trace_core::model::{Direction, EventMatch, Evidence, Kpi, NewInsight, pattern_matches};
+use trace_core::query::{Measure, Metric};
 use trace_core::util::pct;
 
 const MIN_RAGE_SESSIONS: i64 = 3;
@@ -10,6 +11,24 @@ const MIN_DEAD_SESSIONS: i64 = 5;
 const MIN_ERROR_SESSIONS: i64 = 3;
 const MIN_FORM_STARTS: i64 = 10;
 const MAX_FORM_COMPLETION: f64 = 0.6;
+
+/// What built-in insights record as their creator.
+pub const CREATOR: &str = "Trace's built-in checks";
+
+fn event(kind: &str, path: &str, selector: Option<&str>, name: Option<&str>) -> EventMatch {
+    EventMatch { kind: kind.into(), path: Some(path.into()), selector: selector.map(Into::into), name: name.map(Into::into) }
+}
+
+/// Of the sessions that viewed this page, the share that then had this event
+/// there: the same base as the digest's "of sessions that viewed /checkout".
+fn on_page(kind: &str, path: &str, selector: Option<&str>, name: Option<&str>) -> Metric {
+    Metric {
+        measure: Measure::Conversion,
+        matcher: None,
+        from: Some(event("pageview", path, None, None)),
+        to: Some(event(kind, path, selector, name)),
+    }
+}
 
 pub fn find(digest: &Digest, kpis: &[Kpi]) -> Vec<NewInsight> {
     let days = digest.window.days;
@@ -33,10 +52,15 @@ pub fn find(digest: &Digest, kpis: &[Kpi]) -> Vec<NewInsight> {
     for c in digest.rage_clicks.iter().filter(|c| c.sessions >= MIN_RAGE_SESSIONS) {
         let what = label(&c.text, &c.selector);
         let mut evidence = vec![
-            format!("{} rage-click bursts (3+ rapid clicks) from {} sessions in the last {days} days", c.count, c.sessions),
-            format!("Element: `{}` on {}", c.selector, c.path),
+            Evidence::Measured {
+                claim: format!("Of sessions that view {}, those that rage-click {what}", c.path),
+                metric: on_page("rage_click", &c.path, Some(&c.selector), None),
+                goal: Direction::Decrease,
+            },
+            Evidence::note(format!("{} rage-click bursts (3+ rapid clicks) from {} sessions in the last {days} days", c.count, c.sessions)),
+            Evidence::note(format!("Element: `{}` on {}", c.selector, c.path)),
         ];
-        evidence.extend(page_line(&c.path));
+        evidence.extend(page_line(&c.path).map(Evidence::note));
         found.push((
             c.sessions,
             NewInsight {
@@ -64,6 +88,8 @@ pub fn find(digest: &Digest, kpis: &[Kpi]) -> Vec<NewInsight> {
                 expected_impact: "Fewer rage clicks on this element and fewer sessions abandoning this step".into(),
                 confidence: if c.sessions >= 10 { "high" } else { "medium" }.into(),
                 source: "heuristics".into(),
+                created_by: Some(CREATOR.into()),
+                readings: Vec::new(),
                 fingerprint: Some(format!("rage:{}:{}", c.path, c.selector)),
             },
         ));
@@ -81,8 +107,13 @@ pub fn find(digest: &Digest, kpis: &[Kpi]) -> Vec<NewInsight> {
                     share(&c.path, c.sessions)
                 ),
                 evidence: vec![
-                    format!("{} dead clicks from {} sessions in the last {days} days", c.count, c.sessions),
-                    format!("Element: `{}` on {}", c.selector, c.path),
+                    Evidence::Measured {
+                        claim: format!("Of sessions that view {}, those that click {what} and nothing happens", c.path),
+                        metric: on_page("dead_click", &c.path, Some(&c.selector), None),
+                        goal: Direction::Decrease,
+                    },
+                    Evidence::note(format!("{} dead clicks from {} sessions in the last {days} days", c.count, c.sessions)),
+                    Evidence::note(format!("Element: `{}` on {}", c.selector, c.path)),
                 ],
                 proposal: format!(
                     "Decide what users are trying to do when they click `{}`. Either make it interactive (for example link it to the \
@@ -98,6 +129,8 @@ pub fn find(digest: &Digest, kpis: &[Kpi]) -> Vec<NewInsight> {
                 expected_impact: "Fewer dead clicks and smoother navigation from this page".into(),
                 confidence: "medium".into(),
                 source: "heuristics".into(),
+                created_by: Some(CREATOR.into()),
+                readings: Vec::new(),
                 fingerprint: Some(format!("dead:{}:{}", c.path, c.selector)),
             },
         ));
@@ -182,17 +215,18 @@ pub fn find(digest: &Digest, kpis: &[Kpi]) -> Vec<NewInsight> {
                 format!("Using {} no longer logs `{short}` in the console", e.path),
             ),
         };
-        let mut evidence = vec![format!(
-            "{} error `{}` {verb} {} times in {} sessions in the last {days} days",
-            e.kind, e.message, e.count, e.sessions
-        )];
-        if let Some(src) = &e.source {
-            evidence.push(format!("Source: `{src}`"));
-        }
+        let mut evidence = vec![
+            Evidence::Measured {
+                claim: format!("Of sessions that view {}, those with {} errors{}", e.path, e.kind, e.source.as_deref().map(|s| format!(" from `{s}`")).unwrap_or_default()),
+                metric: on_page("error", &e.path, e.source.as_deref(), Some(&e.kind)),
+                goal: Direction::Decrease,
+            },
+            Evidence::note(format!("{} error `{}` {verb} {} times in {} sessions in the last {days} days", e.kind, e.message, e.count, e.sessions)),
+        ];
         for c in symptoms.iter().filter(|c| same_cause(c, e)) {
-            evidence.push(format!("The app logs `{}` with console.error in {} sessions, likely this failure", c.message, c.sessions));
+            evidence.push(Evidence::note(format!("The app logs `{}` with console.error in {} sessions, likely this failure", c.message, c.sessions)));
         }
-        evidence.extend(page_line(&e.path));
+        evidence.extend(page_line(&e.path).map(Evidence::note));
         found.push((
             e.sessions * 2, // broken pages usually matter more than friction
             NewInsight {
@@ -206,6 +240,8 @@ pub fn find(digest: &Digest, kpis: &[Kpi]) -> Vec<NewInsight> {
                 expected_impact: "Fewer sessions with errors, and better progression from this page".into(),
                 confidence: "high".into(),
                 source: "heuristics".into(),
+                created_by: Some(CREATOR.into()),
+                readings: Vec::new(),
                 fingerprint: Some(format!("error:{}:{}:{}", e.kind, e.path, e.message)),
             },
         ));
@@ -229,8 +265,17 @@ pub fn find(digest: &Digest, kpis: &[Kpi]) -> Vec<NewInsight> {
                     pct(f.completion_rate)
                 ),
                 evidence: vec![
-                    format!("{} form starts, {} submits in the last {days} days", f.started, f.submitted),
-                    format!("Form: `{}` on {}", f.selector, f.path),
+                    Evidence::Measured {
+                        claim: format!("Sessions that start the form `{}` on {} and submit it", f.selector, f.path),
+                        metric: Metric {
+                            measure: Measure::Conversion,
+                            matcher: None,
+                            from: Some(event("form_start", &f.path, Some(&f.selector), None)),
+                            to: Some(event("submit", &f.path, Some(&f.selector), None)),
+                        },
+                        goal: Direction::Increase,
+                    },
+                    Evidence::note(format!("{} form starts, {} submits in the last {days} days", f.started, f.submitted)),
                 ],
                 proposal: "Look for friction in the form: remove fields that aren't essential, validate inline with clear messages, \
                            keep what the user typed when there's an error, support autofill (correct `autocomplete` attributes and input \
@@ -247,6 +292,8 @@ pub fn find(digest: &Digest, kpis: &[Kpi]) -> Vec<NewInsight> {
                 expected_impact: format!("Higher completion than today's {}", pct(f.completion_rate)),
                 confidence: "medium".into(),
                 source: "heuristics".into(),
+                created_by: Some(CREATOR.into()),
+                readings: Vec::new(),
                 fingerprint: Some(format!("form:{}:{}", f.path, f.selector)),
             },
         ));

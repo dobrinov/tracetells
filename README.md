@@ -75,7 +75,7 @@ The navigation shows how far along you are until the five required steps are don
 |---|---|
 | **Collector** (`/d.js`) | One script tag. Captures pageviews (single-page apps and full reloads), clicks, rage clicks, dead clicks, errors, scroll depth, time on page, form starts and submits, plus custom events from `trace.track(name, props)` or `data-trace-event="name"` markup. It never records input values. |
 | **KPIs as code** | KPIs and the custom-event catalogue live in `trace.json` in your repository, next to the code that sends the events. `trace check` validates it, `trace push` publishes it (from CI, say), and the dashboard shows results and tracking health, but never edits definitions. |
-| **Analyst** | Your coding agent, over MCP: it reads the aggregated digest and KPIs and saves insights with `add_insights` (see [MCP](#mcp-use-trace-from-your-coding-agent)). The server also has its own: built-in heuristics that need no model (the dashboard's **Run analysis**), and optionally Claude when it has an `ANTHROPIC_API_KEY`. Either way it sends your KPIs plus existing and dismissed insights so it doesn't repeat itself. |
+| **Analyst** | Your coding agent, over MCP: it asks Trace questions (`query_behaviour`), drafts insights whose evidence Trace measures (`draft_insights`), shows them to you and saves the ones you approve (`save_insights`). See [MCP](#mcp-use-trace-from-your-coding-agent). The server also has its own analysis: built-in checks that need no model (the dashboard's **Run analysis**), and optionally Claude when it has an `ANTHROPIC_API_KEY`. |
 | **Prompts** | Each insight is rendered as a self-contained task for a coding agent: problem, evidence, goal KPI, proposal, routes and acceptance criteria. Copy it from the dashboard, or run `trace prompt 12 \| claude`. |
 | **Errors** | Five kinds: uncaught exceptions, unhandled promise rejections, `console.error` calls (where React, Vue and Angular report the errors they catch), failed `fetch`/XHR requests (status ≥ 400 or no response) and scripts, stylesheets or images that fail to load. |
 | **Evaluation** | For released insights, compares the KPI over the 14 days before the release with the 14 days after (Welch test, at least 30 sessions per side). See [Did it help?](#did-it-help). |
@@ -164,7 +164,30 @@ Then run `/mcp` in Claude Code, choose **trace** and **Authenticate**. Your brow
 
 **Analyse and fix.** The agent runs the whole loop with its own model: it reads the aggregated behaviour summary and the KPIs, saves the improvements it finds as insights, fetches one as a task prompt, implements it and marks it released, after which Trace measures the impact. Like the dashboard, it only exposes aggregated patterns, never individual sessions, and nothing goes to a model you didn't choose.
 
-The **`analyse_website`** prompt gives the agent the analyst's brief: read `get_overview`, `get_behaviour_summary`, `list_kpis` and `list_insights` (skipping what exists and learning from dismissal reasons), pick up to five problems, and save them with `add_insights`. In Claude Code it's the slash command `/mcp__trace__analyse_website`. Saving (with `add_insights`, even an empty list when nothing was worth saving) records the analysis, and Trace counts new sessions from then.
+**Asking questions.** `query_behaviour` answers with numbers. It measures matching events over the last 1 to 90 days:
+- **Measures:** sessions with a match, events, the share of sessions (`session_rate`), events per session (`per_session`), or a funnel (`conversion`, from → to).
+- **Matchers:** written as in `trace.json`.
+- **Options:** a breakdown by path, selector, device or day, and a comparison with the window before.
+
+It returns aggregates only, never sessions or people, and breakdown rows from fewer than 3 sessions are added into "other". The same is at `GET`/`POST /api/sites/{site}/query`.
+
+```json
+{ "measure": "session_rate", "match": { "rage_click": "button#pay", "path": "/checkout" }, "breakdown": "device", "compare": true }
+```
+
+**Insights grounded in data.** Agents don't save insights directly.
+- **Draft.** `draft_insights` checks each proposed insight and measures its evidence itself, then returns drafts with Trace's numbers. Each evidence item is a measurement, `{ "claim", "metric", "goal" }`, where `metric` is in `query_behaviour`'s form and `goal` is `decrease` or `increase`. A note, `{ "note" }`, is shown as "not measured". Every insight needs at least one measurement, and an insight whose measurements find nothing is refused.
+- **Show, then save.** The agent shows you the drafts, and `save_insights` saves the ones you approve by `draft_id`. Drafts expire after an hour, and read-only connections can draft but not save.
+- **Provenance.** Each insight records who created it (for example "you via Claude Code"), when, and the dates its evidence was measured over. The dashboard and the task prompt show this.
+- **Built-in checks too.** Trace's own checks measure their evidence the same way.
+
+The **`analyse_website`** prompt gives the agent the analyst's brief:
+- read `get_overview`, `get_behaviour_summary`, `list_kpis` and `list_insights`, skipping what exists and learning from dismissal reasons;
+- dig in with `query_behaviour`;
+- draft up to five insights;
+- show them to you, then save the ones you approve.
+
+In Claude Code it's the slash command `/mcp__trace__analyse_website`. Saving, even an empty list when nothing was worth saving, records the analysis, and Trace counts new sessions from then.
 
 **When to analyse.** Trace says a website is worth analysing once it has 100 new sessions since the last analysis, or 30 once a week has passed: on the Insights page, in `get_overview` and `get_analysis_status`, and at `GET /api/sites/{site}/analysis` (`?format=text` gives one line, or nothing until it's time). To hear it from Claude Code when a session starts, add a `SessionStart` hook to `~/.claude/settings.json` (the Setup page has it with your address filled in) and keep your token in the `TRACE_TOKEN` environment variable:
 
@@ -182,7 +205,8 @@ The **`analyse_website`** prompt gives the agent the analyst's brief: read `get_
 | `get_behaviour_summary` | The aggregated digest the analyst reads |
 | `list_kpis`, `get_tracking_health` | KPI values; whether declared events are arriving |
 | `list_insights`, `get_insight`, `get_insight_prompt` | Find work, and get it as a complete implementation task |
-| `add_insights` | Save insights the agent found: problem, evidence, proposal, acceptance criteria, pages, KPI key, confidence and a fingerprint. Known insights, including dismissed ones, are skipped; one invalid item saves nothing |
+| `query_behaviour` | Ask a question: a measure of matching events, optionally broken down by path, selector, device or day, and compared with the window before. Read-only connections can ask |
+| `draft_insights`, `save_insights` | Propose insights; Trace measures their evidence and returns drafts. Save the ones the person approves. (`add_insights` was replaced by these) |
 | `update_insight_status` | Select, start, release or dismiss an insight |
 | `run_analysis`, `evaluate_releases` | Trace's own analysis (built-in checks, or Claude when the server has an API key); measure released ones |
 | `add_site`, `get_install_snippet`, `get_setup_status` | Add a website (admins), get its snippet with instructions, see whether events arrive and what's left to set up |

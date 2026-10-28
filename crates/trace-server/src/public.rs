@@ -112,6 +112,13 @@ fn insight_json(i: &Insight) -> Value {
         "acceptance_criteria": i.acceptance_criteria, "pages": i.pages, "kpi_id": i.kpi_id,
         "expected_impact": i.expected_impact, "confidence": i.confidence, "status": i.status, "source": i.source,
         "created_at": i.created_at, "released_at": i.released_at,
+        // Values from fewer than 5 sessions are left out, as everywhere in the public view.
+        "readings": i.readings.iter().map(|r| {
+            let shown = r.sessions >= public::MIN_SESSIONS;
+            json!({ "item": r.item, "kind": r.kind, "value": if shown { r.value } else { None },
+                    "formatted": if shown { r.formatted.clone() } else { None }, "sessions": r.sessions,
+                    "from": r.from, "to": r.to, "at": r.at })
+        }).collect::<Vec<_>>(),
         "evaluation": i.evaluation.as_ref().map(|e| json!({
             "verdict": e.verdict, "summary": e.summary, "baseline": e.baseline, "current": e.current,
             "p_value": e.p_value, "window_days": e.window_days, "settled_at": e.settled_at,
