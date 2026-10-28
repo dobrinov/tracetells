@@ -943,7 +943,7 @@ mod isolation_tests {
 
     async fn person(state: &AppState, account: i64, email: &str, role: Role) -> String {
         let user = auth::create_user(&state.pool, account, email, "", "a long enough password", role).await.unwrap();
-        format!("{}={}", crate::auth_api::COOKIE, auth::create_session(&state.pool, user.id, true, None).await.unwrap())
+        format!("{}={}", crate::auth_api::COOKIE, auth::create_session(&state.pool, &user, true, None).await.unwrap())
     }
 
     async fn call<S>(app: &S, method: &str, path: &str, cookie: &str) -> (StatusCode, HeaderMap)
@@ -1526,6 +1526,73 @@ mod isolation_tests {
             let code = src.split("#[cfg(test)]").next().unwrap();
             assert!(!code.contains("set_operator") && !code.contains("is_operator ="), "{file} must not grant operator rights");
         }
+    }
+
+    /// One login in two accounts, over HTTP: invited with a login he already
+    /// has, joining with his own session, switching, a role per account, and
+    /// being removed from one without losing the other.
+    #[tokio::test]
+    async fn one_login_in_two_accounts() {
+        let path = trace_core::db::test_target("members-api").await;
+        let pool = db::connect(&path).await.unwrap();
+        let mut st = AppState::new(pool, None);
+        st.allow_signup = true;
+        let state = Arc::new(st);
+        let app = tower::Layer::layer(&tower::util::MapRequestLayer::new(route_site_paths as fn(Request) -> Request), router(state.clone()));
+        let (acme, _) = db::create_account_with_site(&state.pool, "Acme", None).await.unwrap();
+        let (own, _) = db::create_account_with_site(&state.pool, "Dimitar Labs", None).await.unwrap();
+        let (stranger, _) = db::create_account_with_site(&state.pool, "Stranger", None).await.unwrap();
+        let deyan = person(&state, acme.id, "deyan@acme.example", Role::Owner).await;
+        let dimitar = person(&state, own.id, "dimitar@example.com", Role::Owner).await;
+        let req = |m: &str, p: &str, c: &str, b: Value| json_req(m, p, ("cookie", c), b);
+
+        let (status, body) = send(&app, req("POST", "/api/team/invites", &deyan, json!({ "email": "dimitar@example.com", "role": "user" }))).await;
+        assert_eq!(status, StatusCode::OK, "an email with a login can be invited: {body}");
+        let link = body["token"].as_str().unwrap().to_string();
+        let (_, info) = send(&app, req("GET", &format!("/api/auth/invite/{link}"), "", Value::Null)).await;
+        assert_eq!(info["has_login"], true);
+        let (status, _) = send(&app, req("POST", &format!("/api/auth/invite/{link}"), "", json!({ "password": "a password of my choosing" }))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "the link never sets an existing person's password");
+        let (status, _) = send(&app, req("POST", &format!("/api/account/join/{link}"), &deyan, Value::Null)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "only the invited email joins");
+
+        let (status, joined) = send(&app, req("POST", &format!("/api/account/join/{link}"), &dimitar, Value::Null)).await;
+        assert_eq!(status, StatusCode::OK, "{joined}");
+        assert_eq!((joined["account"]["id"].as_i64(), joined["user"]["role"].as_str()), (Some(acme.id), Some("user")));
+        assert_eq!(joined["accounts"].as_array().unwrap().len(), 2);
+
+        // In Acme he is a user: Acme's websites, and no team management.
+        let (_, sites) = send(&app, req("GET", "/api/sites", &dimitar, Value::Null)).await;
+        assert_eq!(sites[0]["slug"], "acme");
+        let (status, _) = send(&app, req("GET", "/api/team", &dimitar, Value::Null)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        // Back in his own account he is the owner.
+        let (status, _) = send(&app, req("POST", "/api/account/switch", &dimitar, json!({ "account_id": stranger.id }))).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "not a member");
+        let (status, state_json) = send(&app, req("POST", "/api/account/switch", &dimitar, json!({ "account_id": own.id }))).await;
+        assert_eq!((status, state_json["user"]["role"].as_str()), (StatusCode::OK, Some("owner")));
+        let (status, _) = send(&app, req("GET", "/api/team", &dimitar, Value::Null)).await;
+        assert_eq!(status, StatusCode::OK);
+        let (_, sites) = send(&app, req("GET", "/api/sites", &dimitar, Value::Null)).await;
+        assert_eq!(sites[0]["slug"], "dimitar-labs");
+
+        // A third account of his own, with the same login.
+        let (status, created) = send(&app, req("POST", "/api/account/new", &dimitar, json!({ "name": "Side project" }))).await;
+        assert_eq!((status, created["user"]["role"].as_str()), (StatusCode::OK, Some("owner")), "{created}");
+        assert_eq!(created["accounts"].as_array().unwrap().len(), 3);
+
+        // Removed from Acme while working in it: his session carries on in another account.
+        send(&app, req("POST", "/api/account/switch", &dimitar, json!({ "account_id": acme.id }))).await;
+        let dimitar_id = auth::find_user(&state.pool, "dimitar@example.com").await.unwrap().unwrap().id;
+        let (status, _) = send(&app, req("DELETE", &format!("/api/team/users/{dimitar_id}"), &deyan, Value::Null)).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let (_, after) = send(&app, req("GET", "/api/auth/state", &dimitar, Value::Null)).await;
+        assert_ne!(after["account"]["id"].as_i64(), Some(acme.id));
+        assert_eq!(after["accounts"].as_array().unwrap().len(), 2);
+        let (status, _) = send(&app, req("POST", "/api/account/leave", &dimitar, Value::Null)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "an owner doesn't leave their own account");
+        trace_core::db::drop_test_target(&path).await;
     }
 
     async fn post_json<S>(app: &S, path: &str, body: Value, cookie: &str) -> StatusCode

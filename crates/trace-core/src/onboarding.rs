@@ -39,7 +39,7 @@ pub async fn checklist(pool: &Pool, site: &Project) -> Result<Checklist> {
     .bind(site.account_id)
     .fetch_one(pool)
     .await?;
-    let people: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE account_id = $1").bind(site.account_id).fetch_one(pool).await?;
+    let people: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM memberships WHERE account_id = $1").bind(site.account_id).fetch_one(pool).await?;
     let invites: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM invites WHERE account_id = $1 AND accepted_at IS NULL AND expires_at > $2")
             .bind(site.account_id)
@@ -104,11 +104,7 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO users (account_id, email, name, password_hash, role, created_at) VALUES ($1, 'a@acme.example', '', 'x', 'owner', 1)")
-            .bind(account.id)
-            .execute(&pool)
-            .await
-            .unwrap();
+        crate::auth::create_user(&pool, account.id, "a@acme.example", "", "a long enough password", crate::auth::Role::Owner).await.unwrap();
         sqlx::query("INSERT INTO api_tokens (account_id, name, token_hash, prefix, created_at) VALUES ($1, 't', 'h', 'p', 1)")
             .bind(account.id)
             .execute(&pool)

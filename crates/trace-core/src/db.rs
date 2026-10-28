@@ -272,6 +272,7 @@ async fn migrate(pool: &Pool, path: &str) -> Result<()> {
         ("insights", "created_by", "TEXT"),
         ("insights", "measured_from", "INTEGER"),
         ("insights", "measured_to", "INTEGER"),
+        ("auth_sessions", "account_id", "INTEGER"),
     ] {
         if !has_column(pool, table, column).await? {
             let ty = if pg { ty.replace("INTEGER", "BIGINT").replace("REAL", "DOUBLE PRECISION") } else { ty.to_string() };
@@ -287,6 +288,16 @@ async fn migrate(pool: &Pool, path: &str) -> Result<()> {
     if !pg && has_column(pool, "users", "project_id").await? {
         upgrade_to_accounts(pool, path).await?;
     }
+    // People from before memberships belong to the account and role on their
+    // own row. Afterwards nobody exists without a membership, so this finds no
+    // one to copy and costs one cheap query per start.
+    sqlx::query(
+        "INSERT INTO memberships (user_id, account_id, role, created_at)
+         SELECT u.id, u.account_id, u.role, u.created_at FROM users u
+         WHERE NOT EXISTS (SELECT 1 FROM memberships m WHERE m.user_id = u.id)",
+    )
+    .execute(pool)
+    .await?;
     sqlx::raw_sql(
         "CREATE UNIQUE INDEX IF NOT EXISTS kpis_project_key ON kpis(project_id, key);
          CREATE UNIQUE INDEX IF NOT EXISTS projects_account_slug ON projects(account_id, slug);

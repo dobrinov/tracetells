@@ -97,14 +97,13 @@ struct NewAccount {
 
 /// An account on a chosen plan, with a first website and a single-use invite
 /// link that makes its future owner the owner.
+/// Someone who already has a login becomes the owner by signing in and joining.
 async fn create_account(State(state): State<AppStateRef>, Extension(p): Extension<Principal>, Json(b): Json<NewAccount>) -> ApiResult<Json<Value>> {
-    if auth::find_user(&state.pool, &b.owner_email).await?.is_some() {
-        return Err(bad(format!("{} already has an account on this server", b.owner_email.trim())));
-    }
     let (account, _) = db::create_account_with_site(&state.pool, &b.name, Some(&b.plan)).await.map_err(bad)?;
     let (invite, token) = auth::create_invite(&state.pool, account.id, &b.owner_email, Role::Owner, None).await.map_err(bad)?;
     record(&state, &p, "operator.account_created", &format!("{} on {} for {}", account.name, b.plan, invite.email)).await?;
-    Ok(Json(json!({ "account_id": account.id, "invite_token": token, "owner_email": invite.email })))
+    let has_login = auth::has_login(&state.pool, &invite.email).await?;
+    Ok(Json(json!({ "account_id": account.id, "invite_token": token, "owner_email": invite.email, "has_login": has_login })))
 }
 
 #[derive(Deserialize)]

@@ -162,7 +162,8 @@ enum Command {
 #[derive(Subcommand)]
 enum UserAction {
     /// Create a person. The password comes from TRACE_PASSWORD, or a random one is printed.
-    /// The server's first person gets a new account as its owner.
+    /// The server's first person gets a new account as its owner. Someone who already has
+    /// a login is added to the account instead, and keeps their password.
     Create {
         #[arg(long)]
         email: String,
@@ -644,6 +645,13 @@ async fn user_command(pool: &Pool, action: UserAction) -> Result<()> {
             } else {
                 (resolve_account(pool, account.as_deref()).await?.id, role.parse()?)
             };
+            // Someone who already has a login is added to the account; their password stays.
+            if let Some(person) = auth::find_user(pool, &email).await? {
+                let user = auth::add_member(pool, account_id, person.id, role).await?;
+                auth::audit(pool, account_id, "cli", "member.added", &format!("{} as {}", user.email, user.role)).await?;
+                println!("Added {} ({}) to account {}; they sign in with their existing password.", user.email, user.role, account_id);
+                return Ok(());
+            }
             let user = auth::create_user(pool, account_id, &email, &name, &password, role).await?;
             auth::audit(pool, account_id, "cli", "member.created", &format!("{} as {}", user.email, user.role)).await?;
             println!("Created {} ({}) in account {}.", user.email, user.role, account_id);

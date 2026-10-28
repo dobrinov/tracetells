@@ -201,7 +201,10 @@ async fn describe(State(state): State<AppStateRef>, Extension(p): Extension<Prin
         .ok_or_else(|| ApiError::bad_request("this connection request isn't valid any more; start it again from your app"))?;
     let back_to = q.redirect_uri.split_once("://").map(|(_, rest)| rest.split(['/', '?']).next().unwrap_or(rest)).unwrap_or(&q.redirect_uri);
     let account = trace_core::db::accounts(&state.pool).await?.into_iter().find(|a| a.id == s.user.account_id).map(|a| a.name);
-    Ok(Json(json!({ "client_name": client.name, "back_to": back_to, "account": account, "role": s.user.role })))
+    // A token works in one account; someone in several picks which.
+    let accounts = auth::memberships(&state.pool, s.user.id).await?;
+    Ok(Json(json!({ "client_name": client.name, "back_to": back_to, "account": account, "account_id": s.user.account_id,
+        "accounts": accounts, "role": s.user.role })))
 }
 
 #[derive(Deserialize)]
@@ -216,6 +219,9 @@ struct Approval {
     state: Option<String>,
     #[serde(default)]
     read_only: bool,
+    /// Which of the person's accounts the app works in; the session's when left out.
+    #[serde(default)]
+    account_id: Option<i64>,
     approve: bool,
 }
 
@@ -230,7 +236,9 @@ async fn approve(State(state): State<AppStateRef>, Extension(p): Extension<Princ
         return Ok(Json(json!({ "redirect": with_params(&a.redirect_uri, &[("error", "access_denied"), ("state", st)]) })));
     }
     oauth::check_request(&client, &a.redirect_uri, &a.code_challenge, &a.code_challenge_method).map_err(ApiError::bad_request)?;
-    let grant = oauth::Grant { user_id: s.user.id, account_id: s.user.account_id, read_only: a.read_only, client_name: client.name.clone() };
+    let account_id = a.account_id.unwrap_or(s.user.account_id);
+    let user = auth::get_user(&state.pool, account_id, s.user.id).await?.ok_or_else(|| ApiError::bad_request("you're not a member of that account"))?;
+    let grant = oauth::Grant { user_id: user.id, account_id: user.account_id, read_only: a.read_only, client_name: client.name.clone() };
     let code = oauth::issue_code(&state.pool, &client, &a.redirect_uri, &a.code_challenge, &grant).await?;
     Ok(Json(json!({ "redirect": with_params(&a.redirect_uri, &[("code", &code), ("state", st)]) })))
 }

@@ -4,7 +4,7 @@
 //! and one released fix to evaluate. `site` serves that same shop as a real,
 //! instrumented website, so live clicks land next to the simulated history.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::Router;
 use axum::http::header;
 use axum::response::{Html, IntoResponse};
@@ -73,11 +73,20 @@ async fn seed_accounts(pool: &Pool) -> Result<Project> {
     let add_user = |account: i64, email: &'static str, name: &'static str, role: Role| {
         let hash = hash.clone();
         async move {
-            sqlx::query("INSERT INTO users (account_id, email, name, password_hash, role, created_at) VALUES ($1, $2, $3, $4, $5, $6)")
+            let id: i64 = sqlx::query_scalar(
+                "INSERT INTO users (account_id, email, name, password_hash, role, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+            )
+            .bind(account)
+            .bind(email)
+            .bind(name)
+            .bind(hash)
+            .bind(role.as_str())
+            .bind(now_ms())
+            .fetch_one(pool)
+            .await?;
+            sqlx::query("INSERT INTO memberships (user_id, account_id, role, created_at) VALUES ($1, $2, $3, $4)")
+                .bind(id)
                 .bind(account)
-                .bind(email)
-                .bind(name)
-                .bind(hash)
                 .bind(role.as_str())
                 .bind(now_ms())
                 .execute(pool)
@@ -94,6 +103,9 @@ async fn seed_accounts(pool: &Pool) -> Result<Project> {
 
     let (bolt, _) = db::create_account_with_site(pool, "Bolt Bikes", Some("friend")).await?;
     add_user(bolt.id, "friend@example.com", "Fred Friend", Role::Owner).await?;
+    // The friend also helps out on Stride's account: one login, two accounts.
+    let friend = trace_core::auth::find_user(pool, "friend@example.com").await?.context("the friend was just added")?;
+    trace_core::auth::add_member(pool, labs.id, friend.id, Role::User).await?;
     let (tryout, _) = db::create_account_with_site(pool, "Tryout", Some("free")).await?;
     add_user(tryout.id, "free@example.com", "Fay Free", Role::Owner).await?;
     Ok(shop)
@@ -354,7 +366,7 @@ pub async fn seed(pool: &Pool, sessions: usize) -> Result<()> {
         .await?;
 
     println!("Accounts: Stride Labs (owner plan; websites stride and stride-docs), Bolt Bikes (friend), Tryout (free).");
-    println!("Sign in as owner@ (also an operator), admin@, user@, friend@ or free@example.com, all with password \"{DEMO_PASSWORD}\" (demo only).");
+    println!("Sign in as owner@ (also an operator), admin@, user@, friend@ (in two accounts) or free@example.com, all with password \"{DEMO_PASSWORD}\" (demo only).");
     println!("Seeded {sessions} sessions and {n_events} events over 30 days, applied the shop's trace.json (3 KPIs, 3 events) and 1 released insight.");
     println!("Next: `trace analyze`, then `trace serve --demo-site 127.0.0.1:4319` and open both.");
     Ok(())

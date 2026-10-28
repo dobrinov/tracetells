@@ -207,7 +207,8 @@ pub async fn authorize(State(state): State<AppStateRef>, mut req: Request, next:
                     return deny(StatusCode::FORBIDDEN, "csrf", "requests must be sent as JSON");
                 }
                 let require_mfa = auth::require_mfa(&state.pool, s.user.account_id).await.unwrap_or(true);
-                let enrolling = path.starts_with("/account/mfa/") || path == "/account";
+                // While enrolling, a person can still switch to an account that doesn't require it.
+                let enrolling = path.starts_with("/account/mfa/") || path == "/account" || path == "/account/switch";
                 if let Some(step) = pending_step(&s, require_mfa)
                     && !(step == "enroll" && enrolling)
                 {
@@ -270,6 +271,10 @@ pub fn routes() -> Router<AppStateRef> {
         .route("/auth/signup", post(signup))
         .route("/auth/invite/{token}", get(invite_info).post(accept_invite))
         .route("/account", get(account))
+        .route("/account/switch", post(switch_account))
+        .route("/account/new", post(create_own_account))
+        .route("/account/leave", post(leave_account))
+        .route("/account/join/{token}", post(join_account))
         .route("/account/password", post(change_password))
         .route("/account/mfa/start", post(mfa_start))
         .route("/account/mfa/confirm", post(mfa_confirm))
@@ -308,9 +313,13 @@ async fn current_session(state: &AppStateRef, headers: &HeaderMap) -> ApiResult<
 }
 
 async fn state_json(state: &AppStateRef, s: Option<&Session>) -> ApiResult<Value> {
-    let (require_mfa, account) = match s {
-        Some(s) => (auth::require_mfa(&state.pool, s.user.account_id).await?, Some(db::account(&state.pool, s.user.account_id).await?)),
-        None => (false, None),
+    let (require_mfa, account, accounts) = match s {
+        Some(s) => (
+            auth::require_mfa(&state.pool, s.user.account_id).await?,
+            Some(db::account(&state.pool, s.user.account_id).await?),
+            auth::memberships(&state.pool, s.user.id).await?,
+        ),
+        None => (false, None, Vec::new()),
     };
     Ok(json!({
         "needs_setup": auth::total_users(&state.pool).await? == 0,
@@ -319,6 +328,9 @@ async fn state_json(state: &AppStateRef, s: Option<&Session>) -> ApiResult<Value
         "privacy_url": state.privacy_url,
         "user": s.map(|s| &s.user),
         "account": account,
+        // Every account the person belongs to, for switching between them.
+        "accounts": accounts,
+        "can_create_account": s.is_some_and(|s| may_create_account(state, s)),
         "step": s.and_then(|s| pending_step(s, require_mfa)),
         "require_mfa": require_mfa,
     }))
@@ -331,7 +343,7 @@ async fn auth_state(State(state): State<AppStateRef>, headers: HeaderMap) -> Api
 
 async fn signed_in(state: &AppStateRef, user: User, mfa_ok: bool, headers: &HeaderMap) -> ApiResult<Response> {
     let ua = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok());
-    let token = auth::create_session(&state.pool, user.id, mfa_ok, ua).await?;
+    let token = auth::create_session(&state.pool, &user, mfa_ok, ua).await?;
     let s = auth::session(&state.pool, &token).await?.ok_or_else(|| bad("session was just created"))?;
     let mut res = Json(state_json(state, Some(&s)).await?).into_response();
     set_cookie(&mut res, Some(&token), state.secure_cookies);
@@ -371,7 +383,7 @@ async fn setup(State(state): State<AppStateRef>, headers: HeaderMap, Json(b): Js
 async fn new_account(state: &AppStateRef, account: &str, email: &str, name: &str, password: &str) -> ApiResult<User> {
     auth::check_new_password(password).map_err(bad)?;
     if auth::find_user(&state.pool, email).await?.is_some() {
-        return Err(bad(format!("{} is already in use; sign in instead", email.trim())));
+        return Err(bad(format!("{} is already in use; sign in instead, then add another account from the website menu", email.trim())));
     }
     let account = account.trim();
     let account = if account.is_empty() { email.split('@').nth(1).unwrap_or("My account") } else { account };
@@ -470,7 +482,9 @@ async fn invite_info(State(state): State<AppStateRef>, Path(token): Path<String>
         .await?
         .ok_or_else(|| ApiError::not_found_msg("this invite link has expired or was already used"))?;
     let workspace = db::account(&state.pool, account).await?.name;
-    Ok(Json(json!({ "email": invite.email, "role": invite.role, "workspace": workspace,
+    // Someone who already has a login joins by signing in, never by choosing a password.
+    let has_login = auth::has_login(&state.pool, &invite.email).await?;
+    Ok(Json(json!({ "email": invite.email, "role": invite.role, "workspace": workspace, "has_login": has_login,
         "require_mfa": auth::require_mfa(&state.pool, account).await? })))
 }
 
@@ -489,6 +503,89 @@ async fn accept_invite(State(state): State<AppStateRef>, Path(token): Path<Strin
 
 fn me(p: &Principal) -> ApiResult<&Session> {
     p.user().ok_or_else(|| ApiError::forbidden("sign in as a person to do this"))
+}
+
+// ---- several accounts ------------------------------------------------------------
+//
+// One login can belong to several accounts (see `memberships`). The session
+// acts in one of them at a time; these move it, add to it and leave one.
+
+/// The auth state once the session acts as `user` (in their new account).
+async fn state_as(state: &AppStateRef, s: &Session, user: User) -> ApiResult<Json<Value>> {
+    Ok(Json(state_json(state, Some(&Session { user, ..s.clone() })).await?))
+}
+
+/// New accounts come from sign-up, so a signed-in person may add one when
+/// sign-up is open (and an operator always may).
+fn may_create_account(state: &AppStateRef, s: &Session) -> bool {
+    state.allow_signup || s.user.is_operator
+}
+
+#[derive(Deserialize)]
+struct SwitchBody {
+    account_id: i64,
+}
+
+async fn switch_account(State(state): State<AppStateRef>, Extension(p): Extension<Principal>, Json(b): Json<SwitchBody>) -> ApiResult<Json<Value>> {
+    let s = me(&p)?;
+    // Not a member is "not found", like any other account's data.
+    let user = auth::switch_account(&state.pool, s, b.account_id).await.map_err(|e| ApiError::not_found_msg(&e.to_string()))?;
+    state_as(&state, s, user).await
+}
+
+#[derive(Deserialize)]
+struct NewAccountBody {
+    /// The company or project the account is for.
+    name: String,
+}
+
+/// Another account for the signed-in person, which they own, with its first
+/// website. The session moves to it.
+async fn create_own_account(
+    State(state): State<AppStateRef>,
+    Extension(p): Extension<Principal>,
+    connect: Connect,
+    headers: HeaderMap,
+    Json(b): Json<NewAccountBody>,
+) -> ApiResult<Json<Value>> {
+    let s = me(&p)?;
+    if !may_create_account(&state, s) {
+        return Err(ApiError::forbidden("new accounts on this server are created by its operator; ask them for one"));
+    }
+    if !state.limiter.hit(&format!("signup:{}", address(&connect, &headers)), MAX_SIGNUPS_PER_ADDRESS, LOCKOUT_MS) {
+        return Err(ApiError::too_many("too many new accounts from this address; try again later"));
+    }
+    let (acct, _) = db::create_account_with_site(&state.pool, &b.name, None).await.map_err(bad)?;
+    auth::add_member(&state.pool, acct.id, s.user.id, Role::Owner).await?;
+    audit(&state, acct.id, &s.user.email, "account.created", &format!("owner {}", s.user.email)).await;
+    let user = auth::switch_account(&state.pool, s, acct.id).await?;
+    state_as(&state, s, user).await
+}
+
+/// Leaves the account the session is in, for one of the person's others.
+async fn leave_account(State(state): State<AppStateRef>, Extension(p): Extension<Principal>) -> ApiResult<Json<Value>> {
+    let s = me(&p)?;
+    if s.user.role == Role::Owner {
+        return Err(bad("the owner can't leave their own account"));
+    }
+    if auth::memberships(&state.pool, s.user.id).await?.len() < 2 {
+        return Err(bad("this is your only account; ask an admin to remove you instead"));
+    }
+    let account = s.user.account_id;
+    auth::remove_user(&state.pool, account, s.user.id).await.map_err(bad)?;
+    audit(&state, account, &s.user.email, "member.left", "").await;
+    let home = auth::home_user(&state.pool, s.user.id).await?.ok_or_else(|| ApiError::unauthorized("sign in again"))?;
+    let user = auth::switch_account(&state.pool, s, home.account_id).await?;
+    state_as(&state, s, user).await
+}
+
+/// Accepts an invite as the person signed in, when it was sent to their email.
+async fn join_account(State(state): State<AppStateRef>, Extension(p): Extension<Principal>, Path(token): Path<String>) -> ApiResult<Json<Value>> {
+    let s = me(&p)?;
+    let user = auth::join_with_invite(&state.pool, &token, &s.user).await.map_err(bad)?;
+    audit(&state, user.account_id, &user.email, "member.joined", &format!("as {}, with an existing login", user.role)).await;
+    let user = auth::switch_account(&state.pool, s, user.account_id).await?;
+    state_as(&state, s, user).await
 }
 
 async fn account(State(state): State<AppStateRef>, Extension(p): Extension<Principal>) -> ApiResult<Json<Value>> {

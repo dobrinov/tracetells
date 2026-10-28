@@ -242,7 +242,8 @@ Works for one person or a whole company. An **account** is a company or a solo u
 
 - **Getting started alone:** the first time `trace serve` starts, it prints a one-time setup link. Open it to create the first account and its owner. (Or run `trace user create --email you@example.com` on the server.) The link stops working once the owner exists, so whoever reaches a fresh server first can't claim it.
 - **More accounts:** `trace serve --allow-signup` lets anyone create an account of their own from the sign-in page (rate-limited per address). Without it, only an operator can create accounts (see below).
-- **Teams:** admins invite people from the **Team** page by role and share the invite link themselves. Trace sends no email. Each link works once and expires in 7 days. An email address belongs to one account on a server.
+- **Teams:** admins invite people from the **Team** page by role and share the invite link themselves. Trace sends no email. Each link works once and expires in 7 days.
+- **One login, several accounts:** an email is one person on the server, and that person can belong to several accounts with a different role in each, e.g. the owner of their own and a user in a client's. Someone who already has a login accepts an invite by signing in and pressing **Join**; the link never sets their password. They switch accounts from the website menu, and signing in opens the account they used last. When sign-up is open, anyone signed in can add an account they own from the same menu. People can leave an account they don't own under **Account**; removing someone takes them out of that account only and revokes their tokens for it. An API token, and an MCP connection, works in one account: the Connect screen asks which.
 
   | Role | Can |
   |---|---|
@@ -307,7 +308,7 @@ Operators run the server: they manage every account's plan, and nothing else. Op
 trace operator grant you@example.com   # also: revoke, list
 ```
 
-An operator signs in normally, and the **Admin** area appears once they have turned on two-step verification. It lists every account with its plan, people, websites and this month's usage; edits plan templates (empty means no limit) and the default plan for new accounts; changes an account's plan or overrides single limits ("same as plan", "no limit" or a number); and creates accounts with a single-use invite link for their owner. It never shows an account's analytics, insights or privacy rules. Operator actions are recorded in the operator's own account's activity log. Set the plan new accounts get with `TRACE_DEFAULT_PLAN` (e.g. `free`) or from the Admin area.
+An operator signs in normally, and the **Admin** area appears once they have turned on two-step verification. It lists every account with its plan, people, websites and this month's usage; edits plan templates (empty means no limit) and the default plan for new accounts; changes an account's plan or overrides single limits ("same as plan", "no limit" or a number); and creates accounts with a single-use invite link for their owner (who signs in to accept if they already have a login). It never shows an account's analytics, insights or privacy rules. Operator actions are recorded in the operator's own account's activity log. Set the plan new accounts get with `TRACE_DEFAULT_PLAN` (e.g. `free`) or from the Admin area.
 
 Built-in templates: `unlimited` (no limits, the default), `free` (30 days, 1 website, 100,000 events, 3 members, 5 Claude analyses), `friend` (365 days, 5 websites, 1,000,000 events, 10 members, 50 Claude analyses) and `owner` (no limits).
 

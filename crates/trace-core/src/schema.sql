@@ -228,6 +228,10 @@ CREATE TABLE IF NOT EXISTS analysis_runs (
 -- are stored as-is (they must be readable to check codes); everything the
 -- server hands out (sessions, invites, API tokens, recovery codes) is stored
 -- only as a SHA-256 hash.
+--
+-- A person's accounts and roles are in `memberships`. `account_id` is the
+-- account signing in opens (the one used last); `role` is no longer read and
+-- stays only because SQLite can't drop a NOT NULL column cheaply.
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
   account_id INTEGER NOT NULL,
@@ -247,6 +251,17 @@ CREATE TABLE IF NOT EXISTS users (
   UNIQUE (email)
 );
 
+-- Which accounts a person belongs to, and their role in each. One person
+-- can own one account and be an admin or user in others.
+CREATE TABLE IF NOT EXISTS memberships (
+  user_id INTEGER NOT NULL,
+  account_id INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, account_id)
+);
+CREATE INDEX IF NOT EXISTS memberships_account ON memberships(account_id);
+
 CREATE TABLE IF NOT EXISTS recovery_codes (
   user_id INTEGER NOT NULL,
   code_hash TEXT NOT NULL,
@@ -262,7 +277,9 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
   last_seen_at INTEGER NOT NULL,
   -- 0 while a second factor is still due.
   mfa_ok INTEGER NOT NULL,
-  user_agent TEXT
+  user_agent TEXT,
+  -- The account the session acts in; null means the person's last-used one.
+  account_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS auth_sessions_user ON auth_sessions(user_id);
 

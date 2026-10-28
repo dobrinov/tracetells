@@ -65,6 +65,9 @@ impl FromStr for Role {
     }
 }
 
+/// A person acting in one account. One person can belong to several accounts
+/// (see `memberships`); `account_id` and `role` are the ones this value acts
+/// in, so a person removed from an account stops being found in it at once.
 #[derive(Debug, Clone, Serialize)]
 pub struct User {
     pub id: i64,
@@ -228,7 +231,11 @@ fn normalize_recovery(code: &str) -> String {
 // ---- users -----------------------------------------------------------------
 
 type UserRow = (i64, i64, String, String, String, Option<i64>, i64, Option<i64>, Flag);
-const USER_COLS: &str = "id, account_id, email, name, role, totp_enabled_at, created_at, last_login_at, is_operator";
+/// A person in one of their accounts: the account and role come from the membership.
+const USER_SELECT: &str = "SELECT u.id, m.account_id, u.email, u.name, m.role, u.totp_enabled_at, u.created_at, u.last_login_at, u.is_operator
+     FROM users u JOIN memberships m ON m.user_id = u.id";
+/// A person's last-used account first, then the one they joined first.
+const HOME_FIRST: &str = "ORDER BY CASE WHEN m.account_id = u.account_id THEN 0 ELSE 1 END, m.created_at, m.account_id LIMIT 1";
 
 fn user_from((id, account_id, email, name, role, totp, created_at, last_login_at, is_operator): UserRow) -> Result<User> {
     Ok(User { id, account_id, email, name, role: role.parse()?, totp_enabled: totp.is_some(), created_at, last_login_at, is_operator: is_operator.0 })
@@ -239,10 +246,13 @@ pub async fn total_users(pool: &Pool) -> Result<i64> {
     Ok(sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(pool).await?)
 }
 
+/// Members of one account.
 pub async fn user_count(pool: &Pool, account_id: i64) -> Result<i64> {
-    Ok(sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE account_id = $1").bind(account_id).fetch_one(pool).await?)
+    Ok(sqlx::query_scalar("SELECT COUNT(*) FROM memberships WHERE account_id = $1").bind(account_id).fetch_one(pool).await?)
 }
 
+/// A new person, as a member of `account_id`. An email that already has a
+/// login is refused: that person joins further accounts with [`add_member`].
 pub async fn create_user(pool: &Pool, account_id: i64, email: &str, name: &str, password: &str, role: Role) -> Result<User> {
     let email = normalize_email(email)?;
     check_new_password(password)?;
@@ -250,22 +260,59 @@ pub async fn create_user(pool: &Pool, account_id: i64, email: &str, name: &str, 
     if find_user(pool, &email).await?.is_some() {
         bail!("{email} is already in use");
     }
+    let hash = hash_off_thread(password).await?;
+    let now = now_ms();
+    let mut tx = pool.begin().await?;
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO users (account_id, email, name, password_hash, role, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
     )
     .bind(account_id)
     .bind(&email)
     .bind(name.trim())
-    .bind(hash_off_thread(password).await?)
+    .bind(hash)
     .bind(role.as_str())
-    .bind(now_ms())
-    .fetch_one(pool)
+    .bind(now)
+    .fetch_one(&mut *tx)
     .await?;
+    sqlx::query("INSERT INTO memberships (user_id, account_id, role, created_at) VALUES ($1, $2, $3, $4)")
+        .bind(id)
+        .bind(account_id)
+        .bind(role.as_str())
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
     get_user(pool, account_id, id).await?.context("user was just created")
 }
 
+/// Adds an existing person to another account. There is one owner per
+/// account, so an owner membership is only for an account that has none yet.
+pub async fn add_member(pool: &Pool, account_id: i64, user_id: i64, role: Role) -> Result<User> {
+    if get_user(pool, account_id, user_id).await?.is_some() {
+        bail!("already a member of this account");
+    }
+    if role == Role::Owner {
+        let owners: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM memberships WHERE account_id = $1 AND role = 'owner'")
+            .bind(account_id)
+            .fetch_one(pool)
+            .await?;
+        if owners > 0 {
+            bail!("there is one owner per account");
+        }
+    }
+    sqlx::query("INSERT INTO memberships (user_id, account_id, role, created_at) VALUES ($1, $2, $3, $4)")
+        .bind(user_id)
+        .bind(account_id)
+        .bind(role.as_str())
+        .bind(now_ms())
+        .execute(pool)
+        .await?;
+    get_user(pool, account_id, user_id).await?.context("membership was just added")
+}
+
+/// A person as a member of `account_id`, or None if they aren't one.
 pub async fn get_user(pool: &Pool, account_id: i64, id: i64) -> Result<Option<User>> {
-    let row: Option<UserRow> = sqlx::query_as(&format!("SELECT {USER_COLS} FROM users WHERE account_id = $1 AND id = $2"))
+    let row: Option<UserRow> = sqlx::query_as(&format!("{USER_SELECT} WHERE m.account_id = $1 AND u.id = $2"))
         .bind(account_id)
         .bind(id)
         .fetch_optional(pool)
@@ -273,10 +320,16 @@ pub async fn get_user(pool: &Pool, account_id: i64, id: i64) -> Result<Option<Us
     row.map(user_from).transpose()
 }
 
-/// A person by email, in any account.
+/// A person in the account they used last (or their first, if they've left that one).
+pub async fn home_user(pool: &Pool, id: i64) -> Result<Option<User>> {
+    let row: Option<UserRow> = sqlx::query_as(&format!("{USER_SELECT} WHERE u.id = $1 {HOME_FIRST}")).bind(id).fetch_optional(pool).await?;
+    row.map(user_from).transpose()
+}
+
+/// A person by email, in the account they used last.
 pub async fn find_user(pool: &Pool, email: &str) -> Result<Option<User>> {
     let Ok(email) = normalize_email(email) else { return Ok(None) };
-    let row: Option<UserRow> = sqlx::query_as(&format!("SELECT {USER_COLS} FROM users WHERE email = $1"))
+    let row: Option<UserRow> = sqlx::query_as(&format!("{USER_SELECT} WHERE u.email = $1 {HOME_FIRST}"))
         .bind(email)
         .fetch_optional(pool)
         .await?;
@@ -285,7 +338,7 @@ pub async fn find_user(pool: &Pool, email: &str) -> Result<Option<User>> {
 
 pub async fn list_users(pool: &Pool, account_id: i64) -> Result<Vec<User>> {
     let rows: Vec<UserRow> = sqlx::query_as(&format!(
-        "SELECT {USER_COLS} FROM users WHERE account_id = $1 ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, email"
+        "{USER_SELECT} WHERE m.account_id = $1 ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.email"
     ))
     .bind(account_id)
     .fetch_all(pool)
@@ -293,23 +346,40 @@ pub async fn list_users(pool: &Pool, account_id: i64) -> Result<Vec<User>> {
     rows.into_iter().map(user_from).collect()
 }
 
+/// One of a person's accounts, for switching between them.
+#[derive(Debug, Clone, Serialize)]
+pub struct Membership {
+    pub account_id: i64,
+    pub name: String,
+    pub role: Role,
+}
+
+/// Every account a person belongs to, by name.
+pub async fn memberships(pool: &Pool, user_id: i64) -> Result<Vec<Membership>> {
+    let rows: Vec<(i64, String, String)> = sqlx::query_as(
+        "SELECT a.id, a.name, m.role FROM memberships m JOIN accounts a ON a.id = m.account_id WHERE m.user_id = $1 ORDER BY a.name, a.id",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter().map(|(account_id, name, role)| Ok(Membership { account_id, name, role: role.parse()? })).collect()
+}
+
 /// Checks email and password. Spends the same time whether or not the user exists.
+/// The person comes back in the account they used last.
 pub async fn authenticate(pool: &Pool, email: &str, password: &str) -> Result<Option<User>> {
-    let row: Option<(i64, i64, String)> = match normalize_email(email) {
-        Ok(e) => sqlx::query_as("SELECT id, account_id, password_hash FROM users WHERE email = $1")
-            .bind(e)
-            .fetch_optional(pool)
-            .await?,
+    let row: Option<(i64, String)> = match normalize_email(email) {
+        Ok(e) => sqlx::query_as("SELECT id, password_hash FROM users WHERE email = $1").bind(e).fetch_optional(pool).await?,
         Err(_) => None,
     };
-    let Some((id, account_id, hash)) = row else {
+    let Some((id, hash)) = row else {
         waste_off_thread(password).await;
         return Ok(None);
     };
     if !verify_off_thread(password, &hash).await {
         return Ok(None);
     }
-    get_user(pool, account_id, id).await
+    home_user(pool, id).await
 }
 
 pub async fn set_password(pool: &Pool, user_id: i64, password: &str) -> Result<()> {
@@ -331,27 +401,55 @@ pub async fn set_role(pool: &Pool, account_id: i64, user_id: i64, role: Role) ->
     if current.role == Role::Owner {
         bail!("the owner's role can't be changed");
     }
-    sqlx::query("UPDATE users SET role = $1 WHERE id = $2").bind(role.as_str()).bind(user_id).execute(pool).await?;
+    sqlx::query("UPDATE memberships SET role = $1 WHERE user_id = $2 AND account_id = $3")
+        .bind(role.as_str())
+        .bind(user_id)
+        .bind(account_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
+/// Takes a person out of one account (removed by an admin, or leaving), and
+/// revokes their tokens for it. Their login and other accounts stay; a person
+/// left with no account at all is deleted.
 pub async fn remove_user(pool: &Pool, account_id: i64, user_id: i64) -> Result<User> {
     let user = get_user(pool, account_id, user_id).await?.context("no such user")?;
     if user.role == Role::Owner {
         bail!("the owner can't be removed");
     }
     let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE api_tokens SET revoked_at = $1 WHERE created_by = $2 AND revoked_at IS NULL")
+    sqlx::query("UPDATE api_tokens SET revoked_at = $1 WHERE created_by = $2 AND account_id = $3 AND revoked_at IS NULL")
         .bind(now_ms())
         .bind(user_id)
+        .bind(account_id)
         .execute(&mut *tx)
         .await?;
-    for sql in [
-        "DELETE FROM auth_sessions WHERE user_id = $1",
-        "DELETE FROM recovery_codes WHERE user_id = $1",
-        "DELETE FROM users WHERE id = $1",
-    ] {
-        sqlx::query(sql).bind(user_id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM memberships WHERE user_id = $1 AND account_id = $2").bind(user_id).bind(account_id).execute(&mut *tx).await?;
+    let other: Option<i64> = sqlx::query_scalar("SELECT account_id FROM memberships WHERE user_id = $1 ORDER BY created_at, account_id LIMIT 1")
+        .bind(user_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    match other {
+        None => {
+            for sql in [
+                "DELETE FROM auth_sessions WHERE user_id = $1",
+                "DELETE FROM recovery_codes WHERE user_id = $1",
+                "DELETE FROM users WHERE id = $1",
+            ] {
+                sqlx::query(sql).bind(user_id).execute(&mut *tx).await?;
+            }
+        }
+        Some(other) => {
+            // Sessions in this account move to another; sign-in opens another.
+            sqlx::query("UPDATE auth_sessions SET account_id = $1 WHERE user_id = $2 AND (account_id = $3 OR account_id IS NULL)")
+                .bind(other)
+                .bind(user_id)
+                .bind(account_id)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("UPDATE users SET account_id = $1 WHERE id = $2 AND account_id = $3").bind(other).bind(user_id).bind(account_id).execute(&mut *tx).await?;
+        }
     }
     tx.commit().await?;
     Ok(user)
@@ -367,16 +465,17 @@ pub struct Session {
     pub mfa_ok: bool,
 }
 
-/// Starts a session and returns the cookie value. `mfa_ok` is false while a
-/// second factor is still due.
-pub async fn create_session(pool: &Pool, user_id: i64, mfa_ok: bool, user_agent: Option<&str>) -> Result<String> {
+/// Starts a session in one of the person's accounts and returns the cookie
+/// value. `mfa_ok` is false while a second factor is still due.
+pub async fn create_session(pool: &Pool, user: &User, mfa_ok: bool, user_agent: Option<&str>) -> Result<String> {
     let token = random_token(32);
     let now = now_ms();
     sqlx::query(
-        "INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at, last_seen_at, mfa_ok, user_agent) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        "INSERT INTO auth_sessions (token_hash, user_id, account_id, created_at, expires_at, last_seen_at, mfa_ok, user_agent) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
     )
     .bind(sha256_hex(&token))
-    .bind(user_id)
+    .bind(user.id)
+    .bind(user.account_id)
     .bind(now)
     .bind(now + SESSION_DAYS * DAY_MS)
     .bind(now)
@@ -384,17 +483,19 @@ pub async fn create_session(pool: &Pool, user_id: i64, mfa_ok: bool, user_agent:
     .bind(user_agent.map(|u| crate::util::truncate(u, 300)))
     .execute(pool)
     .await?;
+    sqlx::query("UPDATE users SET account_id = $1 WHERE id = $2").bind(user.account_id).bind(user.id).execute(pool).await?;
     if mfa_ok {
-        sqlx::query("UPDATE users SET last_login_at = $1 WHERE id = $2").bind(now).bind(user_id).execute(pool).await?;
+        sqlx::query("UPDATE users SET last_login_at = $1 WHERE id = $2").bind(now).bind(user.id).execute(pool).await?;
     }
     Ok(token)
 }
 
 pub async fn session(pool: &Pool, token: &str) -> Result<Option<Session>> {
     let token_hash = sha256_hex(token);
+    // Sessions from before memberships have no account: they act in the person's last-used one.
     let row: Option<(i64, i64, Flag, i64, i64)> = sqlx::query_as(
-        "SELECT s.user_id, u.account_id, s.mfa_ok, s.expires_at, s.last_seen_at FROM auth_sessions s JOIN users u ON u.id = s.user_id
-         WHERE s.token_hash = $1",
+        "SELECT s.user_id, COALESCE(s.account_id, u.account_id), s.mfa_ok, s.expires_at, s.last_seen_at
+         FROM auth_sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1",
     )
     .bind(&token_hash)
     .fetch_optional(pool)
@@ -408,8 +509,27 @@ pub async fn session(pool: &Pool, token: &str) -> Result<Option<Session>> {
     if now - last_seen_at > 60_000 {
         sqlx::query("UPDATE auth_sessions SET last_seen_at = $1 WHERE token_hash = $2").bind(now).bind(&token_hash).execute(pool).await?;
     }
-    let Some(user) = get_user(pool, account_id, user_id).await? else { return Ok(None) };
+    let user = match get_user(pool, account_id, user_id).await? {
+        Some(u) => u,
+        // No longer a member there: carry on in one of their other accounts.
+        None => match home_user(pool, user_id).await? {
+            Some(u) => {
+                sqlx::query("UPDATE auth_sessions SET account_id = $1 WHERE token_hash = $2").bind(u.account_id).bind(&token_hash).execute(pool).await?;
+                u
+            }
+            None => return Ok(None),
+        },
+    };
     Ok(Some(Session { token_hash, user, mfa_ok: mfa_ok.0 }))
+}
+
+/// Moves a session to another of the person's accounts, which sign-in opens
+/// from then on. Refuses an account they don't belong to.
+pub async fn switch_account(pool: &Pool, s: &Session, account_id: i64) -> Result<User> {
+    let user = get_user(pool, account_id, s.user.id).await?.context("you're not a member of that account")?;
+    sqlx::query("UPDATE auth_sessions SET account_id = $1 WHERE token_hash = $2").bind(account_id).bind(&s.token_hash).execute(pool).await?;
+    sqlx::query("UPDATE users SET account_id = $1 WHERE id = $2").bind(account_id).bind(user.id).execute(pool).await?;
+    Ok(user)
 }
 
 pub async fn mark_mfa_passed(pool: &Pool, s: &Session) -> Result<()> {
@@ -552,8 +672,11 @@ pub async fn create_invite(pool: &Pool, account_id: i64, email: &str, role: Role
     if role == Role::Owner && invited_by.is_some() {
         bail!("invite people as admin or user");
     }
-    if find_user(pool, &email).await?.is_some() {
-        bail!("{email} is already in use");
+    // People who already have a login can be invited; they join by signing in.
+    if let Some(person) = find_user(pool, &email).await?
+        && get_user(pool, account_id, person.id).await?.is_some()
+    {
+        bail!("{email} is already a member of this account");
     }
     let max = crate::plans::for_account(pool, account_id).await?.effective.max_members;
     if let Some(max) = max {
@@ -619,9 +742,37 @@ pub async fn find_invite(pool: &Pool, token: &str) -> Result<Option<(i64, Invite
         .transpose()
 }
 
+/// Whether an email already has a login, so its invite asks them to sign in
+/// rather than choose a password.
+pub async fn has_login(pool: &Pool, email: &str) -> Result<bool> {
+    let Ok(email) = normalize_email(email) else { return Ok(false) };
+    let id: Option<i64> = sqlx::query_scalar("SELECT id FROM users WHERE email = $1").bind(email).fetch_optional(pool).await?;
+    Ok(id.is_some())
+}
+
+const INVITE_GONE: &str = "this invite link has expired or was already used";
+
+/// Accepts an invite as a new person, choosing a password. An email that
+/// already has a login is refused: the link proves the inbox, not the
+/// password, so it must never set one. That person uses [`join_with_invite`].
 pub async fn accept_invite(pool: &Pool, token: &str, name: &str, password: &str) -> Result<User> {
-    let (account_id, invite) = find_invite(pool, token).await?.context("this invite link has expired or was already used")?;
+    let (account_id, invite) = find_invite(pool, token).await?.context(INVITE_GONE)?;
+    if has_login(pool, &invite.email).await? {
+        bail!("{} already has a login; sign in with it, then open this link again to join", invite.email);
+    }
     let user = create_user(pool, account_id, &invite.email, name, password, invite.role).await?;
+    sqlx::query("UPDATE invites SET accepted_at = $1 WHERE id = $2").bind(now_ms()).bind(invite.id).execute(pool).await?;
+    Ok(user)
+}
+
+/// Accepts an invite for someone signed in as the invited email: adds the
+/// account to the ones they belong to. Returns them in that account.
+pub async fn join_with_invite(pool: &Pool, token: &str, person: &User) -> Result<User> {
+    let (account_id, invite) = find_invite(pool, token).await?.context(INVITE_GONE)?;
+    if invite.email != person.email {
+        bail!("this invite is for {}, and you're signed in as {}; sign out and sign in as {} to join", invite.email, person.email, invite.email);
+    }
+    let user = add_member(pool, account_id, person.id, invite.role).await?;
     sqlx::query("UPDATE invites SET accepted_at = $1 WHERE id = $2").bind(now_ms()).bind(invite.id).execute(pool).await?;
     Ok(user)
 }
@@ -767,8 +918,12 @@ pub async fn set_operator(pool: &Pool, email: &str, on: bool) -> Result<User> {
 }
 
 pub async fn operators(pool: &Pool) -> Result<Vec<User>> {
-    let rows: Vec<UserRow> = sqlx::query_as(&format!("SELECT {USER_COLS} FROM users WHERE is_operator = 1 ORDER BY email")).fetch_all(pool).await?;
-    rows.into_iter().map(user_from).collect()
+    let ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM users WHERE is_operator = 1 ORDER BY email").fetch_all(pool).await?;
+    let mut out = Vec::new();
+    for id in ids {
+        out.extend(home_user(pool, id).await?);
+    }
+    Ok(out)
 }
 
 // ---- audit log -------------------------------------------------------------------
@@ -851,12 +1006,14 @@ mod tests {
         assert_eq!(ana.role, Role::User);
         assert!(accept_invite(&pool, &link, "Ana", "another long password").await.is_err(), "links are single use");
 
-        // Emails are unique across accounts.
+        // An email is one person on the whole server: a second login is refused,
+        // and a member can't be invited to the account again.
         let other = crate::db::create_account(&pool, "Bolt", None).await.unwrap().id;
-        let bolt_owner = create_user(&pool, other, "bob@bolt.example", "Bob", "a long enough password", Role::Owner).await.unwrap();
-        assert!(create_invite(&pool, other, "ana@example.com", Role::User, Some(bolt_owner.id)).await.is_err());
+        create_user(&pool, other, "bob@bolt.example", "Bob", "a long enough password", Role::Owner).await.unwrap();
+        assert!(create_user(&pool, other, "ana@example.com", "Ana", "another long password", Role::User).await.is_err());
+        assert!(create_invite(&pool, p, "ana@example.com", Role::User, Some(owner.id)).await.is_err(), "already a member");
 
-        let token = create_session(&pool, ana.id, false, None).await.unwrap();
+        let token = create_session(&pool, &ana, false, None).await.unwrap();
         let s = session(&pool, &token).await.unwrap().unwrap();
         assert!(!s.mfa_ok && s.user.account_id == p);
 
@@ -892,6 +1049,61 @@ mod tests {
 
         assert!(set_operator(&pool, "owner@example.com", true).await.unwrap().is_operator);
         assert_eq!(operators(&pool).await.unwrap().len(), 1);
+        crate::db::drop_test_target(&path).await;
+    }
+
+    #[tokio::test]
+    async fn one_login_in_several_accounts() {
+        let path = crate::db::test_target("members").await;
+        let pool = crate::db::connect(&path).await.unwrap();
+        let acme = crate::db::create_account(&pool, "Acme", None).await.unwrap().id;
+        let own = crate::db::create_account(&pool, "Dimitar's", None).await.unwrap().id;
+        let deyan = create_user(&pool, acme, "deyan@acme.example", "Deyan", "a long enough password", Role::Owner).await.unwrap();
+        let dimitar = create_user(&pool, own, "dimitar@example.com", "Dimitar", "his own long password", Role::Owner).await.unwrap();
+
+        // Invited with a login he already has: the link can't set a password, only his session can join.
+        let (_, link) = create_invite(&pool, acme, "Dimitar@example.com", Role::User, Some(deyan.id)).await.unwrap();
+        assert!(has_login(&pool, "dimitar@example.com").await.unwrap());
+        let refused = accept_invite(&pool, &link, "", "a password of my choosing").await.unwrap_err();
+        assert!(refused.to_string().contains("already has a login"), "{refused}");
+        assert!(authenticate(&pool, "dimitar@example.com", "a password of my choosing").await.unwrap().is_none());
+        assert!(join_with_invite(&pool, &link, &deyan).await.is_err(), "only the invited person joins");
+        let in_acme = join_with_invite(&pool, &link, &dimitar).await.unwrap();
+        assert_eq!((in_acme.account_id, in_acme.role), (acme, Role::User));
+        let mine: Vec<(i64, Role)> = memberships(&pool, dimitar.id).await.unwrap().iter().map(|m| (m.account_id, m.role)).collect();
+        assert_eq!(mine, [(acme, Role::User), (own, Role::Owner)], "by name: {mine:?}");
+        assert_eq!(list_users(&pool, acme).await.unwrap().len(), 2);
+        assert_eq!(user_count(&pool, own).await.unwrap(), 1);
+
+        // Sign-in opens the account used last; switching moves the session and is remembered.
+        let signed_in = authenticate(&pool, "dimitar@example.com", "his own long password").await.unwrap().unwrap();
+        let s = session(&pool, &create_session(&pool, &signed_in, true, None).await.unwrap()).await.unwrap().unwrap();
+        assert_eq!(s.user.account_id, own);
+        let stranger = crate::db::create_account(&pool, "Stranger", None).await.unwrap().id;
+        assert!(switch_account(&pool, &s, stranger).await.is_err());
+        assert_eq!(switch_account(&pool, &s, acme).await.unwrap().role, Role::User);
+        let token = create_session(&pool, &find_user(&pool, "dimitar@example.com").await.unwrap().unwrap(), true, None).await.unwrap();
+        assert_eq!(session(&pool, &token).await.unwrap().unwrap().user.account_id, acme, "the last-used account opens next time");
+
+        // A token belongs to one account and follows the role there.
+        let (_, acme_token) = create_api_token(&pool, acme, &in_acme, "Claude Code", false).await.unwrap();
+        let (_, own_token) = create_api_token(&pool, own, &dimitar, "CI", false).await.unwrap();
+        assert_eq!(verify_api_token(&pool, &acme_token).await.unwrap().unwrap().role(), Role::User);
+        assert_eq!(verify_api_token(&pool, &own_token).await.unwrap().unwrap().role(), Role::Owner);
+
+        // Removed from Acme: that account's token stops, the session moves home, his own account stays.
+        remove_user(&pool, acme, dimitar.id).await.unwrap();
+        assert!(verify_api_token(&pool, &acme_token).await.unwrap().is_none());
+        assert!(verify_api_token(&pool, &own_token).await.unwrap().is_some());
+        assert_eq!(session(&pool, &token).await.unwrap().unwrap().user.account_id, own);
+        assert!(authenticate(&pool, "dimitar@example.com", "his own long password").await.unwrap().is_some());
+
+        // A second owner is refused; removing someone from their only account deletes them.
+        assert!(add_member(&pool, own, deyan.id, Role::Owner).await.is_err());
+        let (_, link) = create_invite(&pool, acme, "temp@acme.example", Role::User, Some(deyan.id)).await.unwrap();
+        let temp = accept_invite(&pool, &link, "", "a long enough password").await.unwrap();
+        remove_user(&pool, acme, temp.id).await.unwrap();
+        assert!(!has_login(&pool, "temp@acme.example").await.unwrap());
         crate::db::drop_test_target(&path).await;
     }
 

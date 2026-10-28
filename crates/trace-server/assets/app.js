@@ -140,7 +140,51 @@ async function loadSites() {
       .join("") +
     (can("admin")
       ? `<hr><button type="button" class="add" data-add-site><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add website</button>`
-      : "");
+      : "") +
+    accountsMenu();
+}
+
+// One login can belong to several accounts. The menu lists the others, and
+// a new account when this server lets people create them.
+function accountsMenu() {
+  const others = (auth.accounts || []).filter((a) => !auth.account || a.account_id !== auth.account.id);
+  if (!others.length && !auth.can_create_account) return "";
+  return (
+    `<hr><div class="account-name">Your other accounts</div>` +
+    others
+      .map((a) => `<button type="button" data-account="${a.account_id}"><span><span>${esc(a.name)}</span><span class="site-host">${esc(a.role)}</span></span></button>`)
+      .join("") +
+    (auth.can_create_account
+      ? `<button type="button" class="add" data-new-account><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New account</button>`
+      : "")
+  );
+}
+
+// After the session moved to another account: its websites, its role, its first page.
+async function enterAccount(state) {
+  auth = state;
+  currentSite = null;
+  store("trace_site", null);
+  project = null;
+  kpiCache = [];
+  checklist = null;
+  history.replaceState(null, "", "#/");
+  if (auth.step) return boot();
+  applyRole();
+  await loadSites();
+  route();
+}
+
+async function switchAccount(id) {
+  await enterAccount(await post("/account/switch", { account_id: Number(id) }));
+  toast(`Switched to ${auth.account.name}`);
+}
+
+async function newAccount() {
+  const name = prompt("Name of the new account, e.g. your company or project. You'll own it, with the same login:");
+  if (!name) return;
+  await enterAccount(await post("/account/new", { name }));
+  toast(`Created ${auth.account.name}. Add its first website's snippet on Setup.`);
 }
 
 function toggleSiteList(open = siteList.hidden) {
@@ -176,6 +220,16 @@ siteList.addEventListener("click", async (e) => {
     if (pick.dataset.site !== currentSite) {
       switchSite(pick.dataset.site);
       await loadSites();
+    }
+    return;
+  }
+  const account = e.target.closest("[data-account]");
+  if (account || e.target.closest("[data-new-account]")) {
+    toggleSiteList(false);
+    try {
+      await (account ? switchAccount(account.dataset.account) : newAccount());
+    } catch (err) {
+      toast(err.message, true);
     }
     return;
   }
@@ -1254,10 +1308,21 @@ function renderEnroll() {
   authScreen(`${BRAND}<h1>Set up two-step verification</h1>
     <p>Your workspace requires it. You'll need an authenticator app on your phone.</p>
     <div id="enroll"></div>
-    <p class="hint"><a href="#" id="start-over">Sign out</a></p>`);
+    <p class="hint">${(auth.accounts || []).length > 1 ? `${auth.account ? `${esc(auth.account.name)} requires it. ` : ""}<a href="#" id="other-account">Use another account</a> · ` : ""}<a href="#" id="start-over">Sign out</a></p>`);
   view.querySelector("#start-over").addEventListener("click", (e) => {
     e.preventDefault();
     signOut();
+  });
+  view.querySelector("#other-account")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const other = auth.accounts.find((a) => !auth.account || a.account_id !== auth.account.id);
+    try {
+      auth = await post("/account/switch", { account_id: other.account_id });
+      document.body.classList.remove("auth");
+      await enterAccount(auth);
+    } catch (err) {
+      toast(err.message, true);
+    }
   });
   enrollmentFlow(view.querySelector("#enroll"), boot).catch((err) => toast(err.message, true));
 }
@@ -1367,6 +1432,18 @@ async function renderInvite(token) {
     authScreen(`${BRAND}<h1>Invite not valid</h1><p>${esc(e.message)}</p><p><a href="#/">Sign in</a></p>`);
     return;
   }
+  if (invite.has_login) {
+    // They join with their own session; the link must never set a password.
+    store("trace_join", token);
+    authScreen(`${BRAND}<h1>Join ${esc(invite.workspace)}</h1>
+      <p>You've been invited as <strong>${esc(invite.role)}</strong>. <strong>${esc(invite.email)}</strong> already has a Trace login, so sign in with it to join. Your other accounts stay as they are.</p>
+      <button class="primary" id="to-login">Sign in to join</button>`);
+    view.querySelector("#to-login").addEventListener("click", () => {
+      history.replaceState(null, "", "#/");
+      renderLogin();
+    });
+    return;
+  }
   authScreen(`${BRAND}<h1>Join ${esc(invite.workspace)}</h1>
     <p>You've been invited as <strong>${esc(invite.role)}</strong> with <strong>${esc(invite.email)}</strong>.${invite.require_mfa ? " This workspace requires two-step verification, which you'll set up next." : ""}</p>
     <form id="accept" class="stack">
@@ -1383,6 +1460,46 @@ async function renderInvite(token) {
     });
     history.replaceState(null, "", "#/insights");
     boot();
+  });
+}
+
+// Someone signed in opening an invite: join with this login, if it's the invited email.
+async function renderJoin(token) {
+  store("trace_join", null);
+  history.replaceState(null, "", "#/");
+  let invite;
+  try {
+    invite = await api(`/auth/invite/${encodeURIComponent(token)}`);
+  } catch (e) {
+    authScreen(`${BRAND}<h1>Invite not valid</h1><p>${esc(e.message)}</p><p><a href="#/" id="go-on">Continue to Trace</a></p>`);
+    view.querySelector("#go-on").addEventListener("click", (e) => (e.preventDefault(), boot()));
+    return;
+  }
+  if (invite.email !== auth.user.email) {
+    authScreen(`${BRAND}<h1>This invite is for someone else</h1>
+      <p>It was sent to <strong>${esc(invite.email)}</strong>, and you're signed in as <strong>${esc(auth.user.email)}</strong>. Sign out and sign in as ${esc(invite.email)} to join ${esc(invite.workspace)}.</p>
+      <div class="actions"><button class="primary" id="sign-out">Sign out</button><button class="quiet" id="go-on">Not now</button></div>`);
+    view.querySelector("#sign-out").addEventListener("click", () => {
+      store("trace_join", token);
+      signOut();
+    });
+    view.querySelector("#go-on").addEventListener("click", () => boot());
+    return;
+  }
+  authScreen(`${BRAND}<h1>Join ${esc(invite.workspace)}</h1>
+    <p>You've been invited as <strong>${esc(invite.role)}</strong>. You'll be able to switch between ${esc(invite.workspace)} and your other accounts from the website menu.</p>
+    <div class="actions"><button class="primary" id="join">Join ${esc(invite.workspace)}</button><button class="quiet" id="go-on">Not now</button></div>`);
+  view.querySelector("#go-on").addEventListener("click", () => boot());
+  view.querySelector("#join").addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    try {
+      document.body.classList.remove("auth");
+      await enterAccount(await post(`/account/join/${encodeURIComponent(token)}`));
+      toast(`You've joined ${auth.account.name}`);
+    } catch (err) {
+      e.target.disabled = false;
+      toast(err.message, true);
+    }
   });
 }
 
@@ -1411,7 +1528,22 @@ async function renderAccount() {
   const u = a.user;
   view.innerHTML = `
     <h1>Account</h1>
-    <p class="sub">${esc(u.email)} · ${esc(u.role)}</p>
+    <p class="sub">${esc(u.email)} · ${esc(u.role)}${auth.account ? ` in ${esc(auth.account.name)}` : ""}</p>
+    <h2>Accounts</h2>
+    <p class="hint">One login, every account you belong to. Your role can differ in each.</p>
+    ${table(
+      [{ label: "Account" }, { label: "Your role" }, { label: "" }],
+      (auth.accounts || []).map((m) => {
+        const here = auth.account && m.account_id === auth.account.id;
+        const action = here
+          ? m.role !== "owner" && auth.accounts.length > 1
+            ? `<button class="quiet" data-leave>Leave</button>`
+            : `<span class="hint">Current</span>`
+          : `<button class="quiet" data-switch-account="${m.account_id}">Switch</button>`;
+        return [esc(m.name), esc(m.role), action];
+      })
+    )}
+    ${auth.can_create_account ? `<p><button data-create-account>New account</button> <span class="hint">You'll own it, with this same login.</span></p>` : ""}
     <h2>Two-step verification</h2>
     <div class="card" id="mfa-box">${
       u.totp_enabled
@@ -1481,6 +1613,14 @@ async function renderAccount() {
     toast("Password changed");
   });
   view.querySelector("[data-sign-out]").addEventListener("click", signOut);
+  view.querySelectorAll("[data-switch-account]").forEach((b) => b.addEventListener("click", () => switchAccount(b.dataset.switchAccount).catch((e) => toast(e.message, true))));
+  view.querySelector("[data-create-account]")?.addEventListener("click", () => newAccount().catch((e) => toast(e.message, true)));
+  view.querySelector("[data-leave]")?.addEventListener("click", async () => {
+    if (!confirm(`Leave ${auth.account.name}? Your tokens for it stop working, and only an invite brings you back.`)) return;
+    const name = auth.account.name;
+    await enterAccount(await post("/account/leave"));
+    toast(`You've left ${name}`);
+  });
   onSubmit(view.querySelector("#new-token"), async (fd) => {
     const r = await api("/account/tokens", { method: "POST", body: JSON.stringify({ name: fd.get("name"), read_only: fd.get("read_only") === "on" }) });
     await renderAccount();
@@ -1908,7 +2048,7 @@ async function renderAdmin() {
     const r = await post("/operator/accounts", { name: fd.get("name"), owner_email: fd.get("owner_email"), plan: fd.get("plan") });
     const link = `${location.origin}/#/invite/${r.invite_token}`;
     await renderAdmin();
-    view.querySelector("#new-account-result").innerHTML = `<div class="card"><p>Send this link to <strong>${esc(r.owner_email)}</strong>: it makes them the account's owner. It works once and expires in 7 days.</p>
+    view.querySelector("#new-account-result").innerHTML = `<div class="card"><p>Send this link to <strong>${esc(r.owner_email)}</strong>: it makes them the account's owner. It works once and expires in 7 days.${r.has_login ? " They already have a login, so they'll sign in with it to accept." : ""}</p>
       <div class="copy-row"><pre class="snippet">${esc(link)}</pre><button data-copy="${esc(link)}">Copy</button></div></div>`;
     view.querySelector("#new-account-result [data-copy]").addEventListener("click", async (e) => (await copyText(e.target.dataset.copy)) && toast("Copied"));
   });
@@ -2003,6 +2143,8 @@ async function boot() {
   }
   if (auth.step === "verify") return renderVerify();
   if (auth.step === "enroll") return renderEnroll();
+  const joining = hash.startsWith("#/invite/") ? hash.slice("#/invite/".length) : store("trace_join");
+  if (joining) return renderJoin(joining);
   document.body.classList.remove("auth");
   if (/^#\/(welcome|invite)\//.test(hash) || hash === "#/signup") history.replaceState(null, "", "#/");
   applyRole();
@@ -2033,12 +2175,18 @@ async function renderConnect() {
   // Two plain choices, full access already picked: a lone "Read only" box read as the only option.
   view.innerHTML = `<div class="connect">
     <h1>Connect ${name} to Trace</h1>
-    <p>${name} is asking to work with Trace as you${info.account ? ` in <strong>${esc(info.account)}</strong>` : ""}. How much can it do?</p>
+    ${info.accounts && info.accounts.length > 1
+      ? `<p>${name} is asking to work with Trace as you. It works in one account; you can connect it again for another.</p>
+         <label class="field">Account <select id="connect-account">${info.accounts
+           .map((a) => `<option value="${a.account_id}"${a.account_id === info.account_id ? " selected" : ""}>${esc(a.name)} (${esc(a.role)})</option>`)
+           .join("")}</select></label>
+         <p>How much can it do?</p>`
+      : `<p>${name} is asking to work with Trace as you${info.account ? ` in <strong>${esc(info.account)}</strong>` : ""}. How much can it do?</p>`}
     <fieldset class="access-choice">
       <legend class="visually-hidden">Access</legend>
       <label class="choice"><input type="radio" name="access" value="full" checked>
         <span><strong>Full access</strong> <span class="hint">(recommended)</span><br>
-        <span class="hint">Look at your websites' analytics, answer your questions, ${changes}. It acts with your role (${esc(info.role)}).</span></span></label>
+        <span class="hint">Look at your websites' analytics, answer your questions, ${changes}. It acts with your role in that account.</span></span></label>
       <label class="choice"><input type="radio" name="access" value="read">
         <span><strong>Read only</strong><br>
         <span class="hint">Look at your websites' analytics and answer your questions, but never save or change anything.</span></span></label>
@@ -2049,7 +2197,13 @@ async function renderConnect() {
   </div>`;
   const answer = async (approve) => {
     try {
-      const r = await post("/account/connect", { ...req, read_only: view.querySelector('input[name="access"]:checked').value === "read", approve });
+      const chosen = view.querySelector("#connect-account");
+      const r = await post("/account/connect", {
+        ...req,
+        read_only: view.querySelector('input[name="access"]:checked').value === "read",
+        account_id: chosen ? Number(chosen.value) : null,
+        approve,
+      });
       view.innerHTML = `<div class="empty"><h1>${approve ? `${name} is connected` : "Cancelled"}</h1><p>${approve ? `You can go back to ${name}.` : "Nothing was connected."}</p></div>`;
       location.href = r.redirect;
     } catch (e) {
