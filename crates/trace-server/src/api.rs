@@ -36,6 +36,9 @@ pub struct AppState {
     pub allow_signup: bool,
     /// Where people ask for more (Plan & usage).
     pub contact_url: Option<String>,
+    /// Terms and privacy policy accepted at sign-up, if the operator has them.
+    pub terms_url: Option<String>,
+    pub privacy_url: Option<String>,
     /// The server-wide retention cap in days (0 = none).
     pub retention_days: u32,
     /// Each website's privacy rules, compiled on first use; see [`reload_rules`].
@@ -60,6 +63,8 @@ impl AppState {
             secure_cookies: false,
             allow_signup: false,
             contact_url: None,
+            terms_url: None,
+            privacy_url: None,
             retention_days: 90,
             rules: Default::default(),
             collectors: Default::default(),
@@ -93,6 +98,7 @@ pub fn router(state: AppStateRef) -> Router {
         .route("/analyze", post(analyze))
         .route("/evaluate", post(run_evaluate))
         .route("/runs", get(list_runs))
+        .route("/analysis", get(get_analysis))
         .route("/privacy", get(get_privacy))
         .route("/privacy/rules", post(add_privacy_rule))
         .route("/privacy/rules/{id}", post(toggle_privacy_rule).delete(delete_privacy_rule))
@@ -586,6 +592,35 @@ async fn run_evaluate(State(state): State<AppStateRef>, Extension(CurrentSite(si
     Ok(Json(serde_json::to_value(evals).map_err(anyhow::Error::from)?))
 }
 
+#[derive(Deserialize)]
+struct FormatQuery {
+    format: Option<String>,
+}
+
+/// Whether it's worth analysing now. For hooks, which should stay quiet
+/// otherwise: `?format=text` gives the one-line message when it is and an
+/// empty body when it isn't; `?format=claude-hook` the same as Claude Code's
+/// hook output (`{"systemMessage": ...}`), which it shows to the person.
+async fn get_analysis(
+    State(state): State<AppStateRef>,
+    Extension(CurrentSite(site)): Extension<CurrentSite>,
+    Query(q): Query<FormatQuery>,
+) -> ApiResult<Response> {
+    let status = trace_core::readiness::status(&state.pool, &site).await?;
+    match q.format.as_deref() {
+        Some("text") => {
+            let body = if status.ready { format!("Trace: {}\n", status.message) } else { String::new() };
+            return Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], body).into_response());
+        }
+        Some("claude-hook") => {
+            let body = if status.ready { json!({ "systemMessage": format!("Trace: {}", status.message) }).to_string() } else { String::new() };
+            return Ok(([(header::CONTENT_TYPE, "application/json")], body).into_response());
+        }
+        _ => {}
+    }
+    Ok(Json(serde_json::to_value(status).map_err(anyhow::Error::from)?).into_response())
+}
+
 async fn list_runs(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>) -> ApiResult<Json<Value>> {
     let rows: Vec<(i64, String, Option<String>, i64, Option<i64>, i64, Option<String>)> = sqlx::query_as(
         "SELECT id, engine, model, started_at, finished_at, insights_created, error FROM analysis_runs
@@ -790,7 +825,7 @@ mod isolation_tests {
         ("GET", "insights"), ("GET", "insights/1"), ("GET", "insights/1/prompt"), ("POST", "insights/1/status"), ("POST", "insights/1/kpi"),
         ("POST", "analyze"), ("POST", "evaluate"), ("GET", "runs"), ("GET", "privacy"), ("POST", "privacy/rules"),
         ("POST", "privacy/rules/1"), ("DELETE", "privacy/rules/1"), ("POST", "privacy/test"),
-        ("GET", "onboarding"), ("POST", "onboarding/privacy-reviewed"),
+        ("GET", "onboarding"), ("POST", "onboarding/privacy-reviewed"), ("GET", "analysis"),
     ];
 
     async fn app() -> (tower::util::MapRequest<Router, fn(Request) -> Request>, AppStateRef, String) {

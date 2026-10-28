@@ -136,7 +136,7 @@ fn set_cookie(res: &mut Response, token: Option<&str>, secure: bool) {
 
 /// Paths about one website; everything else is about the account.
 fn is_site_path(path: &str) -> bool {
-    ["/project", "/config", "/digest", "/kpis", "/insights", "/analyze", "/evaluate", "/runs", "/privacy", "/onboarding"]
+    ["/project", "/config", "/digest", "/kpis", "/insights", "/analyze", "/analysis", "/evaluate", "/runs", "/privacy", "/onboarding"]
         .iter()
         .any(|p| path == *p || path.starts_with(&format!("{p}/")))
 }
@@ -307,6 +307,8 @@ async fn state_json(state: &AppStateRef, s: Option<&Session>) -> ApiResult<Value
     Ok(json!({
         "needs_setup": auth::total_users(&state.pool).await? == 0,
         "allow_signup": state.allow_signup,
+        "terms_url": state.terms_url,
+        "privacy_url": state.privacy_url,
         "user": s.map(|s| &s.user),
         "account": account,
         "step": s.and_then(|s| pending_step(s, require_mfa)),
@@ -753,7 +755,8 @@ async fn plan_and_usage(State(state): State<AppStateRef>, Extension(p): Extensio
         "monthly_ai_runs": usage.ai_runs,
     });
     Ok(Json(json!({
-        "limits": trace_core::plans::LIMITS.iter().map(|(key, label)| json!({
+        // Claude analyses only count on a server that runs Claude itself.
+        "limits": trace_core::plans::LIMITS.iter().filter(|(key, _)| *key != "monthly_ai_runs" || state.claude.is_some()).map(|(key, label)| json!({
             "key": key, "label": label, "limit": plan.effective.get(key), "used": used[*key],
         })).collect::<Vec<_>>(),
         "month": usage.month,

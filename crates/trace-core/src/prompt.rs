@@ -16,12 +16,13 @@ pub struct PromptContext<'a> {
 pub fn render(insight: &Insight, ctx: &PromptContext) -> String {
     let mut s = String::new();
     let _ = writeln!(s, "# Task: {}\n", insight.title);
-    let _ = writeln!(
-        s,
-        "You are working on {}. Trace, a behaviour-analytics agent, analysed real user sessions and found the problem below. \
-         Make the change in this codebase.\n",
-        ctx.product
-    );
+    // Aggregates, not sessions: say who found it and from what.
+    let found_by = if insight.source == "agent" {
+        "A coding agent analysed Trace's aggregated behaviour data (patterns across visits, never individual people) and found"
+    } else {
+        "Trace, privacy-first behaviour analytics, analysed aggregated behaviour (patterns across visits, never individual people) and found"
+    };
+    let _ = writeln!(s, "You are working on {}. {found_by} the problem below. Make the change in this codebase.\n", ctx.product);
 
     let _ = writeln!(s, "## Problem\n\n{}\n", insight.problem);
 

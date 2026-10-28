@@ -57,7 +57,9 @@ CREATE TABLE IF NOT EXISTS projects (
   slug TEXT,
   -- When someone confirmed the setup checklist's privacy review, and who.
   privacy_reviewed_at BIGINT,
-  privacy_reviewed_by TEXT
+  privacy_reviewed_by TEXT,
+  -- When the website was last analysed (an agent saving insights, or Trace's own analysis).
+  analysed_at BIGINT
 );
 
 -- The sites (origins) the collector is sending from: the dashboard's proof

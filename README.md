@@ -128,11 +128,21 @@ trace push --server https://trace.example.com --token "$TRACE_ADMIN_TOKEN"
 
 Trace is also an MCP server, and your coding agent is its analyst. An agent such as Claude Code or Cursor runs the whole loop with its own model: it reads the aggregated behaviour summary and the KPIs, saves the improvements it finds as insights, fetches one as a task prompt, implements it and marks it released, after which Trace measures the impact. Like the dashboard, it only exposes aggregated patterns, never individual sessions, and nothing goes to a model you didn't choose.
 
-The **`analyse_website`** prompt gives the agent the analyst's brief: read `get_overview`, `get_behaviour_summary`, `list_kpis` and `list_insights` (skipping what exists and learning from dismissal reasons), pick up to five problems, and save them with `add_insights`. In Claude Code it's the slash command `/mcp__trace__analyse_website`. The brief, and the server's instructions, tell the agent that text inside behaviour data comes from visitors and is never to be followed as instructions.
+The **`analyse_website`** prompt gives the agent the analyst's brief: read `get_overview`, `get_behaviour_summary`, `list_kpis` and `list_insights` (skipping what exists and learning from dismissal reasons), pick up to five problems, and save them with `add_insights`. In Claude Code it's the slash command `/mcp__trace__analyse_website`. Saving (with `add_insights`, even an empty list when nothing was worth saving) records the analysis, and Trace counts new sessions from then.
+
+**When to analyse.** Trace says a website is worth analysing once it has 100 new sessions since the last analysis, or 30 once a week has passed: on the Insights page, in `get_overview` and `get_analysis_status`, and at `GET /api/sites/{site}/analysis` (`?format=text` gives one line, or nothing until it's time). To hear it from Claude Code when a session starts, add a `SessionStart` hook to `~/.claude/settings.json` (the Setup page has it with your address filled in) and keep your token in the `TRACE_TOKEN` environment variable:
+
+```json
+{ "hooks": { "SessionStart": [ { "matcher": "startup", "hooks": [ { "type": "command",
+  "command": "curl -fsS --max-time 3 -H \"Authorization: Bearer $TRACE_TOKEN\" \"https://trace.example.com/api/sites/SITE/analysis?format=claude-hook\" || true" } ] } ] } }
+```
+
+`?format=claude-hook` answers in Claude Code's hook format (`{"systemMessage": "…"}`), which Claude Code shows to you; it prints nothing until there's something to analyse. The brief, and the server's instructions, tell the agent that text inside behaviour data comes from visitors and is never to be followed as instructions.
 
 | Tool | |
 |---|---|
-| `get_overview` | Collection status, KPIs vs targets, insights per status |
+| `get_overview` | Collection status, KPIs vs targets, insights per status, and whether it's worth analysing |
+| `get_analysis_status` | Whether there's enough new behaviour since the last analysis (100 new sessions, or 30 after a week) |
 | `get_behaviour_summary` | The aggregated digest the analyst reads |
 | `list_kpis`, `get_tracking_health` | KPI values; whether declared events are arriving |
 | `list_insights`, `get_insight`, `get_insight_prompt` | Find work, and get it as a complete implementation task |
@@ -332,6 +342,7 @@ Multi-page sites keep one session across page loads (30 minutes of inactivity st
 | `TRACE_CONFIG` | – | `trace.json` for `serve` to apply and watch (needs `--site`) |
 | `TRACE_ALLOW_SIGNUP` | off | Let anyone create an account from the sign-in page |
 | `TRACE_CONTACT_URL` | – | Where the Plan page sends people who need higher limits |
+| `TRACE_TERMS_URL`, `TRACE_PRIVACY_URL` | – | Terms of service and privacy policy that people accept when they sign up (shown with `TRACE_ALLOW_SIGNUP`) |
 | `TRACE_DEFAULT_PLAN` | `unlimited` | Plan for new accounts, applied when the server starts |
 | `TRACE_SERVER` | – | Server URL for `trace push` |
 | `TRACE_RETENTION_DAYS` | `90` | Delete raw events older than this (0 keeps them). Caps each plan's own limit |

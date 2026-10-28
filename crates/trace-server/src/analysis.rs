@@ -7,6 +7,12 @@ use trace_core::model::Project;
 use trace_core::{Pool, plans, usage};
 
 pub async fn run(pool: &Pool, site: &Project, claude: Option<&ClaudeConfig>, opts: &Options) -> Result<RunReport> {
+    let report = run_within_plan(pool, site, claude, opts).await?;
+    trace_core::readiness::mark_analysed(pool, site.id).await?;
+    Ok(report)
+}
+
+async fn run_within_plan(pool: &Pool, site: &Project, claude: Option<&ClaudeConfig>, opts: &Options) -> Result<RunReport> {
     let wants_claude = claude.is_some() && opts.engine != Engine::Heuristics;
     if !wants_claude {
         return trace_agent::analyze(pool, site.id, claude, opts).await;

@@ -29,12 +29,14 @@ server) is the reference; this follows it.
        TRACE_PUBLIC_URL=https://app.tracetells.com
        TRACE_CONTACT_URL=mailto:hello@tracetells.com
        TRACE_DEFAULT_PLAN=free
+       TRACE_TERMS_URL=https://tracetells.com/terms.html
+       TRACE_PRIVACY_URL=https://tracetells.com/privacy.html
        ENV
        ./deploy.sh
 
-   Add `ANTHROPIC_API_KEY=...` to turn on the Claude analyst (heuristics run
-   without it), and `TRACE_ALLOW_SIGNUP=1` to let people create accounts from
-   the sign-in page.
+   Add `TRACE_ALLOW_SIGNUP=1` to let people create accounts from the sign-in
+   page. Analysis runs in each customer's own coding agent over MCP; the hosted
+   server has no `ANTHROPIC_API_KEY`, so its own analysis is the built-in checks.
 
 3. Routing:
 
@@ -64,9 +66,9 @@ The schema is created and upgraded when the server starts; several starting at
 once take turns. Backups come from the host's nightly `backup.timer`, which
 dumps every database (see `/opt/infra/README.md`).
 
-## Before opening sign-ups
+## Sign-ups
 
-The hosted Free plan stores other people's visitor data, which makes the
-operator their processor: publish terms, a privacy policy and a data
-processing agreement (listing the host and, with the Claude analyst,
-Anthropic as subprocessors) before setting `TRACE_ALLOW_SIGNUP=1`.
+Sign-up is open with `TRACE_ALLOW_SIGNUP=1`; the sign-up form links the terms
+and privacy policy from `TRACE_TERMS_URL` and `TRACE_PRIVACY_URL`
+(`site/terms.html`, `site/privacy.html`). Keep both in step with what the
+service really does.

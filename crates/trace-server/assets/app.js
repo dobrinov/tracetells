@@ -309,14 +309,21 @@ async function copyPrompt(id, btn) {
 }
 
 async function renderInsights() {
-  const [insights, kpis] = await Promise.all([api("/insights"), api("/kpis")]);
+  const [insights, kpis, analysis] = await Promise.all([api("/insights"), api("/kpis"), api("/analysis").catch(() => null)]);
   kpiCache = kpis;
   const counts = Object.fromEntries(STATUSES.map(([s]) => [s, insights.filter((i) => i.status === s).length]));
   const shown = insights.filter((i) => i.status === insightTab);
   if (!shown.some((i) => i.id === focusedInsight)) focusedInsight = shown.length ? shown[0].id : null;
   view.innerHTML = `
     <h1>Insights</h1>
-    <p class="sub">What the analyst found in real behaviour, with the change it suggests. Copy one as a prompt for your coding agent, move it along as you work, and once it's released Trace measures whether it moved its KPI.</p>
+    <p class="sub">What your coding agent (or Trace's built-in checks) found in real behaviour, with the change it suggests. Copy one as a prompt, move it along as you work, and once it's released Trace measures whether it moved its KPI.</p>
+    ${
+      analysis
+        ? `<div class="analysis-status${analysis.ready ? " ready" : ""}"><strong>${analysis.ready ? "Ready for analysis" : "Analysis"}</strong> <span class="hint">${esc(analysis.message)}${
+            analysis.ready ? ` Not connected yet? <a href="#/setup">Connect your agent</a>.` : ""
+          }</span></div>`
+        : ""
+    }
     <div class="chips" role="tablist" aria-label="Status">
       ${STATUSES.map(
         ([s, label]) =>
@@ -652,7 +659,27 @@ function setupSnippets() {
 
 trace.track("purchase", { plan: "pro" });\ntrace.identify(currentUser.id);      // optional: tie sessions to your user id\ntrace.page("/checkout/:step");       // optional: name the current route yourself\n                                        // (set pageviews: "manual" to turn off automatic pageviews)`;
   const push = `trace check\ntrace push --server ${location.origin} --site ${project.slug} --token $TRACE_TOKEN`;
-  return { installs, mcpCommand, mcpJson, custom, push };
+  // A Claude Code hook that says, when a session starts, whether it's worth analysing.
+  const analysisHook = JSON.stringify(
+    {
+      hooks: {
+        SessionStart: [
+          {
+            matcher: "startup",
+            hooks: [
+              {
+                type: "command",
+                command: `curl -fsS --max-time 3 -H "Authorization: Bearer $TRACE_TOKEN" "${location.origin}/api/sites/${project.slug}/analysis?format=claude-hook" || true`,
+              },
+            ],
+          },
+        ],
+      },
+    },
+    null,
+    2
+  );
+  return { installs, mcpCommand, mcpJson, custom, push, analysisHook };
 }
 
 // A task a coding agent can follow to install the collector.
@@ -674,7 +701,7 @@ It asks visitors for consent first (data-consent="banner"): a small bar with All
 
 async function renderSetup() {
   const runs = await api("/runs");
-  const { installs, mcpCommand, mcpJson, custom } = setupSnippets();
+  const { installs, mcpCommand, mcpJson, custom, analysisHook } = setupSnippets();
   let installTab = store("trace_install") || "site";
   if (!installs[installTab]) installTab = "site";
   view.innerHTML = `
@@ -706,6 +733,9 @@ async function renderSetup() {
     <p class="hint">Other MCP clients:</p>
     <div class="copy-row"><pre class="snippet">${esc(mcpJson)}</pre><button data-copy="${esc(mcpJson)}">Copy</button></div>
     <p class="hint">Then ask it to analyse: in Claude Code run <code>/mcp__trace__analyse_website</code> (Trace's analysis prompt); in other clients pick the <strong>analyse_website</strong> prompt, or ask "Analyse my site with Trace and save the insights".</p>
+    <h3>Get told when it's time to analyse</h3>
+    <p class="hint">Trace says a website is worth analysing once it has 100 new sessions since the last analysis (30 after a week); the Insights page shows it too. To hear it from Claude Code each time you start it, add this to <code>~/.claude/settings.json</code> and put your token in the <code>TRACE_TOKEN</code> environment variable (in your shell profile, not in the file). It prints nothing until there's something to analyse.</p>
+    <div class="copy-row"><pre class="snippet">${esc(analysisHook)}</pre><button data-copy="${esc(analysisHook)}">Copy</button></div>
 
     ${
       can("admin")
@@ -715,11 +745,11 @@ async function renderSetup() {
         : ""
     }
 
-    <h2>5. Analyst</h2>
+    <h2>5. Analysis runs</h2>
     <p class="hint">${
       project.claude
-        ? `The analyst uses Claude (<code>${esc(project.claude.model)}</code>, effort <code>${esc(project.claude.effort)}</code>). If Claude is unavailable, it falls back to the built-in heuristics.`
-        : `No <code>ANTHROPIC_API_KEY</code> is set, so the analyst uses built-in heuristics: rage clicks, dead clicks, errors and form drop-off. Set the key and restart for richer, KPI-aware insights.`
+        ? `Besides your agent, this server analyses with Claude (<code>${esc(project.claude.model)}</code>, effort <code>${esc(project.claude.effort)}</code>), falling back to the built-in checks if Claude is unavailable.`
+        : `Your coding agent does the analysis (above). Trace's own runs are the built-in checks: rage clicks, dead clicks, errors and form drop-off.`
     }</p>
     <p class="hint">From the command line: <code>trace analyze</code>, <code>trace evaluate</code>, <code>trace prompt &lt;id&gt; | claude</code>.</p>
     ${table(
@@ -1021,6 +1051,7 @@ function renderSignup() {
       <label class="field">Email <input name="email" type="email" autocomplete="username" required></label>
       <label class="field">Password <input name="password" type="password" autocomplete="new-password" minlength="10" required>
         <span class="hint">At least 10 characters.</span></label>
+      ${legalLine()}
       <button class="primary" type="submit">Create account</button>
     </form>
     <p class="hint">Already have an account? <a href="#/" id="to-login">Sign in</a></p>${PATTERNS_NOT_PEOPLE}`);
@@ -1129,6 +1160,14 @@ const CREATE_BY_HAND = {
   systemd: `trace user create --email you@example.com --name "Your name"`,
   terminal: `trace user create --email you@example.com --name "Your name"`,
 };
+
+/// "By creating an account you agree to…", when the operator publishes terms.
+function legalLine() {
+  if (!auth?.terms_url) return "";
+  const link = (url, text) => `<a href="${esc(url)}" target="_blank" rel="noopener">${text}</a>`;
+  const privacy = auth.privacy_url ? ` and that your data is handled as the ${link(auth.privacy_url, "privacy policy")} says` : "";
+  return `<p class="hint">By creating an account you agree to the ${link(auth.terms_url, "terms of service")}${privacy}.</p>`;
+}
 
 function renderWelcome(code) {
   if (!code) {

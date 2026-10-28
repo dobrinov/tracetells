@@ -13,6 +13,7 @@ pub mod model;
 pub mod onboarding;
 pub mod plans;
 pub mod privacy;
+pub mod readiness;
 pub mod prompt;
 pub mod retention;
 pub mod usage;

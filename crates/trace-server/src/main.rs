@@ -67,6 +67,12 @@ enum Command {
         /// Where people ask for higher limits, e.g. mailto:you@example.com or a form's URL.
         #[arg(long, env = "TRACE_CONTACT_URL")]
         contact_url: Option<String>,
+        /// Terms of service that people accept when they sign up (shown with --allow-signup).
+        #[arg(long, env = "TRACE_TERMS_URL")]
+        terms_url: Option<String>,
+        /// The privacy policy shown next to the terms at sign-up.
+        #[arg(long, env = "TRACE_PRIVACY_URL")]
+        privacy_url: Option<String>,
         /// Also serve the instrumented Stride demo shop on this address, e.g. 127.0.0.1:4319.
         #[arg(long)]
         demo_site: Option<SocketAddr>,
@@ -257,7 +263,19 @@ async fn run() -> Result<()> {
 
     match cli.command {
         Command::Init { .. } => unreachable!("handled before opening the database"),
-        Command::Serve { addr, admin_token, evaluate_every, retention_days, public_url, allow_signup, contact_url, demo_site, config: config_file } => {
+        Command::Serve {
+            addr,
+            admin_token,
+            evaluate_every,
+            retention_days,
+            public_url,
+            allow_signup,
+            contact_url,
+            terms_url,
+            privacy_url,
+            demo_site,
+            config: config_file,
+        } => {
             if let Some(path) = config_file {
                 let target = db::resolve_site(&pool, site).await.context("--config needs a website (--site)")?;
                 // Fail fast on a bad file at startup; later edits are applied as they're saved.
@@ -322,6 +340,8 @@ async fn run() -> Result<()> {
             state.secure_cookies = public_url.starts_with("https://");
             state.allow_signup = allow_signup;
             state.contact_url = contact_url;
+            state.terms_url = terms_url;
+            state.privacy_url = privacy_url;
             state.retention_days = retention_days;
             let app = api::router(Arc::new(state));
             // Website paths are rewritten before routing, so the rewrite wraps the whole router.
