@@ -197,6 +197,12 @@ enum OperatorAction {
     Revoke { email: String },
     /// List operators.
     List,
+    /// Move an account to another plan (free, friend, owner, unlimited or one you added).
+    SetPlan {
+        plan: String,
+        #[arg(long)]
+        account: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -691,6 +697,12 @@ async fn operator_command(pool: &Pool, action: OperatorAction) -> Result<()> {
             for u in auth::operators(pool).await? {
                 println!("{:<32} 2FA {}", u.email, if u.totp_enabled { "on" } else { "off (needed for the operator area)" });
             }
+        }
+        OperatorAction::SetPlan { plan, account } => {
+            let a = resolve_account(pool, account.as_deref()).await?;
+            trace_core::plans::set_account_plan(pool, a.id, &plan).await?;
+            auth::audit(pool, a.id, "cli", "operator.plan_changed", &format!("{} → {plan}", a.name)).await?;
+            println!("{} is now on the {plan} plan.", a.name);
         }
     }
     Ok(())

@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - "site/**"
+      - "crates/trace-server/assets/shop/**"
+      - "deploy/build-site.sh"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -25,8 +28,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions/configure-pages@v5
+      # The marketing site plus the Stride demo shop at /demo. Write keys and
+      # public links are public by nature: they're in every page that uses them.
+      - name: Build
+        run: deploy/build-site.sh _site
+        env:
+          TRACE_URL: https://app.tracetells.com
+          SHOP_WRITE_KEY: SHOP_WRITE_KEY_TBD
+          SHOP_PUBLIC_URL: SHOP_PUBLIC_URL_TBD
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: site
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4
