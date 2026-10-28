@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Trace: analytics for the agentic era</title>
-<meta name="description" content="Trace is open-source, privacy-first web analytics. It turns how people use your site, in aggregate, into insights tied to your KPIs, hands each one to your coding agent as a ready prompt, and measures whether the change worked.">
+<title>Trace: find what's broken on your site, fix it with your agent</title>
+<meta name="description" content="Trace is analytics, frustration signals and error tracking in one script, without recording anyone. Your coding agent reads it over MCP, fixes what holds your visitors back, and Trace tells you whether your numbers moved. Open source.">
 <link rel="canonical" href="https://tracetells.com/">
 <meta property="og:url" content="https://tracetells.com/">
 <meta property="og:type" content="website">
@@ -70,8 +70,8 @@
     <div class="wrap hero-inner">
       <div class="hero-copy">
         <span class="pill">Patterns, not people</span>
-        <h1 class="display">Web analytics that tells your coding agent what to fix next.</h1>
-        <p class="hero-lede">Trace watches how people use your site, in aggregate. Your coding agent reads that over MCP with its own model, finds what to fix and makes the change, and Trace measures whether it worked.</p>
+        <h1 class="display">Find what's broken on your site. Let your agent fix it. Know it worked.</h1>
+        <p class="hero-lede">Trace is analytics, frustration signals and error tracking in one script, without recording anyone. Your coding agent reads it over MCP, fixes what holds your visitors back, and Trace tells you whether your numbers moved.</p>
         <div class="actions">
           <a data-trace="start-hero" data-trace-props='{"place":"hero"}' class="btn btn-primary" href="https://app.tracetells.com/#/signup" data-app-link data-trace-event="start_free">Start free, hosted</a>
           <a data-trace="code-hero" data-trace-props='{"place":"hero"}' class="btn btn-ink" href="https://github.com/dobrinov/tracetells" data-trace-event="self_host">Self-host the open source edition</a>
@@ -96,8 +96,34 @@
     </div>
   </section>
 
+  <section id="what" class="wrap section" aria-labelledby="what-title">
+    <h2 id="what-title" class="display section-title">One script instead of three tools</h2>
+    <div class="grid-auto features" style="--min: 240px">
+      <div class="card">
+        <span class="eyebrow">Like product analytics</span>
+        <h3>Your goals, measured</h3>
+        <span class="card-text">Events, funnels and KPIs with targets: sign-ups, checkout conversion, whatever your site is for.</span>
+      </div>
+      <div class="card">
+        <span class="eyebrow">Like session tools, without the recordings</span>
+        <h3>Where people get stuck</h3>
+        <span class="card-text">Rage clicks, dead clicks, forms people give up on, pages they leave. Counted across visitors, never replayed.</span>
+      </div>
+      <div class="card">
+        <span class="eyebrow">Like error tracking</span>
+        <h3>Errors your visitors hit</h3>
+        <span class="card-text">Exceptions, failed requests and missing files, with how many sessions each one reached.</span>
+      </div>
+      <div class="card">
+        <span class="eyebrow">What none of them do</span>
+        <h3>Did the fix work?</h3>
+        <span class="card-text">Mark a change released, and Trace compares the KPI before and after, with a significance test.</span>
+      </div>
+    </div>
+  </section>
+
   <section id="how" class="wrap section how" aria-labelledby="how-title">
-    <h2 id="how-title" class="display section-title">Trace measures, your agent improves, Trace checks</h2>
+    <h2 id="how-title" class="display section-title">Trace measures, your agent fixes, Trace checks</h2>
 
     <!-- The diagram is drawn for sighted desktop readers; the list below says the same and is what phones and screen readers get. -->
     <div class="lanes" aria-hidden="true">
@@ -196,15 +222,6 @@
         <span class="card-text">Your agent reads the aggregated summary and KPIs, saves what it finds as insights, implements one and marks it released. Trace measures the impact. Aggregates only, scoped to one website.</span>
         <pre class="snippet snippet-wrap">claude mcp add --transport http trace \
   https://app.tracetells.com/mcp</pre>
-      </div>
-      <div class="card">
-        <h3>Errors you would otherwise miss</h3>
-        <span class="card-text">Exceptions, unhandled rejections, framework-caught console errors, failed requests and missing files, grouped into one insight per cause.</span>
-        <ul class="error-list">
-          <li><span>GET /api/reviews/:id → 500</span><strong>226 sessions</strong></li>
-          <li><span>TypeError on /pricing</span><strong>107 sessions</strong></li>
-          <li><span>Rage clicks on Pay now</span><strong>60 sessions</strong></li>
-        </ul>
       </div>
     </div>
   </section>
