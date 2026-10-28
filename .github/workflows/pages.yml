@@ -34,8 +34,8 @@ jobs:
         run: deploy/build-site.sh _site
         env:
           TRACE_URL: https://app.tracetells.com
-          SHOP_WRITE_KEY: SHOP_WRITE_KEY_TBD
-          SHOP_PUBLIC_URL: SHOP_PUBLIC_URL_TBD
+          SHOP_WRITE_KEY: fd18072a76b648048a5ea5b1ac274b10
+          SHOP_PUBLIC_URL: https://app.tracetells.com/p/uDVoTzUDXjSybPZF5ANLG78-USVvW2TU
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site

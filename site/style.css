@@ -139,6 +139,8 @@ pre { margin: 0; }
 .hero-lede { margin: 0; font-size: 19px; line-height: 1.55; color: #c3cad8; max-width: 560px; }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .hero .actions { padding-top: 8px; }
+.hero-demo { margin: 0; color: #c3cad8; font-size: 15px; }
+.hero-demo a { color: #ffffff; text-decoration: underline; text-underline-offset: 3px; }
 
 .terminal {
   background: #0b0e15; border: 1px solid #2a3242; border-radius: 16px; padding: 22px;

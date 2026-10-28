@@ -4,55 +4,95 @@
     "start_free": "Clicked a Start free button, which opens sign-up on app.tracetells.com. Props: place (header, hero, pricing)",
     "self_host": "Clicked through to the code on GitHub to self-host it. Props: place (header, hero, pricing, closing)",
     "contact": "Clicked Contact about a paid plan (opens an email)",
-    "read_docs": "Opened the documentation (the README on GitHub). Props: topic (privacy, performance, install, contributing, security)"
+    "read_docs": "Opened the documentation (the README on GitHub). Props: topic (privacy, performance, install, contributing, security)",
+    "open_demo": "Opened the demo shop. Props: place (hero, footer)",
+    "view_public": "Opened a public view of what Trace recorded. Props: view (shop, site)"
   },
   "kpis": {
     "start_free_rate": {
       "name": "Start free clicks",
       "description": "Share of sessions that click a Start free button: the main goal of the site",
-      "session_rate": { "event": "start_free" },
+      "session_rate": {
+        "event": "start_free"
+      },
       "goal": "increase",
       "target": "5%"
     },
     "self_host_rate": {
       "name": "Self-host interest",
       "description": "Share of sessions that go to the code on GitHub",
-      "session_rate": { "event": "self_host" },
+      "session_rate": {
+        "event": "self_host"
+      },
       "goal": "increase",
       "target": "8%"
+    },
+    "demo_reach": {
+      "name": "Demo reach",
+      "description": "Share of sessions that open the demo shop: people who want to see it working before signing up",
+      "session_rate": {
+        "event": "open_demo"
+      },
+      "goal": "increase",
+      "target": "15%"
     },
     "pricing_reach": {
       "name": "Pricing reach",
       "description": "Of sessions that view the home page, the share that go on to the pricing page",
-      "conversion": { "from": { "pageview": "/" }, "to": { "pageview": "/pricing.html" } },
+      "conversion": {
+        "from": {
+          "pageview": "/"
+        },
+        "to": {
+          "pageview": "/pricing.html"
+        }
+      },
       "goal": "increase",
       "target": "20%"
     },
     "pricing_to_start": {
       "name": "Pricing to sign-up",
       "description": "Of sessions that view the pricing page, the share that then click Start free: whether the plans convince",
-      "conversion": { "from": { "pageview": "/pricing.html" }, "to": { "event": "start_free" } },
+      "conversion": {
+        "from": {
+          "pageview": "/pricing.html"
+        },
+        "to": {
+          "event": "start_free"
+        }
+      },
       "goal": "increase",
       "target": "15%"
     },
     "paid_interest": {
       "name": "Paid plan interest",
       "description": "Of sessions that view the pricing page, the share that click Contact about a paid plan",
-      "conversion": { "from": { "pageview": "/pricing.html" }, "to": { "event": "contact" } },
+      "conversion": {
+        "from": {
+          "pageview": "/pricing.html"
+        },
+        "to": {
+          "event": "contact"
+        }
+      },
       "goal": "increase",
       "target": "2%"
     },
     "docs_interest": {
       "name": "Reads the docs",
       "description": "Share of sessions that open the documentation: people evaluating it seriously",
-      "session_rate": { "event": "read_docs" },
+      "session_rate": {
+        "event": "read_docs"
+      },
       "goal": "increase",
       "target": "10%"
     },
     "js_errors": {
       "name": "Sessions with errors",
       "description": "Share of sessions with any exception, console error, failed request or missing file",
-      "session_rate": { "error": "*" },
+      "session_rate": {
+        "error": "*"
+      },
       "goal": "decrease",
       "target": "1%"
     }

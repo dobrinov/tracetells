@@ -188,6 +188,7 @@ The **`analyse_website`** prompt gives the agent the analyst's brief: read `get_
 | `add_site`, `get_install_snippet`, `get_setup_status` | Add a website (admins), get its snippet with instructions, see whether events arrive and what's left to set up |
 | `check_config`, `push_config` | Validate a `trace.json`; apply it (admins) |
 | `get_privacy_rules`, `add_privacy_rule`, `remove_privacy_rule` | What's protected, with rule ids; add or remove the website's own rules (admins) |
+| `public_view` | Whether the website has a public, read-only link; publish, replace or withdraw it (admins) |
 | `confirm_privacy_review` | Record the person's privacy review, only on their word |
 | `list_sites` | The account's websites |
 
@@ -248,6 +249,14 @@ Everything that works on data takes a website:
 - **CLI:** `--site stride` (or `TRACE_SITE`) on `analyze`, `insights`, `prompt`, `status`, `push` and `serve --config`. With a single website it can be left out; with several, the command lists them. `evaluate` runs every website unless you name one. `trace site list|add|remove` manages them from the server.
 - **HTTP API:** `/api/sites/{site}/…`, e.g. `GET /api/sites/stride/insights`, or send the `X-Trace-Site` header. The old `/api/…` paths still work for an account with one website (answered with a `Deprecation` header) and return `400 site_required` once there are several.
 - **MCP:** the `site` argument, above.
+
+**Public view.** An owner or admin can publish a read-only link to a website's analytics, for showing it to a client, a team or the world. tracetells.com does this for itself and for its demo shop.
+- **Where:** Setup → Public view, the `public_view` MCP tool, or `trace site publish SLUG` on the server.
+- **What it shows:** anyone with the link (`/p/…`) sees Insights, KPIs and Behaviour. Everything is aggregated, and every row built from fewer than 5 sessions is left out, so a quiet website can't show one visitor's path.
+- **What it never shows:** settings, people, tokens, the write key, privacy rules, where the website collects from, events it didn't declare, or dismissed insights and their reasons. Nothing in it can change anything.
+- **Changing it:** **Replace link** makes the old link stop working at once, and **Make private** withdraws it. Every change is in the activity log.
+
+**The live demo.** The Stride shop runs in two places from one source (`crates/trace-server/assets/shop/`): at the root under `trace serve --demo-site`, and at `tracetells.com/demo` on GitHub Pages. For GitHub Pages, `deploy/build-site.sh` builds the marketing site plus the shop, with a base path, static review files (one fetch in three asks for a file that doesn't exist: a real failed request) and a `404.html` that sends deep links back into the shop.
 
 ## Plans and limits
 
@@ -401,9 +410,10 @@ trace [--site S] ...
            analyze [--engine auto|claude|heuristics] [--days 14] [--max-insights 5] | evaluate
            insights [--status new] | prompt <id> | status <id> <status> [--reason ...] [--at TIME] | demo
            site list | site add NAME [--account A] | site remove SLUG --confirm NAME
+           site publish SLUG [--account A] [--replace | --withdraw]     # the public, read-only view
            user create --email E [--role owner|admin|user] [--account A] | user list
            user reset-password --email E | user reset-mfa --email E
-           operator grant EMAIL | operator revoke EMAIL | operator list
+           operator grant EMAIL | operator revoke EMAIL | operator list | operator set-plan PLAN --account A
            mcp [--account A]    # MCP server on stdio for a local agent; remote agents use POST /mcp
 ```
 
