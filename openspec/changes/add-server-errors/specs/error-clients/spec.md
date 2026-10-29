@@ -35,7 +35,7 @@ Each client SHALL send only: class, message, backtrace frames (file relative to 
 - **THEN** the route sent is `/users/:id/settings`; in one that doesn't, ids in the path are replaced before sending
 
 ### Requirement: Clients never harm the host application
-Each client SHALL send from the background in batches, with a bounded queue and timeouts, and SHALL NOT block request handling. It SHALL swallow its own failures, drop errors when the queue is full or Trace is unreachable, and back off on 429 and 5xx responses. Repeats of the same error within a minute SHALL be sent as one error with a count. On graceful shutdown it SHALL try to flush within two seconds.
+Each client SHALL send from the background in batches, with a bounded queue and timeouts, and SHALL NOT block request handling. It SHALL swallow its own failures, drop errors when the queue is full or Trace is unreachable, and back off on 429 and 5xx responses. The first occurrence of an error SHALL be sent without waiting; repeats of it within the next minute SHALL be sent once, as a count. On graceful shutdown it SHALL try to flush within two seconds.
 
 #### Scenario: Trace is down
 - **WHEN** Trace answers 503 or the network is unreachable
@@ -43,7 +43,7 @@ Each client SHALL send from the background in batches, with a bounded queue and 
 
 #### Scenario: An error storm
 - **WHEN** the same error is raised 10,000 times in a minute
-- **THEN** the client sends it as one error with a count of 10,000
+- **THEN** the client sends it twice: the first occurrence at once, then the other 9,999 as one error with that count
 
 ### Requirement: Clients are documented and versioned with Trace
 Each client SHALL live in this repository under `clients/`, under the MIT licence, with a README covering install, framework setup, configuration and exactly what it sends. Each SHALL have tests that fail if a forbidden field is sent.

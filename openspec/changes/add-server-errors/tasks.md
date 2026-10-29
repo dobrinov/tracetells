@@ -34,10 +34,10 @@
 
 ## 5. Rust client (`clients/rust`, crate `tracetells`)
 
-- [ ] 5.1 Config from code and `TRACE_*` env; no-op without a key; background sender with queue, batching, repeat folding, backoff, flush on drop
-- [ ] 5.2 Panic hook (chaining the previous one), `tracing` layer (feature), `tower` layer recording axum's `MatchedPath` and status (feature), `report(&err)`
-- [ ] 5.3 Scrubbing and frame cleaning from the shared test vectors; tests that a forbidden field is never sent, against a local test server
-- [ ] 5.4 README and crate docs
+- [x] 5.1 Config from code and `TRACE_*` env; no-op without a key; background sender with queue, batching, repeat folding, backoff, flush on drop
+- [x] 5.2 Panic hook (chaining the previous one), `tracing` layer (feature), `tower` layer recording axum's `MatchedPath` and status (feature), `report(&err)`
+- [x] 5.3 Scrubbing and frame cleaning from the shared test vectors; tests that a forbidden field is never sent, against a local test server
+- [x] 5.4 README and crate docs
 
 ## 6. Node.js client (`clients/node`, package `@tracetells/node`)
 

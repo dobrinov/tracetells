@@ -1,0 +1,40 @@
+[package]
+name = "tracetells"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "Report server errors to Trace (tracetells.com): error facts only, scrubbed, in the background"
+repository = "https://github.com/dobrinov/tracetells"
+readme = "README.md"
+keywords = ["errors", "error-tracking", "monitoring", "privacy", "trace"]
+categories = ["development-tools::debugging"]
+
+[features]
+default = []
+# A tracing layer that reports events logged at error level.
+tracing = ["dep:tracing", "dep:tracing-subscriber"]
+# A tower layer for HTTP services: route, method and status for errors and panics in handlers.
+tower = ["dep:tower", "dep:http", "dep:pin-project-lite"]
+# Read axum's matched route (e.g. /orders/{id}) in the tower layer.
+axum = ["tower", "dep:axum"]
+
+[dependencies]
+regex = "1"
+serde_json = "1"
+ureq = { version = "2", default-features = false, features = ["tls"] }
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"], optional = true }
+tower = { version = "0.5", default-features = false, optional = true }
+http = { version = "1", optional = true }
+pin-project-lite = { version = "0.2", optional = true }
+axum = { version = "0.8", default-features = false, features = ["matched-path"], optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+axum = { version = "0.8", default-features = false, features = ["matched-path", "tokio", "http1"] }
+tower = { version = "0.5", features = ["util"] }
+
+[[test]]
+name = "sends_only_error_facts"
+required-features = ["axum"]
