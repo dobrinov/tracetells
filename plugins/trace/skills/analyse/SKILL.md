@@ -11,7 +11,7 @@ Use the `trace` MCP tools. If the account has several websites, ask which one (o
 
 0. Call `get_analysis_status`. If it isn't ready, say how many sessions it has and stop, unless the person wants to go ahead anyway.
 1. Call `get_overview` for the KPIs against their targets.
-2. Call `get_funnels`. In each funnel, `biggest_drop` is the step where the most sessions are lost: that is where more conversion is won. Compare it with the window before and across devices.
+2. Call `get_funnels`. In each funnel, `biggest_drop` is the step where the most sessions are lost (null until someone finishes the funnel): that is where more conversion is won. Compare it with the window before and across devices.
 3. Call `get_behaviour_summary` with `{"days": 14}`: pages with exit rates, scroll and time, paths, rage and dead clicks, errors, form completion and custom events. It holds aggregates only, never individual people.
 4. Call `list_kpis` and `list_insights`. Don't repeat an insight that exists in any status, and read the `dismiss_reason` of dismissed ones: they say what this team doesn't want.
 5. Dig into why with `query_behaviour`: on the page people leave from, look at exits, scroll, rage and dead clicks, errors and forms, by device and by day, compared with the window before. Pick up to 5 problems, the ones that lose the most sessions in a funnel first, then those that keep a KPI furthest from its target. For each, be specific: the page, the element, what people do, and a concrete change that gets more of them to the next step. Read this codebase to find the element and the fix. Prefer fixes a developer can ship in a day.

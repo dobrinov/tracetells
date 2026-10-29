@@ -57,7 +57,7 @@ Don't invent behaviour you can't see.
 - Put the KPIs first. Prefer insights that plausibly move a KPI, especially one that is off target or getting worse. \
 Set `kpi_id` to the KPI the insight is meant to move, or null if none fits.
 - Look at the funnels next. Each lists sessions per step in order and `biggest_drop`, the step where the most sessions \
-are lost: that is where more conversion is won. Find what stops people on the page before that step (exits, rage and \
+are lost (null until someone finishes the funnel): that is where more conversion is won. Find what stops people on the page before that step (exits, rage and \
 dead clicks, errors, forms, a device that converts far worse) and propose the change that gets more of them through. \
 For a funnel step, add evidence for its conversion: the conversion measure from the step before to the step, using \
 their `match`, with goal increase.

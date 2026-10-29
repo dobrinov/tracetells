@@ -226,7 +226,7 @@ pub fn tools() -> Vec<Value> {
             "Funnels",
             "The website's funnels: steps people take in order within one visit, declared in trace.json or recognised from conversion KPIs that chain. \
              For each: sessions reaching every step, the share of the step before, the window before for comparison, conversion by device, and \
-             biggest_drop, the step where the most sessions are lost. Each step carries its `match`, so a step's conversion (from the step before \
+             biggest_drop, the step where the most sessions are lost (null until someone finishes the funnel). Each step carries its `match`, so a step's conversion (from the step before \
              to it) can be measured as evidence with query_behaviour's conversion measure. Aggregates only.",
             json!({ "days": days }),
             &[],

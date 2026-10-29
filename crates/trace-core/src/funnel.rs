@@ -274,7 +274,8 @@ pub struct FunnelReport {
     /// First step to last.
     pub conversion: Option<f64>,
     pub previous_conversion: Option<f64>,
-    /// Where the most sessions are lost: the place to look first.
+    /// Where the most sessions are lost: the place to look first. Only named
+    /// once someone finished the funnel; before that, every step is a drop.
     pub biggest_drop: Option<Drop>,
     pub by_device: Vec<DeviceRow>,
 }
@@ -313,6 +314,7 @@ pub async fn report(pool: &Pool, project_id: i64, days: u32) -> Result<Vec<Funne
         let last = steps.len().saturating_sub(1);
         let biggest_drop = steps
             .iter()
+            .filter(|_| now.total[last] > 0)
             .enumerate()
             .skip(1)
             .filter(|(_, s)| s.lost > 0)
@@ -449,6 +451,12 @@ mod tests {
         assert_eq!((drop.to_step, drop.from_label.as_str(), drop.to_label.as_str(), drop.lost), (2, "/", "/pricing", 3));
         let mobile = r.by_device.iter().find(|d| d.device == "mobile").unwrap();
         assert_eq!(mobile.sessions, [3, 0, 0]);
+
+        // Until someone finishes, there's no drop to name: every step loses everyone.
+        sqlx::query("DELETE FROM events WHERE project_id = $1 AND name = 'signup'").bind(site.id).execute(&pool).await.unwrap();
+        let r = &report(&pool, site.id, 14).await.unwrap()[0];
+        assert_eq!((r.steps[2].sessions, r.conversion), (0, Some(0.0)));
+        assert!(r.biggest_drop.is_none());
         crate::db::drop_test_target(&path).await;
     }
 }

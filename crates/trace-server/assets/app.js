@@ -655,12 +655,13 @@ function funnelCard(f) {
     </div>
     ${f.description && f.source !== "kpis" ? `<p class="hint">${esc(f.description)}</p>` : ""}
     <ol class="funnel-steps">${steps}</ol>
+    ${first && !f.steps[f.steps.length - 1].sessions ? `<p class="hint">No one has finished this funnel in ${f.days} days yet, so there's no biggest drop to point at.</p>` : ""}
     ${devices}
   </div>`;
 }
 
 function funnelsSection(funnels) {
-  const intro = `<p class="sub">Steps people take in order within one visit, over the last 14 days. Each step counts the sessions that reached it after the step before; the biggest drop is where more conversion is won, and where analysis looks first.</p>`;
+  const intro = `<p class="sub">Steps people take in order within one visit, over the last 14 days. Each step counts the sessions that reached it after the step before; once someone finishes, the biggest drop is where more conversion is won, and where analysis looks first.</p>`;
   if (!funnels.length)
     return `<h2>Funnels</h2>${intro}<div class="card"><p>No funnels yet. Declare them in <code>trace.json</code>, or define conversion KPIs whose goal is the next one's start and Trace links them up.</p>
       <div class="copy-row"><pre class="snippet">${esc(FUNNEL_EXAMPLE)}</pre><button data-copy="${esc(FUNNEL_EXAMPLE)}">Copy</button></div></div>`;

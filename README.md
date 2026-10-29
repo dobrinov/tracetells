@@ -171,7 +171,7 @@ A funnel is the steps people take in order within one visit, and where they stop
 
 Each step is an event matcher, like a KPI's, and a funnel has 2 to 8 of them. A step counts the sessions that reached it after the step before, in the same session. Trace also **recognises funnels from your KPIs**: conversion KPIs that chain (`/` → `/pricing` and `/pricing` → `signup`) become the funnel `/` → `/pricing` → `signup`, unless a declared funnel already covers it.
 
-The **KPIs** page shows every funnel: sessions per step, the share that continued from the step before, the same over the previous window, conversion by device, and the **biggest drop**, the step where the most sessions are lost. That step is where analysis looks first: `get_funnels` over MCP returns the same, the analysis prompt and Trace's own analysis start from it, and an insight about a step carries that step's conversion as its evidence, so the release is judged on it.
+The **KPIs** page shows every funnel: sessions per step, the share that continued from the step before, the same over the previous window, conversion by device, and the **biggest drop**, the step where the most sessions are lost, named once someone has finished the funnel. That step is where analysis looks first: `get_funnels` over MCP returns the same, the analysis prompt and Trace's own analysis start from it, and an insight about a step carries that step's conversion as its evidence, so the release is judged on it.
 
 ## MCP: use Trace from your coding agent
 
