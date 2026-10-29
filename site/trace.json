@@ -6,7 +6,8 @@
     "contact": "Clicked Contact about a paid plan (opens an email)",
     "read_docs": "Opened the documentation (the README on GitHub). Props: topic (privacy, performance, install, contributing, security)",
     "open_demo": "Opened the demo shop. Props: place (hero, footer)",
-    "view_public": "Opened a public view of what Trace recorded. Props: view (shop, site)"
+    "view_public": "Opened a public view of what Trace recorded. Props: view (shop, site)",
+    "sign_in": "Clicked Sign in in the header: already has an account"
   },
   "kpis": {
     "start_free_rate": {
@@ -183,6 +184,14 @@
           "match": [
             {
               "event": "contact"
+            }
+          ]
+        },
+        "sign_in": {
+          "name": "Sign in",
+          "match": [
+            {
+              "event": "sign_in"
             }
           ]
         }
