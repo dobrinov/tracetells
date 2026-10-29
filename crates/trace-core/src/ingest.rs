@@ -99,7 +99,7 @@ pub async fn store(
     // A developer opening the site on their own machine isn't a visitor: once a
     // website sends from a real address, local ones are left out. A website
     // that has only ever sent from local addresses (trying Trace out) keeps them.
-    if let Some(origin) = origin.and_then(referrer_origin).filter(|o| crate::privacy::is_local_origin(o)) {
+    if origin.and_then(referrer_origin).is_some_and(|o| crate::privacy::is_local_origin(&o)) {
         let sources: Vec<String> = sqlx::query_scalar("SELECT origin FROM event_sources WHERE project_id = $1").bind(project_id).fetch_all(pool).await?;
         if sources.iter().any(|s| !crate::privacy::is_local_origin(s)) {
             return Ok(0);
