@@ -16,14 +16,14 @@ use trace_core::{Pool, config, db, insights, kpi};
 
 const SHOP_HTML: &str = include_str!("../assets/shop/index.html");
 const SHOP_JS: &str = include_str!("../assets/shop/shop.js");
-/// The shop's own trace.json, as it would live in the shop's repository.
 /// The shop's trace.json, with `{{BASE}}` where its pages' address starts: empty
 /// here, `/demo` on tracetells.com (where `deploy/build-site.sh` serves it).
 pub const SHOP_CONFIG_TEMPLATE: &str = include_str!("../assets/shop/trace.json");
 
 /// The shop's trace.json for a shop served at `base` ("" or e.g. "/demo").
 pub fn shop_config(base: &str) -> String {
-    SHOP_CONFIG_TEMPLATE.replace("{{BASE}}", base)
+    // The home page is "/" at the root but "/demo" below it: the collector drops a trailing slash.
+    SHOP_CONFIG_TEMPLATE.replace("\"{{BASE}}/\"", &format!("\"{}\"", if base.is_empty() { "/" } else { base })).replace("{{BASE}}", base)
 }
 
 /// The line of shop.js that throws when someone picks Annual on /pricing,
@@ -297,13 +297,18 @@ pub async fn seed(pool: &Pool, sessions: usize) -> Result<()> {
             768..1024 => "tablet",
             _ => "desktop",
         };
+        // Stride+ members the shop signs in with trace.identify(): five join a day,
+        // and the newer ones come back more often, so retention fades with time.
+        let joined = 1 + (start - (now - 30 * DAY_MS)) * 5 / DAY_MS;
+        let member = rng.chance(0.25).then(|| format!("member-{}", rng.range((joined - 90).max(0), joined)));
         sqlx::query(
-            "INSERT INTO sessions (id, project_id, visitor_id, started_at, last_seen_at, device, entry_path)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            "INSERT INTO sessions (id, project_id, visitor_id, user_id, started_at, last_seen_at, device, entry_path)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(&sid)
         .bind(project_id)
         .bind(format!("visitor-{}", rng.range(0, sessions as i64 * 2 / 3)))
+        .bind(member)
         .bind(start)
         .bind(last)
         .bind(device)

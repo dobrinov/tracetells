@@ -97,6 +97,26 @@
       "target": "1%"
     }
   },
+  "audience": {
+    "marketing": [
+      "/",
+      "/pricing*"
+    ],
+    "engaged": [
+      {
+        "event": "start_free"
+      },
+      {
+        "event": "open_demo"
+      },
+      {
+        "event": "self_host"
+      },
+      {
+        "event": "contact"
+      }
+    ]
+  },
   "funnels": {
     "sign_up": {
       "name": "Home to sign-up",

@@ -461,6 +461,11 @@ async fn run() -> Result<()> {
                 let steps: Vec<String> = f.steps.iter().map(trace_core::funnel::label).collect();
                 println!("  funnel {:<17} {} ({})", f.key, f.name, steps.join(" → "));
             }
+            if let Some(a) = &c.audience {
+                let engaged: Vec<String> = a.engaged.iter().map(trace_core::funnel::label).collect();
+                let marketing = if a.marketing.is_empty() { "every landing page".to_string() } else { a.marketing.join(", ") };
+                println!("  audience: marketing pages {marketing}; engaged after {}", if engaged.is_empty() { "nothing declared".into() } else { engaged.join(", ") });
+            }
             for w in &parsed.warnings {
                 println!("warning: {w}");
             }

@@ -44,6 +44,9 @@ pub struct Config {
     pub kpis: Vec<KpiSpec>,
     /// Steps people take in order; stored with the config (see [`crate::funnel`]).
     pub funnels: Vec<crate::funnel::FunnelSpec>,
+    /// Marketing pages and engaging actions (see [`crate::audience`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audience: Option<crate::audience::AudienceSpec>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -112,11 +115,11 @@ impl Parser {
     }
 
     fn root(&mut self, root: &Value) -> Config {
-        let mut config = Config { product: None, events: BTreeMap::new(), kpis: Vec::new(), funnels: Vec::new() };
+        let mut config = Config { product: None, events: BTreeMap::new(), kpis: Vec::new(), funnels: Vec::new(), audience: None };
         let Some(obj) = self.object(root, "(root)") else { return config };
         for key in obj.keys() {
-            if !matches!(key.as_str(), "$schema" | "product" | "events" | "kpis" | "funnels") {
-                self.err(key, "unknown key (expected product, events, kpis or funnels)");
+            if !matches!(key.as_str(), "$schema" | "product" | "events" | "kpis" | "funnels" | "audience") {
+                self.err(key, "unknown key (expected product, events, kpis, funnels or audience)");
             }
         }
         match obj.get("product") {
@@ -156,10 +159,47 @@ impl Parser {
                 }
             }
         }
+        if let Some(v) = obj.get("audience") {
+            config.audience = self.audience(v, &config.events);
+        }
         if config.kpis.is_empty() && self.errors.is_empty() {
             self.warnings.push("no KPIs defined: the analyst works best when it knows what to improve".into());
         }
         config
+    }
+
+    fn audience(&mut self, v: &Value, events: &BTreeMap<String, String>) -> Option<crate::audience::AudienceSpec> {
+        let obj = self.object(v, "audience")?;
+        for k in obj.keys() {
+            if !matches!(k.as_str(), "marketing" | "engaged") {
+                self.err(&format!("audience.{k}"), "unknown key (expected marketing or engaged)");
+            }
+        }
+        let mut spec = crate::audience::AudienceSpec::default();
+        match obj.get("marketing") {
+            None => {}
+            Some(Value::Array(list)) => {
+                for (i, p) in list.iter().enumerate() {
+                    match p.as_str().map(str::trim) {
+                        Some(p) if p.starts_with('/') || p == "*" => spec.marketing.push(p.to_string()),
+                        _ => self.err(&format!("audience.marketing[{i}]"), "expected a path pattern like \"/\" or \"/blog/*\""),
+                    }
+                }
+            }
+            Some(_) => self.err("audience.marketing", "expected a list of path patterns"),
+        }
+        match obj.get("engaged") {
+            None => {}
+            Some(Value::Array(list)) => {
+                for (i, m) in list.iter().enumerate() {
+                    if let Some(m) = self.matcher(Some(m), &format!("audience.engaged[{i}]"), events) {
+                        spec.engaged.push(m);
+                    }
+                }
+            }
+            Some(_) => self.err("audience.engaged", "expected a list of event matchers, e.g. [{ \"event\": \"signup\" }]"),
+        }
+        Some(spec)
     }
 
     fn funnel(&mut self, key: &str, v: &Value, events: &BTreeMap<String, String>) -> Option<crate::funnel::FunnelSpec> {
@@ -588,6 +628,22 @@ mod tests {
         assert!(all.contains("kpis.a.conversion.to: missing event matcher"), "{all}");
         assert!(all.contains("kpis.a.goal: required"), "{all}");
         assert!(all.contains("kpis.b.target: 55 is not a rate"), "{all}");
+    }
+
+    #[test]
+    fn audience_names_marketing_pages_and_engaging_actions() {
+        let ok = parse(
+            r#"{ "events": { "signup": "Signed up" }, "kpis": { "k": { "session_rate": { "event": "signup" }, "goal": "increase" } },
+                 "audience": { "marketing": ["/", "/blog/*"], "engaged": [ { "event": "signup" }, { "pageview": "/app*" } ] } }"#,
+        )
+        .unwrap();
+        let a = ok.config.audience.as_ref().unwrap();
+        assert_eq!(a.marketing, ["/", "/blog/*"]);
+        assert_eq!((a.engaged[0].name.as_deref(), a.engaged[1].path.as_deref()), (Some("signup"), Some("/app*")));
+        let all = parse(r#"{ "audience": { "marketing": ["blog"], "engaged": [ { "evnt": "x" } ], "visitors": 1 } }"#).unwrap_err().join("\n");
+        assert!(all.contains("audience.marketing[0]: expected a path pattern"), "{all}");
+        assert!(all.contains("audience.engaged[0]: unknown event type"), "{all}");
+        assert!(all.contains("audience.visitors: unknown key"), "{all}");
     }
 
     #[test]

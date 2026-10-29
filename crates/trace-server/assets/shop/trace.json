@@ -44,6 +44,10 @@
       "target": "1%"
     }
   },
+  "audience": {
+    "marketing": ["{{BASE}}/", "{{BASE}}/pricing"],
+    "engaged": [{ "event": "add_to_cart" }, { "event": "signup_completed" }, { "event": "purchase" }]
+  },
   "funnels": {
     "purchase": {
       "name": "From a product to a purchase",

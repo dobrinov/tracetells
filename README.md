@@ -173,6 +173,24 @@ Each step is an event matcher, like a KPI's, and a funnel has 2 to 8 of them. A 
 
 The **KPIs** page shows every funnel: sessions per step, the share that continued from the step before, the same over the previous window, conversion by device, and the **biggest drop**, the step where the most sessions are lost, named once someone has finished the funnel. That step is where analysis looks first: `get_funnels` over MCP returns the same, the analysis prompt and Trace's own analysis start from it, and an insight about a step carries that step's conversion as its evidence, so the release is judged on it.
 
+### Audience
+
+The **Audience** page answers how many people come, how many leave straight away, how many get engaged and how many come back. Say what your marketing pages are and which actions make a visitor engaged:
+
+```json
+"audience": {
+  "marketing": ["/", "/pricing", "/blog/*"],
+  "engaged": [{ "event": "signup" }, { "event": "login" }]
+}
+```
+
+- **Visitors** per day, with sessions and the window before. Visitors are cookieless, so an anonymous visitor counts once a day and a window's visitors are its days added up.
+- **Bounce** on the marketing pages: sessions that landed on one and left without clicking, starting a form or opening another page, by landing page and device. Without `marketing`, every landing page counts.
+- **Engaged**: the share of visitors who did at least one of the `engaged` actions, and how often each happened.
+- **DAU, WAU, MAU and stickiness**, and **weekly retention** cohorts: these follow people from one day to the next, so they count only people your app signs in with `trace.identify(id)`. Pass an id that isn't an email, ideally a keyed hash of the user's id, so Trace can count a person without knowing who they are.
+
+Home shows the last 7 days of it, and `get_audience` over MCP gives your agent the same numbers.
+
 ## MCP: use Trace from your coding agent
 
 Trace is also an MCP server, and your coding agent can run all of it: setting a website up, and then being its analyst.

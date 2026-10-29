@@ -233,6 +233,17 @@ pub fn tools() -> Vec<Value> {
             true,
         ),
         tool(
+            "get_audience",
+            "Audience",
+            "Who uses the website, in counts: visitors per day (cookieless, so an anonymous visitor counts once a day) and sessions; \
+             bounce on the marketing pages declared in trace.json under audience.marketing (landed and left without doing anything), \
+             by page and device; the share of visitors who did an engaging action (audience.engaged); and, for people the app signs \
+             in with trace.identify(), DAU, WAU, MAU, stickiness and weekly retention cohorts. Each with the window before. Aggregates only.",
+            json!({ "days": days }),
+            &[],
+            true,
+        ),
+        tool(
             "list_insights",
             "List insights",
             "Improvement insights, newest activity first, optionally filtered by status. Each includes the KPI it should move and, once released, the measured impact.",
@@ -578,6 +589,7 @@ async fn call(ctx: &Context<'_>, name: &str, args: &Value) -> anyhow::Result<Too
                 },
             }))
         }
+        "get_audience" => ToolOutput::Json(serde_json::to_value(trace_core::audience::report(pool, p, arg_days(args).clamp(1, 90)).await?)?),
         "list_insights" => {
             let status = match args.get("status").and_then(Value::as_str) {
                 Some(s) => Some(s.parse::<InsightStatus>()?),
@@ -1093,7 +1105,8 @@ and dead clicks, errors, form completion and custom events. It holds aggregates 
 read the dismiss_reason of dismissed ones: they say what this team doesn't want.
 4. Call get_funnels{site_obj}. In each funnel, biggest_drop is the step where the most sessions are lost: that is where \
 more conversion is won. Compare it with the window before and across devices (a step that converts far worse on \
-mobile points at a mobile problem).
+mobile points at a mobile problem). Call get_audience{site_obj} too: a marketing page most people leave from \
+without doing anything, or a low share of visitors who become engaged, is a problem worth explaining.
 5. Dig into why with query_behaviour{site_note}: on the page people leave from, look at exits, scroll, rage and dead \
 clicks, errors and forms, by device and by day, compared with the window before. Pick up to 5 problems, the ones that \
 lose the most sessions in a funnel first, then those that keep a KPI furthest from its target. For each, be specific: \
