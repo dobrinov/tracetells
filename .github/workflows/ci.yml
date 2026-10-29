@@ -68,4 +68,4 @@ jobs:
       - name: Browser code parses
         run: |
           node --check crates/trace-server/assets/d.js
-          node --check crates/trace-server/assets/app.js
+          for f in crates/trace-server/assets/app/*.js crates/trace-server/assets/admin.js; do node --check "$f"; done

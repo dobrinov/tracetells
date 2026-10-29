@@ -87,7 +87,22 @@ pub(crate) const INDEX_HTML: &str = include_str!("../assets/index.html");
 /// The operators' interface, separate from the dashboard (same styles, same CSP).
 const ADMIN_HTML: &str = include_str!("../assets/admin.html");
 const ADMIN_JS: &str = include_str!("../assets/admin.js");
-const APP_JS: &str = include_str!("../assets/app.js");
+/// The dashboard's scripts, in load order: plain scripts sharing one scope, no
+/// build step. index.html lists them in the same order (a test checks).
+const APP_SCRIPTS: &[(&str, &str)] = &[
+    ("core", include_str!("../assets/app/core.js")),
+    ("insights", include_str!("../assets/app/insights.js")),
+    ("goals", include_str!("../assets/app/goals.js")),
+    ("analysis", include_str!("../assets/app/analysis.js")),
+    ("home", include_str!("../assets/app/home.js")),
+    ("pages", include_str!("../assets/app/pages.js")),
+    ("setup", include_str!("../assets/app/setup.js")),
+    ("accounts", include_str!("../assets/app/accounts.js")),
+    ("settings", include_str!("../assets/app/settings.js")),
+    ("audience", include_str!("../assets/app/audience.js")),
+    ("features", include_str!("../assets/app/features.js")),
+    ("boot", include_str!("../assets/app/boot.js")),
+];
 const STYLE_CSS: &str = include_str!("../assets/style.css");
 const COLLECTOR_JS: &str = include_str!("../assets/d.js");
 
@@ -148,7 +163,7 @@ pub fn router(state: AppStateRef) -> Router {
 
     Router::new()
         .route("/", get(move || async move { Html(index) }))
-        .route("/assets/app.js", get(|| async { asset("application/javascript; charset=utf-8", APP_JS, "no-cache") }))
+        .route("/assets/app/{file}", get(app_script))
         .route("/admin", get(|| async { Html(ADMIN_HTML) }))
         .route("/assets/admin.js", get(|| async { asset("application/javascript; charset=utf-8", ADMIN_JS, "no-cache") }))
         .route("/assets/style.css", get(|| async { asset("text/css; charset=utf-8", STYLE_CSS, "no-cache") }))
@@ -161,6 +176,13 @@ pub fn router(state: AppStateRef) -> Router {
         .layer(middleware::from_fn(move |req, next| crate::guard::security_headers(csp, req, next)))
         // Brotli or gzip, whichever the client accepts: the collector goes from ~32 KB to ~6 KB on the wire.
         .layer(CompressionLayer::new())
+}
+
+async fn app_script(Path(file): Path<String>) -> Response {
+    match file.strip_suffix(".js").and_then(|name| APP_SCRIPTS.iter().find(|(n, _)| *n == name)) {
+        Some((_, body)) => asset("application/javascript; charset=utf-8", body, "no-cache").into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 /// Runs before routing (it wraps the whole router): `/api/sites/{site}/rest`
@@ -1873,6 +1895,14 @@ mod isolation_tests {
         assert!(statuses[..BATCHES_PER_ADDRESS as usize].iter().all(|s| *s == StatusCode::BAD_REQUEST));
         assert_eq!(statuses.last(), Some(&StatusCode::TOO_MANY_REQUESTS), "refused before parsing");
         trace_core::db::drop_test_target(&path).await;
+    }
+
+    #[test]
+    fn the_page_loads_every_script_in_order() {
+        let listed: Vec<&str> = INDEX_HTML.split("<script src=\"/assets/app/").skip(1).filter_map(|s| s.split_once(".js\"")).map(|(n, _)| n).collect();
+        let served: Vec<&str> = APP_SCRIPTS.iter().map(|(n, _)| *n).collect();
+        assert_eq!(listed, served);
+        assert_eq!(served.last(), Some(&"boot"), "boot starts the app, so it loads last");
     }
 
     #[tokio::test]
