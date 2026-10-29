@@ -268,10 +268,10 @@ setInterval(async () => {
 // ---------------------------------------------------------------- get started
 
 const START_STEPS = {
+  agent: "Connect your coding agent",
   data: "See your first visit",
   goals: "Tell Trace what success means",
   insight: "Get your first insight",
-  agent: "Connect your coding agent",
   privacy: "Check what's protected",
   team: "Invite your team",
 };
@@ -307,7 +307,7 @@ async function renderStart() {
   const content = {
     data: () => `
       <h1>See your first visit</h1>
-      <p class="sub">Add one line to the page's &lt;head&gt;, on every page, then open your site. This step is done when the first visit arrives, not when the tag is saved. If the script ever fails, your site carries on as if it weren't there.</p>
+      <p class="sub">Your agent adds the tag when you run <code>/trace:setup</code>. By hand: add one line to the page's &lt;head&gt;, on every page, then open your site. This step is done when the first visit arrives, not when the tag is saved. If the script ever fails, your site carries on as if it weren't there.</p>
       <div class="card">
         <div class="tabs" role="tablist" aria-label="Kind of site">${Object.entries(installs)
           .map(([id, i]) => `<button role="tab" data-install="${id}" class="${id === installTab ? "active" : ""}" aria-selected="${id === installTab}">${i.label}</button>`)
@@ -355,14 +355,14 @@ async function renderStart() {
       <p class="sub">Trace waits until there's enough behaviour to say something true, then it's time to analyse. This step is done after the first analysis, even one that finds nothing worth saving.</p>
       <div id="start-analysis"><p class="hint">Loading…</p></div>`,
     agent: () => `
-      <h1>Let your coding agent set it up</h1>
-      <p class="sub">Connect Claude Code, Cursor or any MCP client once, and it does the rest from your codebase: it adds the snippet, writes your KPIs, keeps customer data out, and later analyses the behaviour and fixes what it finds. It sees only aggregated patterns, like this dashboard.</p>
+      <h1>Connect your coding agent</h1>
+      <p class="sub">Trace works through your coding agent: Claude Code, Cursor or any MCP client, with the model you choose, local or hosted. Connect it once, and it does the rest from your codebase: it adds the tag, writes your goals, keeps customer data out, and later analyses the behaviour and fixes what it finds. This dashboard is for looking. Your agent sees only aggregated patterns, like this dashboard does.</p>
       <ol class="steps">
         <li>In Claude Code, install the Trace plugin${pluginServerNote}:<div class="copy-row" style="margin-top: 8px"><pre class="snippet">${esc(pluginInstall)}</pre><button class="primary" data-copy="${esc(pluginInstall)}">Copy</button></div></li>
         <li>Run <code>/mcp</code>, choose <strong>plugin:trace:trace</strong>, then <strong>Authenticate</strong>. Your browser opens Trace: approve it there. No token to copy.</li>
         <li>Ask it to set things up:<div class="copy-row" style="margin-top: 8px"><pre class="snippet wrap">${esc(setupPrompt)}</pre><button data-copy="${esc(setupPrompt)}">Copy</button></div></li>
       </ol>
-      <p class="hint">This step ticks off once your agent connects. Or run <code>/trace:setup</code> instead of the prompt. Other MCP clients sign in the same way with <code>${esc(location.origin)}/mcp</code> (see Setup). Rather do it by hand? The next steps show how.</p>`,
+      <p class="hint">This step ticks off once your agent connects. Then, in your website's repository, run <code>/trace:setup</code>: it adds the tag, writes trace.json (naming this website, <code>${esc(project.slug)}</code>) and applies it. Other MCP clients sign in the same way with <code>${esc(location.origin)}/mcp</code> and understand the same request in plain words. Rather add the tag by hand? The next step shows it.</p>`,
     team: () => `
       <h1>Invite your team</h1>
       <p class="sub">Optional. Users work with insights and analysis; admins also manage the team, websites, security and privacy rules. You can require two-step verification for everyone.</p>

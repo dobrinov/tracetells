@@ -239,7 +239,7 @@ Analysis happens only in your own coding agent, over MCP, with the model you cho
 | The public link | `/trace:manage publish the public link` |
 | Add a website, apply trace.json, check data | `/trace:manage add a website called docs` |
 
-Any other MCP client understands the same requests in plain words. Signing in, two-step verification, tokens, the team and deleting a website stay on the website.
+Other MCP clients get the same workflows as prompts (`setup_website`, `analyse_website`, `fix_insight`, `manage_trace`, served from the plugin's own instructions), and understand the same requests in plain words. With a smaller or local model, `get_brief` returns everything an analysis starts from in one call. Signing in, two-step verification, tokens, the team and deleting a website stay on the website.
 
 ## MCP: use Trace from your coding agent
 
@@ -300,6 +300,8 @@ In Claude Code it's the slash command `/mcp__trace__analyse_website`. Saving, ev
 
 | Tool | |
 |---|---|
+| `get_brief` | Everything an analysis starts from, in one call: goals, the worst funnel step, areas that hurt, errors, frustration, existing insights |
+| `get_connection` | The server, account, role and websites this connection works with |
 | `get_overview` | Collection status, KPIs vs targets, insights per status, and whether it's worth analysing |
 | `get_analysis_status` | Whether there's enough new behaviour since the last analysis (100 new sessions, or 30 after a week) |
 | `get_behaviour_summary` | The aggregated digest the analyst reads |

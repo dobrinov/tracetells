@@ -49,14 +49,15 @@ pub async fn checklist(pool: &Pool, site: &Project) -> Result<Checklist> {
 
     let insights: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM insights WHERE project_id = $1").bind(site.id).fetch_one(pool).await?;
 
-    // Three outcomes, each checked against what Trace sees: data arrives, goals
-    // are defined, a first analysis ran. The rest helps but never blocks.
+    // The agent first: it does everything after (the tag, trace.json, analysis).
+    // Then three outcomes, each checked against what Trace sees: data arrives,
+    // goals are defined, a first analysis ran. The rest helps but never blocks.
     let step = |key, done, optional| Step { key, done, optional };
     let steps = vec![
+        step("agent", used_tokens > 0, false),
         step("data", last_event_at.is_some(), false),
         step("goals", kpis > 0, false),
         step("insight", analysed_at.is_some() || insights > 0, false),
-        step("agent", used_tokens > 0, true),
         step("privacy", reviewed_at.is_some() || rules > 0, true),
         step("team", people > 1 || invites > 0, true),
     ];
@@ -99,7 +100,7 @@ mod tests {
 
         let fresh = checklist(&pool, &site).await.unwrap();
         assert!(keys_done(&fresh).is_empty());
-        assert_eq!((fresh.done, fresh.total, fresh.complete), (0, 3, false));
+        assert_eq!((fresh.done, fresh.total, fresh.complete), (0, 4, false));
 
         sqlx::query("UPDATE projects SET last_event_at = 1 WHERE id = $1").bind(site.id).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO kpis (project_id, key, name, definition, direction, created_at) VALUES ($1, 'k', 'K', '{}', 'increase', 1)")
@@ -115,11 +116,11 @@ mod tests {
             .unwrap();
         assert!(!done(&checklist(&pool, &site).await.unwrap(), "agent"), "an unused token doesn't count");
         sqlx::query("UPDATE api_tokens SET last_used_at = 2").execute(&pool).await.unwrap();
-        assert_eq!(keys_done(&checklist(&pool, &site).await.unwrap()), ["data", "goals", "agent"]);
+        assert_eq!(keys_done(&checklist(&pool, &site).await.unwrap()), ["agent", "data", "goals"]);
 
         crate::readiness::mark_analysed(&pool, site.id, "Claude Code").await.unwrap();
         let solo = checklist(&pool, &site).await.unwrap();
-        assert!(solo.complete, "the agent, privacy and team steps are optional");
+        assert!(solo.complete, "the privacy and team steps are optional");
         assert!(!done(&solo, "team") && !done(&solo, "privacy"));
 
         confirm_privacy_review(&pool, site.id, "a@acme.example").await.unwrap();
