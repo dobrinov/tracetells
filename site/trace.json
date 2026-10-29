@@ -97,6 +97,109 @@
       "target": "1%"
     }
   },
+  "areas": {
+    "learning": {
+      "name": "Learning about Trace",
+      "description": "Reading the marketing pages",
+      "features": {
+        "homepage": {
+          "name": "Homepage",
+          "match": [
+            {
+              "pageview": "/"
+            }
+          ]
+        },
+        "switching": {
+          "name": "Switching from replay",
+          "match": [
+            {
+              "pageview": "/switching*"
+            }
+          ]
+        },
+        "pricing": {
+          "name": "Pricing",
+          "match": [
+            {
+              "pageview": "/pricing*"
+            }
+          ]
+        },
+        "docs": {
+          "name": "Documentation",
+          "match": [
+            {
+              "event": "read_docs"
+            }
+          ]
+        }
+      }
+    },
+    "trying": {
+      "name": "Seeing it work",
+      "description": "The demo shop and what Trace recorded",
+      "features": {
+        "demo": {
+          "name": "Demo shop",
+          "match": [
+            {
+              "event": "open_demo"
+            }
+          ]
+        },
+        "public_view": {
+          "name": "Public dashboard",
+          "match": [
+            {
+              "event": "view_public"
+            }
+          ]
+        }
+      }
+    },
+    "starting": {
+      "name": "Starting",
+      "description": "Signing up, self-hosting, asking about paid plans",
+      "features": {
+        "start_free": {
+          "name": "Start free",
+          "match": [
+            {
+              "event": "start_free"
+            }
+          ]
+        },
+        "self_host": {
+          "name": "Self-host",
+          "match": [
+            {
+              "event": "self_host"
+            }
+          ]
+        },
+        "contact": {
+          "name": "Paid plan contact",
+          "match": [
+            {
+              "event": "contact"
+            }
+          ]
+        }
+      }
+    },
+    "legal": {
+      "name": "Privacy and terms",
+      "match": [
+        {
+          "pageview": "/privacy*"
+        },
+        {
+          "pageview": "/terms*"
+        }
+      ]
+    }
+  },
   "audience": {
     "marketing": [
       "/",

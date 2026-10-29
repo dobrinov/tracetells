@@ -96,6 +96,15 @@ pub async fn store(
     if batch.sid.is_empty() || batch.sid.len() > 64 {
         bail!("invalid session id");
     }
+    // A developer opening the site on their own machine isn't a visitor: once a
+    // website sends from a real address, local ones are left out. A website
+    // that has only ever sent from local addresses (trying Trace out) keeps them.
+    if let Some(origin) = origin.and_then(referrer_origin).filter(|o| crate::privacy::is_local_origin(o)) {
+        let sources: Vec<String> = sqlx::query_scalar("SELECT origin FROM event_sources WHERE project_id = $1").bind(project_id).fetch_all(pool).await?;
+        if sources.iter().any(|s| !crate::privacy::is_local_origin(s)) {
+            return Ok(0);
+        }
+    }
     let server_now = now_ms();
     let skew = batch.now.map(|c| server_now - c).unwrap_or(0);
     let events: Vec<_> = batch
@@ -204,6 +213,24 @@ pub async fn store(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_live_website_leaves_out_developer_machines() {
+        let target = crate::db::test_target("local").await;
+        let pool = crate::db::connect(&target).await.unwrap();
+        let (_, site) = crate::db::create_account_with_site(&pool, "Shop", None).await.unwrap();
+        let batch = |sid: &str| -> Batch {
+            serde_json::from_value(serde_json::json!({ "key": "k", "sid": sid, "events": [{ "type": "pageview", "t": now_ms() - 1000, "path": "/" }] })).unwrap()
+        };
+        let rules = HostRules::default();
+        // Trying Trace out on localhost works...
+        assert_eq!(store(&pool, site.id, batch("a"), None, Some("http://localhost:3000"), &rules).await.unwrap(), 1);
+        // ...until the real site sends; from then on local visits are left out.
+        assert_eq!(store(&pool, site.id, batch("b"), None, Some("https://shop.example"), &rules).await.unwrap(), 1);
+        assert_eq!(store(&pool, site.id, batch("c"), None, Some("http://localhost:3000"), &rules).await.unwrap(), 0);
+        assert_eq!(store(&pool, site.id, batch("d"), None, Some("http://192.168.1.4:8080/"), &rules).await.unwrap(), 0);
+        crate::db::drop_test_target(&target).await;
+    }
 
     #[tokio::test]
     async fn visitor_text_reaches_the_summary_on_one_line() {

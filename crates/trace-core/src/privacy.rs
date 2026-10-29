@@ -147,6 +147,26 @@ pub fn referrer_origin(r: &str) -> Option<String> {
     Some(format!("{scheme}://{host}"))
 }
 
+/// Whether an origin is a developer's machine or a private network: localhost,
+/// loopback and private addresses, and `.local` / `.localhost` names.
+pub fn is_local_origin(origin: &str) -> bool {
+    let host = origin.split_once("://").map_or(origin, |(_, h)| h);
+    let host = if host.starts_with('[') { host.split(']').next().unwrap_or(host).trim_start_matches('[') } else { host.split(':').next().unwrap_or(host) };
+    let host = host.to_ascii_lowercase();
+    if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") || host == "::1" || host == "0.0.0.0" {
+        return true;
+    }
+    let octets: Vec<u8> = host.split('.').map_while(|p| p.parse().ok()).collect();
+    if octets.len() != host.split('.').count() {
+        return false;
+    }
+    match octets.as_slice() {
+        [127, ..] | [10, ..] | [192, 168, ..] => octets.len() == 4,
+        [172, b, ..] => octets.len() == 4 && (16..=31).contains(b),
+        _ => false,
+    }
+}
+
 /// User ids must be opaque. The collector hashes email-like ids; anything
 /// that still looks personal is dropped.
 pub fn clean_user_id(uid: &str) -> Option<String> {
@@ -399,6 +419,16 @@ pub fn clean_props_with(rules: &HostRules, v: Value, depth: usize) -> Option<Val
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn knows_a_developers_machine() {
+        for local in ["http://localhost:8794", "http://127.0.0.1:4391", "http://[::1]:3000", "http://shop.local", "http://app.localhost", "http://192.168.1.20:8080", "http://10.0.0.5", "http://172.20.1.1"] {
+            assert!(is_local_origin(local), "{local}");
+        }
+        for public in ["https://tracetells.com", "https://dobrinov.github.io", "http://172.32.0.1", "https://localhost.example.com", "https://127.0.0.1.nip.io"] {
+            assert!(!is_local_origin(public), "{public}");
+        }
+    }
     use serde_json::json;
 
     #[test]

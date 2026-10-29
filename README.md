@@ -215,6 +215,10 @@ The **Features** page measures each area and feature over the window:
 
 Each gets a status: **used, but it hurts** (where a fix helps the most people), **little used**, **little used and it hurts**, **healthy**, or too little data. Without declared areas, Trace suggests them from the website's URLs. Home raises the busiest area that hurts, `get_areas` gives your agent the same numbers, and the analysis prompt points it there.
 
+### Visits from your own machine
+
+Once a website sends events from a real address, batches from localhost, loopback and private-network addresses (and `.local` / `.localhost` names) are left out, so opening a local copy of the site doesn't add to its numbers. A website that has only ever sent from local addresses, such as one you're trying Trace out on, keeps them.
+
 ## MCP: use Trace from your coding agent
 
 Trace is also an MCP server, and your coding agent can run all of it: setting a website up, and then being its analyst.
