@@ -519,6 +519,18 @@ What it costs: a visitor who comes back tomorrow counts as a new visitor, and tw
 
 Multi-page sites keep one session across page loads (30 minutes of inactivity starts a new one). Pages restored from the back/forward cache count as pageviews, and form submits are sent before the browser navigates away. Query strings are never recorded. The collector sends JSON as `text/plain` through `sendBeacon`, so browsers skip the CORS preflight.
 
+## Server errors
+
+The servers behind a website can report their errors too, with the tracetells client for [Rust](clients/rust), [Node.js](clients/node) or [Ruby](clients/ruby) (`/trace:setup server errors` installs the right one). Each sends only error facts: the class, a scrubbed message, the backtrace (files relative to the project), the route template, the HTTP method and status, the environment, the release and the runtime. Never request or response bodies, parameters, query strings, headers, cookies, environment variables, source code or who was signed in.
+
+- **A secret server key per website**, separate from the public write key: created, rotated and revoked by admins (`server_key` over MCP, or `POST /api/sites/{site}/server-key`), shown once, stored hashed. Clients send to `POST /v1/errors` with `Authorization: Bearer tse_…`, at most 100 errors per request.
+- **Counts, not occurrences.** Trace scrubs every field again, groups errors by class and the first frame of the app's own code (or a normalised message), and keeps counts per hour, route, method, status, environment and release, plus the latest backtrace per group. Each occurrence counts as an event towards the plan's monthly limit; hourly counts follow the plan's retention.
+- **Tied to visits.** A group whose route and status match failed requests the collector saw in browsers shows how many visits it broke, on which pages, and which goals and funnels those pages feed.
+- **Releases.** A group first seen in a release is new in it. A resolved group that comes back from the release its fix shipped in, or a newer one, reopens as a regression; older releases still running don't count. A week after resolving without it, the group shows "stopped".
+- **Where it shows:** the Errors page's Server tab, `GET /api/sites/{site}/errors` and `/errors/{id}`, the MCP tools `list_server_errors`, `get_server_error` (with a fix prompt) and `update_server_error`, `server_errors` in the behaviour summary and `get_brief`, and `/trace:fix server error 7`.
+
+The three clients share `clients/test-vectors.json` with the server's own scrubbing tests, so all four scrub the same way.
+
 ## Configuration
 
 | Variable | Default | |

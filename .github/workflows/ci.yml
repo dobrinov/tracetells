@@ -69,3 +69,47 @@ jobs:
         run: |
           node --check crates/trace-server/assets/d.js
           for f in crates/trace-server/assets/app/*.js crates/trace-server/assets/admin.js; do node --check "$f"; done
+
+  # The error clients in clients/: each against a stand-in for Trace, checking
+  # what they send and that request data never leaves. They share
+  # clients/test-vectors.json with the server's own scrubbing tests.
+  client-rust:
+    name: Client (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p tracetells --all-features --locked
+      - run: cargo clippy -p tracetells --all-features --all-targets --locked -- -D warnings
+
+  client-node:
+    name: Client (Node.js)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/node
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test
+
+  client-ruby:
+    name: Client (Ruby)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/ruby
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: clients/ruby
+      - run: bundle exec rake test

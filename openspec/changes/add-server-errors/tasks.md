@@ -55,7 +55,7 @@
 
 ## 8. Agent, docs and release
 
-- [ ] 8.1 Plugin: `/trace:setup` detects the stack, installs the matching client and creates the server key; `/trace:fix` handles server error groups; MCP prompts rebuilt from the skills
-- [ ] 8.2 CI jobs for the Rust, Node.js and Ruby clients
-- [ ] 8.3 README section on server errors; tracetells.com docs page `/docs/server-errors/`, Sentry comparison and privacy page updated
+- [x] 8.1 Plugin: `/trace:setup` detects the stack, installs the matching client and creates the server key; `/trace:fix` handles server error groups; MCP prompts rebuilt from the skills
+- [x] 8.2 CI jobs for the Rust, Node.js and Ruby clients
+- [x] 8.3 README section on server errors; tracetells.com docs page `/docs/server-errors/`, Sentry comparison and privacy page updated
 - [ ] 8.4 Deploy the server, then hand the maintainer the publish steps for crates.io, npm and RubyGems

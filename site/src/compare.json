@@ -1010,9 +1010,9 @@
   "og_title": "Sentry and Trace: errors in your code, and what they cost",
   "description": "Keep Sentry for stack traces and alerts. Trace ranks browser errors by visits broken, finds UX problems that throw no error, and judges each release.",
   "h1": "Sentry and Trace: errors in your code, and what they cost your visitors.",
-  "sub": "Sentry is the place for stack traces, alerts and backend errors. Trace sees browser errors from the visitor's side: how many visits each one broke, which goal it hurt, and whether the fix brought conversion back. Most teams should run both.",
+  "sub": "Sentry is the place for stack traces, alerts, performance tracing and errors across every platform. Trace looks at errors from the visitor's side: how many visits each one broke, which goal it hurt, and whether the fix brought conversion back. It also takes server errors from Rust, Node.js and Ruby, without request data. Many teams will run both.",
   "keep": [
-   "Backend and mobile errors, stack traces with source maps",
+   "Mobile apps and platforms beyond Rust, Node.js and Ruby",
    "Alerts and on-call",
    "Performance tracing"
   ],
@@ -1029,8 +1029,13 @@
    ],
    [
     "Backend errors",
-    "Yes",
-    "Not yet"
+    "Every major platform, with request context",
+    "Rust, Node.js and Ruby, error facts only"
+   ],
+   [
+    "Request data",
+    "Headers, params and user context, with scrubbing",
+    "Never sent: no bodies, params, headers, cookies or users"
    ],
    [
     "Browser errors",
@@ -1056,6 +1061,10 @@
   "map_intro": "Trace doesn't replace Sentry. Here is how the two divide the work.",
   "map": [
    [
+    "Sentry SDK on the server",
+    "The tracetells client for Rust, Node.js or Ruby"
+   ],
+   [
     "A new browser error",
     "Trace shows how many visits it broke and on which page"
    ],
@@ -1073,7 +1082,7 @@
   "faq": [
    [
     "Should I remove Sentry?",
-    "No. Keep it for stack traces and alerts."
+    "Not necessarily. Keep it for alerts, performance tracing and platforms Trace has no client for. If you only used it for Rust, Node.js or Ruby errors, Trace now covers those too."
    ],
    [
     "Will two scripts slow my site?",

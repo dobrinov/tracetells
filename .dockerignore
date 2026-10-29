@@ -7,3 +7,5 @@ trace.env
 site
 openspec
 scripts
+clients/node
+clients/ruby

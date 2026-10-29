@@ -7,6 +7,8 @@ FROM rust:1-slim-trixie AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
+# A workspace member, so Cargo needs its manifest even though only the server is built.
+COPY clients/rust clients/rust
 # The MCP server serves the Claude Code plugin's commands as prompts.
 COPY plugins plugins
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

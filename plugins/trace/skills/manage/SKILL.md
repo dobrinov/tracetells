@@ -1,6 +1,6 @@
 ---
 name: manage
-description: Do the day-to-day Trace work the dashboard only shows - pick, dismiss, reopen or release an insight, add or remove a privacy rule, confirm the privacy review, publish or withdraw a website's public link, add a website, apply trace.json, or check whether events arrive. Use when the user says things like "release insight 12", "dismiss insight 4 because...", "mask .account-summary", "make the dashboard public", "add a website called docs", "push trace.json" or "is Trace receiving data".
+description: Do the day-to-day Trace work the dashboard only shows - pick, dismiss, reopen or release an insight, resolve or ignore a server error, rotate the server key, add or remove a privacy rule, confirm the privacy review, publish or withdraw a website's public link, add a website, apply trace.json, or check whether events arrive. Use when the user says things like "release insight 12", "dismiss insight 4 because...", "mask .account-summary", "make the dashboard public", "add a website called docs", "push trace.json" or "is Trace receiving data".
 ---
 
 # Manage Trace
@@ -32,6 +32,12 @@ Do what the person asks, and nothing they didn't: never dismiss, release, publis
 ## Sharing
 
 - **Public link:** `public_view` with `status`, `publish` (admins), `replace` (a new link; the old one stops working) or `withdraw`. Only publish when asked: anyone with the link sees the website's aggregated analytics.
+
+## Server errors
+
+- **Resolve one** once its fix is live: `update_server_error` with `resolved` and `release`, the release the fix shipped in.
+- **Ignore one** (it keeps counting, but leaves rankings and the analysis): `update_server_error` with `ignored`, only when asked. **Reopen:** `open`.
+- **The server key:** `server_key` with `status`, `create` (replaces any key before it, so servers using the old one stop sending until updated) or `revoke`. Tell the person to put a new secret in the servers' secret store, never in the repository.
 
 ## Websites and setup
 

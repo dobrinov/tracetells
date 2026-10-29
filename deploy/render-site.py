@@ -26,7 +26,7 @@ SOFTWARE = {
 }
 DOCS = [  # sidebar, in order
     ("Start", [("/docs/", "Get started"), ("/docs/install/", "Install the tag"), ("/docs/trace-json/", "trace.json"),
-               ("/docs/coding-agent/", "Your coding agent")]),
+               ("/docs/coding-agent/", "Your coding agent"), ("/docs/server-errors/", "Server errors")]),
     ("Run it", [("/docs/privacy-controls/", "Privacy controls"), ("/docs/self-hosting/", "Self-hosting")]),
 ]
 FRONT = re.compile(r"\A<!--\s*(\{.*?\})\s*-->\s*", re.S)

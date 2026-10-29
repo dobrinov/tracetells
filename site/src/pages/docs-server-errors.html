@@ -1,0 +1,61 @@
+<!--
+{"path": "/docs/server-errors/", "title": "Server error tracking for Rust, Node.js and Ruby | Trace docs", "nav": "docs", "docs": true, "og_image": "og/docs.png",
+ "og_title": "Server errors in Trace",
+ "description": "Report your backend's errors to Trace with the tracetells client for Rust, Node.js or Ruby: grouped, tied to the visits they broke, judged per release. No request data."}
+-->
+<p class="eyebrow">Docs</p>
+<h1>Server errors</h1>
+<p class="lede">The browser shows that a request failed. Your server knows why. With the tracetells client, Trace shows both: the exception, where in your code, on which route, since which release, and how many visits it broke.</p>
+
+<h2>With your coding agent</h2>
+<pre class="code">/trace:setup server errors</pre>
+<p>It installs the client for your stack, creates the website's server key and tells you where to put it. Then <code>/trace:fix server error 7</code> fixes one, and Trace tells you whether it stopped.</p>
+
+<h2>By hand</h2>
+<p>Create the key: <code>/trace:manage create a server key</code>, or ask an admin. Set it as <code>TRACE_SERVER_KEY</code> in your server's environment or secret store, never in the repository. Set <code>TRACE_RELEASE</code> to the commit or version you deploy, if your platform doesn't.</p>
+
+<h3>Rust</h3>
+<pre class="code">tracetells = { version = "0.1", features = ["axum", "tracing"] }
+
+let _trace = tracetells::init(tracetells::Config::from_env());
+let app = Router::new().route("/orders/{id}", get(show)).layer(tracetells::TraceLayer);</pre>
+<p>Panics, 5xx responses and, with <code>TracingLayer</code>, events logged at error level. <a href="https://github.com/dobrinov/tracetells/tree/main/clients/rust">The crate's README</a>.</p>
+
+<h3>Node.js</h3>
+<pre class="code">npm install @tracetells/node
+
+import * as trace from "@tracetells/node";
+trace.init();
+app.use(trace.expressErrorHandler());   // Express, after your routes
+await app.register(trace.fastifyPlugin); // Fastify</pre>
+<p>Uncaught exceptions and unhandled rejections too. <a href="https://github.com/dobrinov/tracetells/tree/main/clients/node">The package's README</a>.</p>
+
+<h3>Ruby</h3>
+<pre class="code">gem "tracetells"   # Rails: nothing else
+
+use Tracetells::Rack   # Rack and Sinatra, after Tracetells.configure</pre>
+<p>In Rails it subscribes to <code>Rails.error</code>, so controller and job errors are reported with their route. <a href="https://github.com/dobrinov/tracetells/tree/main/clients/ruby">The gem's README</a>.</p>
+
+<h2>What is sent, and what never is</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Sent</th><th scope="col">Never sent</th></tr></thead>
+<tbody>
+<tr><td>The error's class and its message, scrubbed</td><td>Request or response bodies</td></tr>
+<tr><td>The backtrace: files relative to your project, lines, functions</td><td>Parameters and query strings</td></tr>
+<tr><td>The route template, like <code>/orders/:id</code></td><td>Headers and cookies</td></tr>
+<tr><td>HTTP method and status</td><td>Environment and local variables</td></tr>
+<tr><td>Environment, release, runtime version</td><td>Source code and host names</td></tr>
+<tr><td>When it happened, and how often</td><td>Who was signed in</td></tr>
+</tbody></table></div>
+<p>Emails, tokens, card numbers, IBANs and phone-like numbers are replaced in messages before they leave, and again on Trace's server. Trace stores counts per hour and one sample backtrace per group, never individual requests. Keep personal data out of exception messages anyway: no pattern catches a name.</p>
+
+<h2>What Trace does with them</h2>
+<ul>
+  <li><strong>Groups</strong> errors by class and the first frame of your own code, so the same bug with different ids is one group.</li>
+  <li><strong>Ties them to visits:</strong> when browsers saw the same request fail, Trace shows how many visits it broke, on which pages, and which goals those pages feed. That's how it ranks them.</li>
+  <li><strong>Follows releases:</strong> new in a release, back after a fix (a regression), or stopped a week after resolving.</li>
+  <li><strong>Hands them to your agent</strong> over MCP, with a task prompt for each.</li>
+</ul>
+
+<h2>How the clients behave</h2>
+<p>They send from the background, in batches, at most once a second, and never slow a request. The first occurrence goes at once; repeats within a minute go as one count. When Trace can't be reached, they drop errors and back off rather than pile up. Each occurrence counts as an event towards your plan's monthly limit.</p>
