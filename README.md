@@ -508,6 +508,7 @@ Multi-page sites keep one session across page loads (30 minutes of inactivity st
 | `TRACE_ALLOW_SIGNUP` | off | Let anyone create an account from the sign-in page |
 | `TRACE_CONTACT_URL` | – | Where the Plan page sends people who need higher limits |
 | `TRACE_TERMS_URL`, `TRACE_PRIVACY_URL` | – | Terms of service and privacy policy that people accept when they sign up (shown with `TRACE_ALLOW_SIGNUP`) |
+| `TRACE_DASHBOARD_KEY`, `TRACE_DASHBOARD_SECRET` | – | Measure this dashboard with Trace: the write key of a website to send its usage to, and a secret that hashes each person's id. Off unless both are set. Pages are named by area (`/improve/insights`), never by an id or website; the content area, website menu, account and messages are masked; operators viewing as someone aren't identified. `deploy/app.trace.json` is the hosted dashboard's own config |
 | `TRACE_DEFAULT_PLAN` | `unlimited` | Plan for new accounts, applied when the server starts |
 | `TRACE_SERVER` | – | Server URL for `trace push` |
 | `TRACE_RETENTION_DAYS` | `90` | Delete raw events older than this (0 keeps them). Caps each plan's own limit |

@@ -81,6 +81,12 @@ enum Command {
         /// Keep one website's KPIs and event catalogue in sync with this trace.json (with --site).
         #[arg(long, env = "TRACE_CONFIG")]
         config: Option<PathBuf>,
+        /// Measure this dashboard with Trace: the write key of the website its usage goes to. Off by default.
+        #[arg(long, env = "TRACE_DASHBOARD_KEY", requires = "dashboard_secret")]
+        dashboard_key: Option<String>,
+        /// The key that hashes each person's id before it's sent, so the website sees a stable id, never who it is.
+        #[arg(long, env = "TRACE_DASHBOARD_SECRET", hide_env_values = true)]
+        dashboard_secret: Option<String>,
     },
     /// Validate a trace.json without applying it. Exits non-zero on errors, for CI.
     Check {
@@ -299,6 +305,8 @@ async fn run() -> Result<()> {
             privacy_url,
             demo_site,
             config: config_file,
+            dashboard_key,
+            dashboard_secret,
         } => {
             if let Some(path) = config_file {
                 let target = db::resolve_site(&pool, site).await.context("--config needs a website (--site)")?;
@@ -374,6 +382,7 @@ async fn run() -> Result<()> {
             state.terms_url = terms_url;
             state.privacy_url = privacy_url;
             state.retention_days = retention_days;
+            state.dashboard_analytics = dashboard_key.zip(dashboard_secret);
             let app = api::router(Arc::new(state));
             // Website paths are rewritten before routing, so the rewrite wraps the whole router.
             let app = tower::Layer::layer(&tower::util::MapRequestLayer::new(api::route_site_paths), app);

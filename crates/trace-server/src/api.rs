@@ -49,6 +49,9 @@ pub struct AppState {
     pub collectors: RwLock<HashMap<i64, Arc<Collector>>>,
     /// Monthly event quota per account, refreshed from the database each minute.
     pub quotas: Mutex<HashMap<i64, Quota>>,
+    /// Measuring this dashboard with Trace: a website's write key, and the
+    /// secret that hashes people's ids (`TRACE_DASHBOARD_KEY` / `_SECRET`).
+    pub dashboard_analytics: Option<(String, String)>,
 }
 
 pub type AppStateRef = Arc<AppState>;
@@ -72,6 +75,7 @@ impl AppState {
             rules: Default::default(),
             collectors: Default::default(),
             quotas: Default::default(),
+            dashboard_analytics: None,
         }
     }
 }
@@ -83,9 +87,23 @@ const ADMIN_JS: &str = include_str!("../assets/admin.js");
 const APP_JS: &str = include_str!("../assets/app.js");
 const STYLE_CSS: &str = include_str!("../assets/style.css");
 const COLLECTOR_JS: &str = include_str!("../assets/d.js");
-static DASHBOARD_CSP: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| crate::guard::dashboard_csp(INDEX_HTML));
+
+/// The dashboard page, with this server's own collector when it measures
+/// itself: page names come from the app (never ids or website names) and the
+/// content area is masked, since it shows customers' data.
+fn dashboard_index(analytics: Option<&(String, String)>) -> String {
+    let Some((key, _)) = analytics else { return INDEX_HTML.to_string() };
+    let key: String = key.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+    let tag = format!(
+        "<script>window.trace=window.trace||{{q:[]}};[\"track\",\"identify\",\"page\"].forEach(function(m){{trace[m]=trace[m]||function(){{trace.q.push([m,arguments])}}}})</script>\n\
+         <script src=\"/d.js?k={key}\" data-key=\"{key}\" data-pageviews=\"manual\" defer></script>\n</head>"
+    );
+    INDEX_HTML.replacen("</head>", &tag, 1)
+}
 
 pub fn router(state: AppStateRef) -> Router {
+    let index: &'static str = Box::leak(dashboard_index(state.dashboard_analytics.as_ref()).into_boxed_str());
+    let csp: &'static str = Box::leak(crate::guard::dashboard_csp(index).into_boxed_str());
     let collector = Router::new()
         .route("/v1/collect", post(collect))
         .route("/d.js", get(collector_js))
@@ -125,7 +143,7 @@ pub fn router(state: AppStateRef) -> Router {
         .layer(middleware::from_fn_with_state(state.clone(), crate::auth_api::authorize));
 
     Router::new()
-        .route("/", get(|| async { Html(INDEX_HTML) }))
+        .route("/", get(move || async move { Html(index) }))
         .route("/assets/app.js", get(|| async { asset("application/javascript; charset=utf-8", APP_JS, "no-cache") }))
         .route("/admin", get(|| async { Html(ADMIN_HTML) }))
         .route("/assets/admin.js", get(|| async { asset("application/javascript; charset=utf-8", ADMIN_JS, "no-cache") }))
@@ -136,7 +154,7 @@ pub fn router(state: AppStateRef) -> Router {
         .merge(crate::oauth::routes())
         .merge(crate::public::routes())
         .with_state(state)
-        .layer(middleware::from_fn(|req, next| crate::guard::security_headers(&DASHBOARD_CSP, req, next)))
+        .layer(middleware::from_fn(move |req, next| crate::guard::security_headers(csp, req, next)))
         // Brotli or gzip, whichever the client accepts: the collector goes from ~32 KB to ~6 KB on the wire.
         .layer(CompressionLayer::new())
 }
@@ -1823,6 +1841,37 @@ mod isolation_tests {
         }
         assert!(statuses[..BATCHES_PER_ADDRESS as usize].iter().all(|s| *s == StatusCode::BAD_REQUEST));
         assert_eq!(statuses.last(), Some(&StatusCode::TOO_MANY_REQUESTS), "refused before parsing");
+        trace_core::db::drop_test_target(&path).await;
+    }
+
+    #[tokio::test]
+    async fn the_dashboard_measures_itself_only_when_configured() {
+        let (app, state, path) = app().await;
+        let page = |app: tower::util::MapRequest<Router, fn(Request) -> Request>| async move {
+            let res = app.oneshot(Request::builder().uri("/").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+            let csp = res.headers()["content-security-policy"].to_str().unwrap().to_string();
+            (String::from_utf8(axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap().to_vec()).unwrap(), csp)
+        };
+        let (plain, _) = page(app.clone()).await;
+        assert!(!plain.contains("/d.js"), "off unless the server is given a key");
+        let (acme, _) = db::create_account_with_site(&state.pool, "Acme", None).await.unwrap();
+        let cookie = person(&state, acme.id, "a@acme.example", Role::Owner).await;
+        let (_, off) = send(&app, json_req("GET", "/api/auth/state", ("cookie", &cookie), Value::Null)).await;
+        assert!(off["analytics_id"].is_null());
+
+        let mut measured = AppState::new(state.pool.clone(), None);
+        measured.dashboard_analytics = Some(("abc123".into(), "s3cret".into()));
+        let measured: AppStateRef = Arc::new(measured);
+        let app = tower::Layer::layer(&tower::util::MapRequestLayer::new(route_site_paths as fn(Request) -> Request), router(measured));
+        let (html, csp) = page(app.clone()).await;
+        assert!(html.contains(r#"src="/d.js?k=abc123" data-key="abc123" data-pageviews="manual""#), "{html}");
+        assert!(html.contains(r#"<main id="view" aria-live="polite" data-trace-mask>"#));
+        // The stub is inline, so the page's own policy has to allow exactly it.
+        assert_eq!(csp.matches("'sha256-").count(), plain.matches("<script>").count() + 1, "{csp}");
+        let (_, on) = send(&app, json_req("GET", "/api/auth/state", ("cookie", &cookie), Value::Null)).await;
+        let id = on["analytics_id"].as_str().unwrap();
+        assert_eq!(id.len(), 32);
+        assert_ne!(id, on["user"]["email"].as_str().unwrap());
         trace_core::db::drop_test_target(&path).await;
     }
 

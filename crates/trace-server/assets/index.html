@@ -27,7 +27,7 @@
         </svg>
         <span>Trace</span>
       </div>
-      <div class="site-menu" id="site-menu" hidden>
+      <div class="site-menu" id="site-menu" data-trace-mask hidden>
         <button type="button" class="site-button" id="site-button" aria-haspopup="listbox" aria-expanded="false">
           <span class="dot" id="site-dot"></span>
           <span id="site-name"></span>
@@ -44,13 +44,13 @@
       </nav>
       <a class="collect-status" id="collect-status" href="#/setup/install" hidden></a>
       <button id="run-analysis" type="button">Run analysis</button>
-      <a class="me" id="me" href="#/account" data-view="account" hidden></a>
+      <a class="me" id="me" href="#/account" data-view="account" data-trace-mask hidden></a>
     </header>
     <nav class="subnav" id="subnav" aria-label="Pages" hidden></nav>
-    <div class="viewing-as" id="viewing-as" role="status" hidden></div>
-    <div class="notice" id="notice" role="status" hidden></div>
-    <main id="view" aria-live="polite"></main>
-    <div class="toast" id="toast" role="status" hidden></div>
+    <div class="viewing-as" id="viewing-as" role="status" data-trace-mask hidden></div>
+    <div class="notice" id="notice" role="status" data-trace-mask hidden></div>
+    <main id="view" aria-live="polite" data-trace-mask></main>
+    <div class="toast" id="toast" role="status" data-trace-mask hidden></div>
     <script src="/assets/app.js"></script>
   </body>
 </html>

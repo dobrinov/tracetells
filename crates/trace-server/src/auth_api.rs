@@ -351,6 +351,12 @@ pub(crate) async fn state_json(state: &AppStateRef, s: Option<&Session>) -> ApiR
         "impersonating": s.and_then(|s| s.impersonator.as_ref()).map(|o| json!({ "operator": o.email })),
         "step": s.and_then(|s| pending_step(s, require_mfa)),
         "require_mfa": require_mfa,
+        // When this dashboard measures itself: a keyed hash of the person, never
+        // their id or email, and nothing while an operator views as them.
+        "analytics_id": state.dashboard_analytics.as_ref().zip(s.filter(|s| s.impersonator.is_none())).map(|((_, secret), s)| {
+            use sha2::Digest as _;
+            data_encoding::HEXLOWER.encode(&sha2::Sha256::digest(format!("{secret}:dashboard:{}", s.user.id)))[..32].to_string()
+        }),
     }))
 }
 

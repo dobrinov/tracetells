@@ -16,6 +16,20 @@ const esc = (s) =>
 const pct = (v) => (v == null ? "–" : `${(v * 100).toFixed(1)}%`);
 const num = (v) => (v == null ? "–" : Number(v).toLocaleString());
 
+// When this server measures its own dashboard (TRACE_DASHBOARD_KEY), the page
+// carries Trace's collector. Pages are named by area and page, never by an
+// id, website or area key; the content area is masked in index.html.
+function measure(event, props) {
+  try {
+    if (window.trace && typeof window.trace.track === "function") window.trace.track(event, props);
+  } catch {}
+}
+function measurePage(name) {
+  try {
+    if (window.trace && typeof window.trace.page === "function") window.trace.page(name);
+  } catch {}
+}
+
 function store(key, value) {
   try {
     if (value === undefined) return localStorage.getItem(key);
@@ -245,6 +259,7 @@ async function addWebsite() {
   const name = prompt("Name of the new website, e.g. \"Docs\" or \"Shop (staging)\":");
   if (!name) return false;
   const s = await post("/sites", { name });
+  measure("website_added");
   toast(`Added ${s.name}. Install its snippet on Setup.`);
   currentSite = s.slug;
   store("trace_site", currentSite);
@@ -448,6 +463,7 @@ async function showPrompt(id) {
 async function copyPrompt(id, btn) {
   const text = await api(`/insights/${id}/prompt`);
   if (await copyText(text)) {
+    measure("prompt_copied");
     const label = btn.textContent;
     btn.textContent = "Copied ✓";
     setTimeout(() => (btn.textContent = label), 1600);
@@ -571,6 +587,7 @@ async function renderInsights() {
           }
         }
         await post(`/insights/${id}/status`, { status, reason, released_at });
+        measure("insight_moved", { status });
         if (status === "released") {
           await post("/evaluate");
           toast("Released. Trace compares the KPI over the 14 days before and after, and gives its verdict once those 14 days have passed.");
@@ -715,7 +732,10 @@ function analysisPanel(a) {
 function wireAnalysisPanel(a) {
   view.querySelectorAll(".analysis-panel [data-copy]").forEach((b) =>
     b.addEventListener("click", async () => {
-      if (await copyText(b.dataset.copy)) toast("Copied. Paste it into Claude Code.");
+      if (await copyText(b.dataset.copy)) {
+        toast("Copied. Paste it into Claude Code.");
+        measure("copied", { what: "analyse" });
+      }
     })
   );
   view.querySelectorAll("[data-analyse-here]").forEach((b) => b.addEventListener("click", () => document.getElementById("run-analysis").click()));
@@ -935,7 +955,10 @@ function wireCopy() {
     if (b.dataset.wired) return;
     b.dataset.wired = "1";
     b.addEventListener("click", async () => {
-      if (await copyText(b.dataset.copy)) toast("Copied");
+      if (await copyText(b.dataset.copy)) {
+        toast("Copied");
+        measure("copied", { what: b.dataset.copy.startsWith(ANALYSE_COMMAND) ? "analyse" : b.dataset.task ? "task" : "snippet" });
+      }
     });
   });
 }
@@ -1243,7 +1266,10 @@ async function renderSetup() {
         toast(e.message, true);
       }
     };
-    card.querySelector("#public-on")?.addEventListener("click", () => act("POST", "/publish", "Public link created"));
+    card.querySelector("#public-on")?.addEventListener("click", () => {
+      measure("public_link_created");
+      act("POST", "/publish", "Public link created");
+    });
     card.querySelector("#public-rotate")?.addEventListener("click", () => {
       if (confirm("Replace the link? The current one stops working at once.")) act("POST", "/publish/rotate", "New link created; the old one no longer works");
     });
@@ -1523,6 +1549,7 @@ const BRAND = `<div class="auth-brand"><svg class="logo" viewBox="2 15.5 60 33" 
 const PATTERNS_NOT_PEOPLE = `<p class="hint privacy-note">Trace looks at patterns, not people: no session recordings, nothing users type, and personal data is removed before it's stored.</p>`;
 
 function renderLogin() {
+  measurePage("/sign-in");
   authScreen(`${BRAND}<h1>Sign in</h1>
     <form id="login" class="stack">
       <label class="field">Email <input name="email" type="email" autocomplete="username" required></label>
@@ -1542,6 +1569,7 @@ function renderLogin() {
 }
 
 function renderSignup() {
+  measurePage("/sign-up");
   authScreen(`${BRAND}<h1>Create an account</h1>
     <p>Free to try. You'll own the account and can add your team later.</p>
     <form id="signup" class="stack">
@@ -1563,6 +1591,7 @@ function renderSignup() {
       method: "POST",
       body: JSON.stringify({ account: fd.get("account"), name: fd.get("name"), email: fd.get("email"), password: fd.get("password") }),
     });
+    measure("signed_up");
     history.replaceState(null, "", "#/start");
     boot();
   });
@@ -1648,6 +1677,9 @@ function renderEnroll() {
     try {
       auth = await post("/account/switch", { account_id: other.account_id });
       document.body.classList.remove("auth");
+  try {
+    if (auth.analytics_id) window.trace?.identify?.(auth.analytics_id);
+  } catch {}
       await enterAccount(auth);
     } catch (err) {
       toast(err.message, true);
@@ -1835,6 +1867,9 @@ async function renderJoin(token) {
 async function signOut() {
   try {
     await api("/auth/logout", { method: "POST" });
+  } catch {}
+  try {
+    window.trace?.identify?.(null);
   } catch {}
   auth = null;
   project = null;
@@ -2085,6 +2120,7 @@ async function renderTeam() {
   );
   onSubmit(view.querySelector("#invite"), async (fd) => {
     const r = await api("/team/invites", { method: "POST", body: JSON.stringify({ email: fd.get("email"), role: fd.get("role") }) });
+    measure("invite_sent");
     const link = `${location.origin}/#/invite/${r.token}`;
     await renderTeam();
     view.querySelector("#invite-result").innerHTML = `<div class="card"><p>Send this link to <strong>${esc(r.invite.email)}</strong>. It works once and expires in 7 days.</p>
@@ -2652,7 +2688,7 @@ async function renderArea(key) {
                 <span class="badge ${p.kind === "error" ? "bad" : "warn"}">${esc(PROBLEM_KIND[p.kind] || p.kind)}</span>
                 <div class="problem-text"><strong>${esc(p.what)}</strong><span class="hint">On <code>${esc(p.path)}</code>${p.node !== area ? ` · ${esc(p.node.name)}` : ""}</span></div>
                 <span class="problem-count">${num(p.sessions)}</span>
-                ${PUBLIC ? "" : `<button type="button" data-copy="${esc(problemTask(p, p.node))}" title="Copies a task for your coding agent">Make it a task</button>`}
+                ${PUBLIC ? "" : `<button type="button" data-task="1" data-copy="${esc(problemTask(p, p.node))}" title="Copies a task for your coding agent">Make it a task</button>`}
               </li>`
             )
             .join("")}</ol>`
@@ -2832,6 +2868,7 @@ async function route() {
   const canonical = `${pageUrl(page)}${arg ? `/${arg}` : ""}`;
   if (!ACCOUNT_PAGES.includes(page) && location.hash.split("?")[0] !== canonical) history.replaceState(null, "", canonical + (location.hash.includes("?") ? location.hash.slice(location.hash.indexOf("?")) : ""));
   routeArg = arg;
+  measurePage(ACCOUNT_PAGES.includes(page) || !sectionOf(page) ? `/${page}` : sectionOf(page) === "home" ? "/home" : `/${sectionOf(page)}/${page}${page === "features" && arg ? "/area" : ""}`);
   const render = routes[page] || renderHome;
   if (!PUBLIC && project && !ACCOUNT_PAGES.includes(page)) await loadChecklist();
   renderSubnav(ACCOUNT_PAGES.includes(page) && page !== "team" && page !== "plan" ? null : page);
@@ -2848,6 +2885,7 @@ document.getElementById("run-analysis").addEventListener("click", async (e) => {
   const btn = e.currentTarget;
   btn.disabled = true;
   btn.textContent = "Analysing…";
+  measure("analysis_run");
   try {
     const r = await post("/analyze");
     const n = r.created.length;
