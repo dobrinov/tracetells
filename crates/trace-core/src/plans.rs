@@ -82,7 +82,7 @@ pub struct Plan {
 /// Templates every server starts with. The operator can edit them later.
 const BUILT_IN: &[(&str, &str, Limits)] = &[
     ("unlimited", "Unlimited", Limits { retention_days: None, max_sites: None, monthly_events: None, max_members: None }),
-    ("free", "Free", Limits { retention_days: Some(30), max_sites: Some(1), monthly_events: Some(100_000), max_members: Some(3) }),
+    ("free", "Free", Limits { retention_days: Some(30), max_sites: Some(1), monthly_events: Some(100_000), max_members: Some(1) }),
     ("friend", "Friend", Limits { retention_days: Some(365), max_sites: Some(5), monthly_events: Some(1_000_000), max_members: Some(10) }),
     ("owner", "Owner", Limits { retention_days: None, max_sites: None, monthly_events: None, max_members: None }),
 ];

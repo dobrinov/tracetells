@@ -25,7 +25,8 @@ type Connect = Option<Extension<ConnectInfo<std::net::SocketAddr>>>;
 /// Unauthenticated: the page and its data.
 pub fn routes() -> Router<AppStateRef> {
     Router::new()
-        .route("/p/{token}", get(|| async { Html(crate::api::INDEX_HTML) }))
+        // Search engines would index every published dashboard as a thin page of numbers.
+        .route("/p/{token}", get(|| async { ([(header::HeaderName::from_static("x-robots-tag"), "noindex, nofollow")], Html(crate::api::INDEX_HTML)) }))
         .route("/v1/public/{token}/project", get(overview))
         .route("/v1/public/{token}/kpis", get(kpis))
         .route("/v1/public/{token}/funnels", get(funnels))

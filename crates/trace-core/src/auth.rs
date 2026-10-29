@@ -1165,7 +1165,8 @@ mod tests {
     async fn member_limit_counts_pending_invites() {
         let path = crate::db::test_target("limit").await;
         let pool = crate::db::connect(&path).await.unwrap();
-        let a = crate::db::create_account(&pool, "Free one", Some("free")).await.unwrap().id; // 3 members
+        let a = crate::db::create_account(&pool, "Free one", Some("free")).await.unwrap().id;
+        crate::plans::set_overrides(&pool, a, &[("max_members".to_string(), Some(3))].into()).await.unwrap();
         let owner = create_user(&pool, a, "o@x.example", "", "a long enough password", Role::Owner).await.unwrap();
         create_user(&pool, a, "u@x.example", "", "a long enough password", Role::User).await.unwrap();
         create_invite(&pool, a, "p@x.example", Role::User, Some(owner.id)).await.unwrap();

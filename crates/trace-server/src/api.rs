@@ -1270,6 +1270,8 @@ mod isolation_tests {
 
         let (status, page) = raw(get(format!("/p/{token}"))).await;
         assert!(status == StatusCode::OK && page.contains("<html"), "the dashboard is served");
+        let res = app.clone().oneshot(get(format!("/p/{token}"))).await.unwrap();
+        assert_eq!(res.headers()["x-robots-tag"], "noindex, nofollow", "search engines leave public dashboards out");
         let mut everything = String::new();
         for part in ["project", "kpis", "config", "digest", "insights"] {
             let (status, body) = raw(get(format!("/v1/public/{token}/{part}"))).await;
