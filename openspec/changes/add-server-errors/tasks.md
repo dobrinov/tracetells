@@ -41,10 +41,10 @@
 
 ## 6. Node.js client (`clients/node`, package `@tracetells/node`)
 
-- [ ] 6.1 TypeScript source, ESM and CJS builds with types, no runtime dependencies; config, no-op, sender as in 5.1
-- [ ] 6.2 Uncaught exceptions and unhandled rejections keeping default exit behaviour; Express error handler, Fastify plugin, `wrapHandler` for `http`; `report(err)`
-- [ ] 6.3 Scrubbing from the shared test vectors; tests with Express and Fastify that bodies, headers, cookies and query strings are never sent
-- [ ] 6.4 README
+- [x] 6.1 TypeScript source, ESM and CJS builds with types, no runtime dependencies; config, no-op, sender as in 5.1
+- [x] 6.2 Uncaught exceptions and unhandled rejections keeping default exit behaviour; Express error handler, Fastify plugin, `wrapHandler` for `http`; `report(err)`
+- [x] 6.3 Scrubbing from the shared test vectors; tests with Express and Fastify that bodies, headers, cookies and query strings are never sent
+- [x] 6.4 README
 
 ## 7. Ruby client (`clients/ruby`, gem `tracetells`)
 
