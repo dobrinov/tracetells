@@ -1,4 +1,3 @@
-mod analysis;
 mod api;
 mod auth_api;
 mod cache;
@@ -16,8 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand, ValueEnum};
-use trace_agent::{ClaudeConfig, Engine};
+use clap::{Parser, Subcommand};
 use trace_core::model::{InsightStatus, Project};
 use trace_core::util::DAY_MS;
 use trace_core::{Pool, config, db, evaluate, insights, kpi, prompt, retention};
@@ -104,16 +102,6 @@ enum Command {
         /// A personal API token (create one under Account in the dashboard).
         #[arg(long, env = "TRACE_TOKEN")]
         token: Option<String>,
-    },
-    /// Analyse a website's recent behaviour and create improvement insights.
-    Analyze {
-        #[arg(long, value_enum, default_value_t = EngineArg::Auto)]
-        engine: EngineArg,
-        /// Days of behaviour to analyse.
-        #[arg(long, default_value_t = 14)]
-        days: u32,
-        #[arg(long, default_value_t = 5)]
-        max_insights: usize,
     },
     /// Measure released insights against their KPIs (one website with --site, otherwise all).
     Evaluate,
@@ -250,23 +238,6 @@ enum SiteAction {
     },
 }
 
-#[derive(Clone, Copy, ValueEnum)]
-enum EngineArg {
-    Auto,
-    Claude,
-    Heuristics,
-}
-
-impl From<EngineArg> for Engine {
-    fn from(e: EngineArg) -> Self {
-        match e {
-            EngineArg::Auto => Engine::Auto,
-            EngineArg::Claude => Engine::Claude,
-            EngineArg::Heuristics => Engine::Heuristics,
-        }
-    }
-}
-
 fn main() -> Result<()> {
     // trace.env is read before anything else, while the process has one thread.
     setup::load_env_file();
@@ -289,7 +260,6 @@ async fn run() -> Result<()> {
         return setup::init(database, explicit.then(|| cli.db.clone()), force).await;
     }
     let pool = db::connect(&cli.db).await.with_context(|| format!("opening {}", db::describe(&cli.db)))?;
-    let claude = ClaudeConfig::from_env();
     let site = cli.site.as_deref();
 
     match cli.command {
@@ -373,7 +343,7 @@ async fn run() -> Result<()> {
             } else {
                 None
             };
-            let mut state = api::AppState::new(pool, claude);
+            let mut state = api::AppState::new(pool);
             state.admin_token = admin_token;
             state.setup_code = std::sync::Mutex::new(setup_code);
             state.secure_cookies = public_url.starts_with("https://");
@@ -407,27 +377,6 @@ async fn run() -> Result<()> {
                     let _ = tokio::signal::ctrl_c().await;
                 })
                 .await?;
-        }
-        Command::Analyze { engine, days, max_insights } => {
-            let target = db::resolve_site(&pool, site).await?;
-            let opts = trace_agent::Options { engine: engine.into(), days, max_insights };
-            let report = analysis::run(&pool, &target, claude.as_ref(), &opts).await?;
-            if let Some(w) = &report.warning {
-                eprintln!("warning: {w}");
-            }
-            println!(
-                "{}: {} new insight(s) from {}{} ({} already existed)",
-                target.slug,
-                report.created.len(),
-                report.engine,
-                report.model.map(|m| format!(" ({m})")).unwrap_or_default(),
-                report.duplicates
-            );
-            for id in report.created {
-                if let Some(i) = insights::get(&pool, target.id, id).await? {
-                    println!("  #{:<4} {}", i.id, i.title);
-                }
-            }
         }
         Command::Evaluate => {
             let targets = match site {
@@ -506,7 +455,6 @@ async fn run() -> Result<()> {
             let ctx = mcp::Context {
                 pool: &pool,
                 account_id: account.id,
-                claude: claude.as_ref(),
                 actor: "mcp (local)".into(),
                 // Whoever can run this can already read the database file.
                 role: trace_core::auth::Role::Admin,

@@ -52,9 +52,7 @@ async function renderPrivacy() {
         `<code>${esc(r.pattern)}</code>${r.replacement ? ` → <code>${esc(r.replacement)}</code>` : ""}${r.enabled ? "" : ` <span class="chip">off</span>`}`,
         esc(r.label),
         `${esc(ago(r.created_at))} <span class="hint">by ${esc(r.created_by)}</span>`,
-        admin
-          ? `<button class="quiet" data-toggle="${r.id}" data-on="${r.enabled ? 0 : 1}">${r.enabled ? "Turn off" : "Turn on"}</button><button class="quiet" data-delete-rule="${r.id}">Remove</button>`
-          : "",
+        `<span class="hint">#${r.id}</span>`,
       ])
     );
   };
@@ -66,28 +64,22 @@ async function renderPrivacy() {
     <div class="card"><ul class="checklist">${p.built_in.map((b) => `<li>${esc(b)}</li>`).join("")}</ul></div>
 
     <h2>Your rules</h2>
-    <p class="hint">Changes apply on the server straight away and reach visitors' browsers within an hour, as soon as their cached copy of the collector is refreshed.${admin ? "" : " Only admins can change rules."}</p>
+    <p class="hint">Your coding agent adds and removes rules (admins). Changes apply on the server straight away and reach visitors' browsers within an hour. When your agent can edit the code, <code>data-trace-mask</code> on the element is even better.</p>
     ${Object.entries(RULE_KINDS)
       .map(([kind, k]) => {
         const t = ruleTable(kind);
         return t ? `<h3>${esc(k.title)}</h3>${t}` : "";
       })
-      .join("") || `<div class="empty">No rules of your own yet.${admin ? " Add one below." : ""}</div>`}
+      .join("") || `<div class="empty">No rules of your own yet.</div>`}
 
     ${
       admin
-        ? `<h2>Add a rule</h2>
-    <form class="card stack" id="add-rule">
-      <div class="row">
-        <label class="field narrow">Kind
-          <select name="kind">${Object.entries(RULE_KINDS).map(([kind, k]) => `<option value="${kind}">${esc(k.title)}</option>`).join("")}</select></label>
-        <label class="field">Pattern <input name="pattern" required></label>
-        <label class="field narrow" id="replacement-field">Replace with <input name="replacement" placeholder="[redacted]"></label>
-      </div>
-      <p class="hint" id="rule-help"></p>
-      <label class="field">Note (optional) <input name="label" placeholder="Why this rule exists, e.g. order numbers identify customers"></label>
-      <div><button class="primary" type="submit">Add rule</button></div>
-    </form>`
+        ? html`<h2>Change the rules</h2>
+    ${askAgent("/trace:manage mask .account-summary", "Never read text inside an element")}
+    ${askAgent("/trace:manage redact ORD-\\d+ as [order]", "Redact a pattern everywhere")}
+    ${askAgent("/trace:manage ignore /admin*", "Record nothing on some pages")}
+    ${askAgent("/trace:manage remove privacy rule 3", "Remove a rule, by its number")}
+    ${checklist?.steps.some((x) => x.key === "privacy" && x.done) ? "" : askAgent("/trace:manage confirm the privacy review", "Reviewed what's collected?")}`
         : ""
     }
 
@@ -100,41 +92,6 @@ async function renderPrivacy() {
       <div id="try-result"></div>
     </form>`;
 
-  view.querySelectorAll("[data-toggle]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      await api(`/privacy/rules/${b.dataset.toggle}`, { method: "POST", body: JSON.stringify({ enabled: b.dataset.on === "1" }) });
-      renderPrivacy();
-    })
-  );
-  view.querySelectorAll("[data-delete-rule]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      if (!confirm("Remove this rule?")) return;
-      await api(`/privacy/rules/${b.dataset.deleteRule}`, { method: "DELETE" });
-      renderPrivacy();
-    })
-  );
-  const form = view.querySelector("#add-rule");
-  if (form) {
-    const sync = () => {
-      const k = RULE_KINDS[form.kind.value];
-      view.querySelector("#rule-help").textContent = k.help;
-      form.pattern.placeholder = k.placeholder;
-      view.querySelector("#replacement-field").hidden = form.kind.value !== "redact_pattern";
-    };
-    form.kind.addEventListener("change", sync);
-    sync();
-    onSubmit(form, async (fd) => {
-      const kind = fd.get("kind");
-      const problem = checkRuleInBrowser(kind, String(fd.get("pattern")).trim());
-      if (problem) throw new Error(problem);
-      await api("/privacy/rules", {
-        method: "POST",
-        body: JSON.stringify({ kind, pattern: fd.get("pattern"), replacement: fd.get("replacement") || null, label: fd.get("label") }),
-      });
-      toast("Rule added");
-      renderPrivacy();
-    });
-  }
   onSubmit(view.querySelector("#try-rules"), async (fd) => {
     const r = await api("/privacy/test", { method: "POST", body: JSON.stringify({ text: fd.get("text"), path: fd.get("path") }) });
     view.querySelector("#try-result").innerHTML = `
@@ -165,9 +122,7 @@ async function renderPlan() {
       const note =
         l.key === "monthly_events" && p.events_dropped
           ? `${num(p.events_dropped)} not recorded since the limit`
-          : l.key === "monthly_ai_runs"
-            ? "Heuristic analysis is never limited"
-            : l.key === "max_members"
+          : l.key === "max_members"
               ? "Pending invites count too"
               : full
                 ? "Ask for more to add another"

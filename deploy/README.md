@@ -35,8 +35,8 @@ server) is the reference; this follows it.
        ./deploy.sh
 
    Add `TRACE_ALLOW_SIGNUP=1` to let people create accounts from the sign-in
-   page. Analysis runs in each customer's own coding agent over MCP; the hosted
-   server has no `ANTHROPIC_API_KEY`, so its own analysis is the built-in checks.
+   page. Analysis runs only in each customer's own coding agent over MCP; the
+   server never analyses on its own.
 
 3. Routing:
 

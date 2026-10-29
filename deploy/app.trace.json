@@ -3,10 +3,9 @@
   "events": {
     "signed_up": "Created an account from the sign-up page",
     "website_added": "Added another website from the website menu",
-    "analysis_run": "Started an analysis on the server (Run analysis, or analyse here)",
     "prompt_copied": "Copied an insight as a prompt for a coding agent",
     "insight_moved": "Moved an insight along. Props: status (selected, in_progress, released, dismissed)",
-    "copied": "Copied something for the coding agent or the codebase. Props: what (analyse, task, snippet)",
+    "copied": "Copied something for the coding agent or the codebase. Props: what (analyse, task, ask, snippet)",
     "invite_sent": "Invited someone to the account",
     "public_link_created": "Made a website's dashboard public"
   },
@@ -14,40 +13,67 @@
     "signup_completion": {
       "name": "Sign-ups that finish",
       "description": "Of sessions on the sign-up page, the share that create an account",
-      "conversion": { "from": { "pageview": "/sign-up" }, "to": { "event": "signed_up" } },
+      "conversion": {
+        "from": {
+          "pageview": "/sign-up"
+        },
+        "to": {
+          "event": "signed_up"
+        }
+      },
       "goal": "increase",
       "target": "40%"
     },
     "insights_to_prompts": {
       "name": "Insights become tasks",
       "description": "Of sessions on Insights, the share that copy one as a prompt for a coding agent",
-      "conversion": { "from": { "pageview": "/improve/insights" }, "to": { "event": "prompt_copied" } },
+      "conversion": {
+        "from": {
+          "pageview": "/improve/insights"
+        },
+        "to": {
+          "event": "prompt_copied"
+        }
+      },
       "goal": "increase",
       "target": "25%"
     },
     "insights_acted_on": {
       "name": "Insights moved along",
       "description": "Share of sessions that pick, start, release or dismiss an insight",
-      "session_rate": { "event": "insight_moved" },
+      "session_rate": {
+        "event": "insight_moved"
+      },
       "goal": "increase"
     },
     "home_to_features": {
       "name": "Home leads to Features",
       "description": "Of sessions on Home, the share that open the Features page",
-      "conversion": { "from": { "pageview": "/home" }, "to": { "pageview": "/understand/features*" } },
+      "conversion": {
+        "from": {
+          "pageview": "/home"
+        },
+        "to": {
+          "pageview": "/understand/features*"
+        }
+      },
       "goal": "increase",
       "target": "20%"
     },
     "agent_handoffs": {
       "name": "Hand-offs to the agent",
       "description": "Share of sessions that copy an analyse command, a task or a snippet",
-      "session_rate": { "event": "copied" },
+      "session_rate": {
+        "event": "copied"
+      },
       "goal": "increase"
     },
     "js_errors": {
       "name": "Sessions with errors",
       "description": "Share of dashboard sessions with an exception, console error or failed request",
-      "session_rate": { "error": "*" },
+      "session_rate": {
+        "error": "*"
+      },
       "goal": "decrease",
       "target": "1%"
     }
@@ -57,56 +83,200 @@
       "name": "Sign-up to Home",
       "description": "The sign-up page, an account, the setup page, Home",
       "steps": [
-        { "pageview": "/sign-up" },
-        { "event": "signed_up" },
-        { "pageview": "/setup/start*" },
-        { "pageview": "/home" }
+        {
+          "pageview": "/sign-up"
+        },
+        {
+          "event": "signed_up"
+        },
+        {
+          "pageview": "/setup/start*"
+        },
+        {
+          "pageview": "/home"
+        }
       ]
     },
     "insight_loop": {
       "name": "Insight to release",
       "description": "Insights, a prompt copied, the insight moved along",
       "steps": [
-        { "pageview": "/improve/insights" },
-        { "event": "prompt_copied" },
-        { "event": "insight_moved" }
+        {
+          "pageview": "/improve/insights"
+        },
+        {
+          "event": "prompt_copied"
+        },
+        {
+          "event": "insight_moved"
+        }
       ]
     }
   },
   "areas": {
-    "home": { "name": "Home", "match": [{ "pageview": "/home" }] },
+    "home": {
+      "name": "Home",
+      "match": [
+        {
+          "pageview": "/home"
+        }
+      ]
+    },
     "understand": {
       "name": "Understand",
       "features": {
-        "audience": { "name": "Audience", "match": [{ "pageview": "/understand/audience" }] },
-        "features": { "name": "Features", "match": [{ "pageview": "/understand/features*" }] },
-        "funnels": { "name": "Funnels", "match": [{ "pageview": "/understand/funnels" }] },
-        "pages": { "name": "Pages", "match": [{ "pageview": "/understand/pages" }] },
-        "errors": { "name": "Errors", "match": [{ "pageview": "/understand/errors" }] }
+        "audience": {
+          "name": "Audience",
+          "match": [
+            {
+              "pageview": "/understand/audience"
+            }
+          ]
+        },
+        "features": {
+          "name": "Features",
+          "match": [
+            {
+              "pageview": "/understand/features*"
+            }
+          ]
+        },
+        "funnels": {
+          "name": "Funnels",
+          "match": [
+            {
+              "pageview": "/understand/funnels"
+            }
+          ]
+        },
+        "pages": {
+          "name": "Pages",
+          "match": [
+            {
+              "pageview": "/understand/pages"
+            }
+          ]
+        },
+        "errors": {
+          "name": "Errors",
+          "match": [
+            {
+              "pageview": "/understand/errors"
+            }
+          ]
+        }
       }
     },
     "improve": {
       "name": "Improve",
       "features": {
-        "goals": { "name": "Goals", "match": [{ "pageview": "/improve/goals" }] },
-        "insights": { "name": "Insights", "match": [{ "pageview": "/improve/insights" }, { "event": "prompt_copied" }] },
-        "releases": { "name": "Releases", "match": [{ "pageview": "/improve/releases" }] }
+        "goals": {
+          "name": "Goals",
+          "match": [
+            {
+              "pageview": "/improve/goals"
+            }
+          ]
+        },
+        "insights": {
+          "name": "Insights",
+          "match": [
+            {
+              "pageview": "/improve/insights"
+            },
+            {
+              "event": "prompt_copied"
+            }
+          ]
+        },
+        "releases": {
+          "name": "Releases",
+          "match": [
+            {
+              "pageview": "/improve/releases"
+            }
+          ]
+        }
       }
     },
     "setup": {
       "name": "Setup",
       "features": {
-        "start": { "name": "Get started", "match": [{ "pageview": "/setup/start*" }] },
-        "install": { "name": "Install and tracking", "match": [{ "pageview": "/setup/install" }] },
-        "privacy": { "name": "Privacy", "match": [{ "pageview": "/setup/privacy" }] },
-        "team": { "name": "Team", "match": [{ "pageview": "/setup/team" }, { "event": "invite_sent" }] },
-        "plan": { "name": "Plan", "match": [{ "pageview": "/setup/plan" }] }
+        "start": {
+          "name": "Get started",
+          "match": [
+            {
+              "pageview": "/setup/start*"
+            }
+          ]
+        },
+        "install": {
+          "name": "Install and tracking",
+          "match": [
+            {
+              "pageview": "/setup/install"
+            }
+          ]
+        },
+        "privacy": {
+          "name": "Privacy",
+          "match": [
+            {
+              "pageview": "/setup/privacy"
+            }
+          ]
+        },
+        "team": {
+          "name": "Team",
+          "match": [
+            {
+              "pageview": "/setup/team"
+            },
+            {
+              "event": "invite_sent"
+            }
+          ]
+        },
+        "plan": {
+          "name": "Plan",
+          "match": [
+            {
+              "pageview": "/setup/plan"
+            }
+          ]
+        }
       }
     },
-    "account": { "name": "Signing in and account", "match": [{ "pageview": "/sign-in" }, { "pageview": "/sign-up" }, { "pageview": "/account" }] }
+    "account": {
+      "name": "Signing in and account",
+      "match": [
+        {
+          "pageview": "/sign-in"
+        },
+        {
+          "pageview": "/sign-up"
+        },
+        {
+          "pageview": "/account"
+        }
+      ]
+    }
   },
   "audience": {
-    "marketing": ["/sign-up", "/sign-in"],
-    "engaged": [{ "event": "prompt_copied" }, { "event": "insight_moved" }, { "event": "copied" }, { "event": "analysis_run" }]
+    "marketing": [
+      "/sign-up",
+      "/sign-in"
+    ],
+    "engaged": [
+      {
+        "event": "prompt_copied"
+      },
+      {
+        "event": "insight_moved"
+      },
+      {
+        "event": "copied"
+      }
+    ]
   }
 }

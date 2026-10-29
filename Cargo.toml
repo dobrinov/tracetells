@@ -18,7 +18,6 @@ sha1 = "0.10"
 sha2 = "0.10"
 subtle = "2"
 trace-core = { path = "crates/trace-core" }
-trace-agent = { path = "crates/trace-agent" }
 anyhow = "1"
 axum = "0.8"
 clap = { version = "4", features = ["derive", "env"] }

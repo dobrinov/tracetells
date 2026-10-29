@@ -40,6 +40,20 @@ function html(strings, ...values) {
   return new SafeHtml(out);
 }
 
+// The dashboard shows; your coding agent changes things, over MCP. Wherever
+// there's something to do, the page says exactly what to ask it.
+function askAgent(command, label = "Ask your agent") {
+  return html`<div class="ask-agent"><span class="ask-label">${label}</span><code>${command}</code><button type="button" data-ask="${command}">Copy</button></div>`;
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest && e.target.closest("[data-ask]");
+  if (!b) return;
+  if (await copyText(b.dataset.ask)) {
+    toast("Copied. Paste it into Claude Code, or ask any MCP client the same.");
+    measure("copied", { what: "ask" });
+  }
+});
+
 const pct = (v) => (v == null ? "–" : `${(v * 100).toFixed(1)}%`);
 const num = (v) => (v == null ? "–" : Number(v).toLocaleString());
 
@@ -282,6 +296,8 @@ function toggleSiteList(open = siteList.hidden) {
   if (open) (siteList.querySelector('[aria-selected="true"]') || siteList.querySelector("button"))?.focus();
 }
 
+// Websites are added by your coding agent (/trace:manage add a website called …);
+// this stays only for an account that has none left.
 async function addWebsite() {
   const name = prompt("Name of the new website, e.g. \"Docs\" or \"Shop (staging)\":");
   if (!name) return false;
@@ -330,11 +346,8 @@ siteList.addEventListener("click", async (e) => {
   }
   if (e.target.closest("[data-add-site]")) {
     toggleSiteList(false);
-    try {
-      if (await addWebsite()) switchSite(currentSite);
-    } catch (err) {
-      toast(err.message, true);
-    }
+    const command = "/trace:manage add a website called ";
+    if (await copyText(command)) toast(`Copied "${command}…". Finish the name and paste it into your coding agent: it adds the website and its tag.`);
   }
 });
 siteList.addEventListener("keydown", (e) => {

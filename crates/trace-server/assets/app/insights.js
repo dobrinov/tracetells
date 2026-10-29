@@ -12,19 +12,15 @@ function kpiValue(k, v) {
   return k.kind === "per_session" ? Number(v).toFixed(2) : pct(v);
 }
 
-function insightActions(insight) {
-  const b = (status, label, cls = "") => `<button class="${cls}" data-status="${status}">${label}</button>`;
+// What to ask your agent next, by where the insight is: the dashboard doesn't change insights.
+function insightNext(insight) {
+  const id = insight.id;
   switch (insight.status) {
     case "new":
-      return b("selected", "Select") + b("dismissed", "Dismiss", "quiet");
     case "selected":
-      return b("in_progress", "Start work") + b("new", "Back to new", "quiet") + b("dismissed", "Dismiss", "quiet");
+      return askAgent(`/trace:fix ${id}`, "Implement it");
     case "in_progress":
-      return b("released", "Mark released") + b("selected", "Back to selected", "quiet");
-    case "released":
-      return b("in_progress", "Reopen", "quiet");
-    case "dismissed":
-      return b("new", "Restore", "quiet");
+      return askAgent(`/trace:manage release insight ${id}`, "Once it's live");
   }
   return "";
 }
@@ -37,7 +33,7 @@ function verdictBlock(insight) {
   const measured = insight.evidence.some((e) => e.metric);
   let kpi;
   if (!insight.kpi_id) {
-    kpi = measured ? "" : `<div class="verdict"><span class="badge">Not measured</span><span>Link a KPI to measure the impact of this release.</span></div>`;
+    kpi = measured ? "" : `<div class="verdict"><span class="badge">Not measured</span><span>No goal is linked, so there's no verdict. Your agent sets the goal when it drafts an insight.</span></div>`;
   } else if (!insight.evaluation) {
     kpi = `<div class="verdict"><span class="badge">Pending</span><span>Not evaluated yet. Trace checks released insights every hour.</span></div>`;
   } else {
@@ -74,9 +70,6 @@ function insightCard(insight) {
   const kpi = kpiCache.find((k) => k.id === insight.kpi_id);
   const focused = insight.id === focusedInsight;
   const released = insight.released_at ? ` · released ${new Date(insight.released_at).toLocaleDateString()}` : "";
-  const kpiOptions =
-    `<option value="">No KPI</option>` +
-    kpiCache.map((k) => `<option value="${k.id}" ${k.id === insight.kpi_id ? "selected" : ""}>${esc(k.name)}</option>`).join("");
   return `
   <article class="card ${focused ? "focused" : ""}" data-id="${insight.id}">
     <div class="meta">
@@ -98,11 +91,7 @@ function insightCard(insight) {
     <div class="actions">
       <button class="${focused ? "primary" : ""}" data-copy>Copy as prompt</button>
       <span class="spacer"></span>
-      ${
-        can("user")
-          ? `${insight.evidence.some((e) => e.metric) && insight.status !== "dismissed" ? `<button class="quiet" data-refresh title="Measure the evidence again with fresh data">Refresh</button>` : ""}<select data-kpi aria-label="KPI this insight should move">${kpiOptions}</select>${insightActions(insight)}`
-          : ""
-      }
+      ${PUBLIC ? "" : insightNext(insight)}
     </div>
   </article>`;
 }
@@ -147,8 +136,8 @@ async function renderInsights() {
       releases
         ? "Shipped changes, newest first, and whether each moved its goal: Trace compares the 14 days before the release with the 14 after."
         : PUBLIC
-        ? `What a coding agent (or Trace's built-in checks) found in how people use ${esc(project.name)}, with the change it suggests. Each one is also a ready prompt for a coding agent.`
-        : "What your coding agent (or Trace's built-in checks) found in real behaviour, with the change it suggests. Copy one as a prompt and move it along as you work. Once it's released it moves to Releases, where Trace measures whether it worked."
+        ? `What a coding agent found in how people use ${esc(project.name)}, with the change it suggests. Each one is also a ready prompt for a coding agent.`
+        : "What your coding agent found in real behaviour, with the change it suggests. Your agent moves them along: /trace:fix implements one, and /trace:manage picks, dismisses or releases one. Once released, it moves to Releases, where Trace measures whether it worked."
     }</p>
     ${analysis ? analysisPanel(analysis) : ""}
     <div class="chips" role="tablist" aria-label="Status" ${releases ? "hidden" : ""}>
@@ -206,51 +195,5 @@ async function renderInsights() {
       showPrompt(id);
     });
     card.querySelector("[data-copy]").addEventListener("click", (e) => copyPrompt(id, e.currentTarget));
-    card.querySelector("[data-kpi]")?.addEventListener("change", async (e) => {
-      await post(`/insights/${id}/kpi`, { kpi_id: e.target.value ? Number(e.target.value) : null });
-      toast("KPI updated");
-      renderInsights();
-    });
-    card.querySelector("[data-refresh]")?.addEventListener("click", async (e) => {
-      e.currentTarget.disabled = true;
-      try {
-        await post(`/insights/${id}/refresh`);
-        toast("Measured again with fresh data");
-        renderInsights();
-      } catch (err) {
-        toast(err.message, true);
-      }
-    });
-    card.querySelectorAll("[data-status]").forEach((btn) =>
-      btn.addEventListener("click", async () => {
-        const status = btn.dataset.status;
-        let reason = null;
-        let released_at = null;
-        if (status === "dismissed") {
-          reason = prompt("Why dismiss this insight? The analyst uses your reason to avoid similar suggestions.", "");
-          if (reason === null) return;
-        }
-        if (status === "released") {
-          // The before/after split is when the change went live, which may be earlier than now.
-          const pad = (n) => String(n).padStart(2, "0");
-          const d = new Date();
-          const nowText = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-          const when = prompt("When did this change go live? Keep now, or enter the deploy's time (your local time).", nowText);
-          if (when === null) return;
-          if (when.trim() !== nowText) {
-            const at = new Date(when.trim().replace(" ", "T"));
-            if (isNaN(at)) return toast("Use a time like 2026-10-28 14:05");
-            released_at = at.toISOString();
-          }
-        }
-        await post(`/insights/${id}/status`, { status, reason, released_at });
-        measure("insight_moved", { status });
-        if (status === "released") {
-          await post("/evaluate");
-          toast("Released. Trace compares the KPI over the 14 days before and after, and gives its verdict once those 14 days have passed.");
-        }
-        renderInsights();
-      })
-    );
   });
 }

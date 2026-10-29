@@ -7,6 +7,7 @@
 | `/trace:setup` | Adds the website, installs the snippet, writes `trace.json` with KPIs and events, and masks screens that show customer data |
 | `/trace:analyse` | Reads the website's behaviour, finds the few changes most likely to move its KPIs, and saves the ones you approve as insights |
 | `/trace:fix` | Implements an insight in your code and marks it released, so Trace measures whether the KPI moved |
+| `/trace:manage` | Everything the dashboard only shows: pick, dismiss or release insights, privacy rules and the review, the public link, adding a website, applying trace.json, checking that data arrives |
 
 You can also just ask: "set up Trace on this site", "what should I fix?", "work on the next Trace insight".
 

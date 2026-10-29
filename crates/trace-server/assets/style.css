@@ -2264,3 +2264,31 @@ nav.breadcrumb a {
 .subnav a:hover {
   background: none;
 }
+
+/* What to ask your coding agent: the dashboard shows, the agent does. */
+.ask-agent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 8px 0;
+  font-size: 14px;
+}
+.ask-agent .ask-label {
+  color: var(--text-2);
+}
+.ask-agent code {
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.ask-agent button {
+  padding: 4px 12px;
+  min-height: 32px;
+}
+.card .actions .ask-agent {
+  margin: 0;
+}

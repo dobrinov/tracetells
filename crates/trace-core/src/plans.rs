@@ -10,12 +10,11 @@ use crate::Pool;
 use crate::util::now_ms;
 
 /// The limits a plan can set, in display order.
-pub const LIMITS: [(&str, &str); 5] = [
+pub const LIMITS: [(&str, &str); 4] = [
     ("retention_days", "Data kept (days)"),
     ("max_sites", "Websites"),
     ("monthly_events", "Events per month"),
     ("max_members", "Members"),
-    ("monthly_ai_runs", "Claude analyses per month"),
 ];
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,7 +23,6 @@ pub struct Limits {
     pub max_sites: Option<i64>,
     pub monthly_events: Option<i64>,
     pub max_members: Option<i64>,
-    pub monthly_ai_runs: Option<i64>,
 }
 
 impl Limits {
@@ -34,7 +32,6 @@ impl Limits {
             "max_sites" => self.max_sites,
             "monthly_events" => self.monthly_events,
             "max_members" => self.max_members,
-            "monthly_ai_runs" => self.monthly_ai_runs,
             _ => None,
         }
     }
@@ -45,7 +42,6 @@ impl Limits {
             "max_sites" => self.max_sites = v,
             "monthly_events" => self.monthly_events = v,
             "max_members" => self.max_members = v,
-            "monthly_ai_runs" => self.monthly_ai_runs = v,
             _ => {}
         }
     }
@@ -85,10 +81,10 @@ pub struct Plan {
 
 /// Templates every server starts with. The operator can edit them later.
 const BUILT_IN: &[(&str, &str, Limits)] = &[
-    ("unlimited", "Unlimited", Limits { retention_days: None, max_sites: None, monthly_events: None, max_members: None, monthly_ai_runs: None }),
-    ("free", "Free", Limits { retention_days: Some(30), max_sites: Some(1), monthly_events: Some(100_000), max_members: Some(3), monthly_ai_runs: Some(5) }),
-    ("friend", "Friend", Limits { retention_days: Some(365), max_sites: Some(5), monthly_events: Some(1_000_000), max_members: Some(10), monthly_ai_runs: Some(50) }),
-    ("owner", "Owner", Limits { retention_days: None, max_sites: None, monthly_events: None, max_members: None, monthly_ai_runs: None }),
+    ("unlimited", "Unlimited", Limits { retention_days: None, max_sites: None, monthly_events: None, max_members: None }),
+    ("free", "Free", Limits { retention_days: Some(30), max_sites: Some(1), monthly_events: Some(100_000), max_members: Some(3) }),
+    ("friend", "Friend", Limits { retention_days: Some(365), max_sites: Some(5), monthly_events: Some(1_000_000), max_members: Some(10) }),
+    ("owner", "Owner", Limits { retention_days: None, max_sites: None, monthly_events: None, max_members: None }),
 ];
 
 /// Adds missing built-in templates. On a server with no templates yet, makes
@@ -97,8 +93,8 @@ pub async fn seed(pool: &Pool, default_key: Option<&str>) -> Result<()> {
     let first_start: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM plans").fetch_one(pool).await?;
     for (key, name, l) in BUILT_IN {
         sqlx::query(
-            "INSERT INTO plans (key, name, retention_days, max_sites, monthly_events, max_members, monthly_ai_runs, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
+            "INSERT INTO plans (key, name, retention_days, max_sites, monthly_events, max_members, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
         )
         .bind(key)
         .bind(name)
@@ -106,7 +102,6 @@ pub async fn seed(pool: &Pool, default_key: Option<&str>) -> Result<()> {
         .bind(l.max_sites)
         .bind(l.monthly_events)
         .bind(l.max_members)
-        .bind(l.monthly_ai_runs)
         .bind(now_ms())
         .execute(pool)
         .await?;
@@ -118,11 +113,11 @@ pub async fn seed(pool: &Pool, default_key: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-type PlanRow = (i64, String, String, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, crate::db::Flag);
-const COLS: &str = "id, key, name, retention_days, max_sites, monthly_events, max_members, monthly_ai_runs, is_default";
+type PlanRow = (i64, String, String, Option<i64>, Option<i64>, Option<i64>, Option<i64>, crate::db::Flag);
+const COLS: &str = "id, key, name, retention_days, max_sites, monthly_events, max_members, is_default";
 
-fn from_row((id, key, name, retention_days, max_sites, monthly_events, max_members, monthly_ai_runs, is_default): PlanRow) -> Plan {
-    Plan { id, key, name, is_default: is_default.0, limits: Limits { retention_days, max_sites, monthly_events, max_members, monthly_ai_runs } }
+fn from_row((id, key, name, retention_days, max_sites, monthly_events, max_members, is_default): PlanRow) -> Plan {
+    Plan { id, key, name, is_default: is_default.0, limits: Limits { retention_days, max_sites, monthly_events, max_members } }
 }
 
 pub async fn list(pool: &Pool) -> Result<Vec<Plan>> {
@@ -170,8 +165,8 @@ pub async fn create(pool: &Pool, key: &str, name: &str, l: &Limits) -> Result<Pl
         bail!("a plan called {key:?} already exists");
     }
     sqlx::query(
-        "INSERT INTO plans (key, name, retention_days, max_sites, monthly_events, max_members, monthly_ai_runs, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        "INSERT INTO plans (key, name, retention_days, max_sites, monthly_events, max_members, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(key)
     .bind(name.trim())
@@ -179,7 +174,6 @@ pub async fn create(pool: &Pool, key: &str, name: &str, l: &Limits) -> Result<Pl
     .bind(l.max_sites)
     .bind(l.monthly_events)
     .bind(l.max_members)
-    .bind(l.monthly_ai_runs)
     .bind(now_ms())
     .execute(pool)
     .await?;
@@ -189,14 +183,13 @@ pub async fn create(pool: &Pool, key: &str, name: &str, l: &Limits) -> Result<Pl
 pub async fn update(pool: &Pool, key: &str, name: &str, l: &Limits) -> Result<Plan> {
     check_limits(l)?;
     let r = sqlx::query(
-        "UPDATE plans SET name = $1, retention_days = $2, max_sites = $3, monthly_events = $4, max_members = $5, monthly_ai_runs = $6 WHERE key = $7",
+        "UPDATE plans SET name = $1, retention_days = $2, max_sites = $3, monthly_events = $4, max_members = $5 WHERE key = $6",
     )
     .bind(name.trim())
     .bind(l.retention_days)
     .bind(l.max_sites)
     .bind(l.monthly_events)
     .bind(l.max_members)
-    .bind(l.monthly_ai_runs)
     .bind(key)
     .execute(pool)
     .await?;

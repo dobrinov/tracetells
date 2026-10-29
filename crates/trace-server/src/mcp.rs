@@ -6,7 +6,6 @@
 //! sessions, visitors or events. Privacy rules and people are managed in the
 //! dashboard only, and KPIs in `trace.json`.
 
-use trace_agent::{ClaudeConfig, Engine};
 use trace_core::auth::Role;
 use trace_core::model::InsightStatus;
 use trace_core::model::Project;
@@ -52,7 +51,6 @@ pub struct Context<'a> {
     pub pool: &'a Pool,
     /// The caller's account: tools only ever see its websites.
     pub account_id: i64,
-    pub claude: Option<&'a ClaudeConfig>,
     /// Recorded in the activity log, e.g. `mcp: ana@acme.example via token "Claude Code"`.
     pub actor: String,
     pub role: Role,
@@ -343,14 +341,6 @@ pub fn tools() -> Vec<Value> {
             json!({ "id": id, "status": { "type": "string", "enum": statuses }, "reason": { "type": "string", "description": "Why it was dismissed" },
                     "released_at": { "type": "string", "description": "When the change went live, ISO 8601, e.g. 2026-10-28T14:05:00Z (default: now)" } }),
             &["id", "status"],
-            false,
-        ),
-        tool(
-            "run_analysis",
-            "Run analysis",
-            "Analyse recent behaviour and create new improvement insights. Uses Claude when the server has an API key (this costs API credits and can take a minute), otherwise built-in heuristics. Existing and dismissed insights aren't repeated.",
-            json!({ "days": days, "max_insights": { "type": "integer", "minimum": 1, "maximum": 20, "description": "Default 5" } }),
-            &[],
             false,
         ),
         tool(
@@ -765,23 +755,6 @@ async fn call(ctx: &Context<'_>, name: &str, args: &Value) -> anyhow::Result<Too
             }
             ToolOutput::Json(json!({ "message": note, "insight": { "id": insight.id, "title": insight.title, "status": insight.status } }))
         }
-        "run_analysis" => {
-            need(ctx, Role::User)?;
-            let opts = trace_agent::Options {
-                engine: Engine::Auto,
-                days: arg_days(args),
-                max_insights: args.get("max_insights").and_then(Value::as_u64).map(|n| n.clamp(1, 20) as usize).unwrap_or(5),
-            };
-            let report = crate::analysis::run(pool, site.as_ref().expect("a website tool"), ctx.claude, &opts).await?;
-            trace_core::auth::audit_site(pool, ctx.account_id, Some(p), &ctx.actor, "analysis.run", &format!("{} new insights via {}", report.created.len(), report.engine)).await?;
-            let mut created = Vec::new();
-            for id in &report.created {
-                if let Some(i) = insights::get(pool, p, *id).await? {
-                    created.push(json!({ "id": i.id, "title": i.title }));
-                }
-            }
-            ToolOutput::Json(json!({ "engine": report.engine, "model": report.model, "created": created, "already_known": report.duplicates, "warning": report.warning }))
-        }
         "evaluate_releases" => {
             need(ctx, Role::User)?;
             ToolOutput::Json(json!({ "evaluations": evaluate::run(pool, p, evaluate::Options::default()).await? }))
@@ -1172,7 +1145,7 @@ mod tests {
         let pool = db::connect(&path).await.unwrap();
         let (acme, _) = db::create_account_with_site(&pool, "Acme", None).await.unwrap();
         let (bolt, _) = db::create_account_with_site(&pool, "Bolt", None).await.unwrap();
-        let ctx = Context { pool: &pool, account_id: acme.id, claude: None, actor: "test".into(), role: Role::User, read_only: true, origin: "http://localhost".into(), state: None };
+        let ctx = Context { pool: &pool, account_id: acme.id, actor: "test".into(), role: Role::User, read_only: true, origin: "http://localhost".into(), state: None };
         let call = |name: &str, args: Value| json!({ "jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": { "name": name, "arguments": args } });
 
         let init = handle(&ctx, &json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "2025-06-18" } })).await.unwrap();
@@ -1218,7 +1191,7 @@ mod tests {
         let path = trace_core::db::test_target("mcp-setup").await;
         let pool = db::connect(&path).await.unwrap();
         let acme = db::create_account(&pool, "Acme", None).await.unwrap();
-        let ctx = Context { pool: &pool, account_id: acme.id, claude: None, actor: "agent".into(), role: Role::Admin, read_only: false, origin: "https://trace.example".into(), state: None };
+        let ctx = Context { pool: &pool, account_id: acme.id, actor: "agent".into(), role: Role::Admin, read_only: false, origin: "https://trace.example".into(), state: None };
         let call = |name: &str, args: Value| json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": name, "arguments": args } });
         let ok = |r: Value| {
             assert_ne!(r["result"]["isError"], true, "{r}");
@@ -1273,7 +1246,7 @@ mod tests {
             }
         }
         let ctx = Context {
-            pool: &pool, account_id: acme.id, claude: None, actor: "mcp: ana@acme.example via token \"Claude Code (signed in 2026-10-28)\"".into(),
+            pool: &pool, account_id: acme.id, actor: "mcp: ana@acme.example via token \"Claude Code (signed in 2026-10-28)\"".into(),
             role: Role::User, read_only: false, origin: "http://localhost".into(), state: None,
         };
         let tool = |name: &str, args: Value| json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": { "name": name, "arguments": args } });

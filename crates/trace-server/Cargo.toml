@@ -12,7 +12,6 @@ path = "src/main.rs"
 
 [dependencies]
 trace-core.workspace = true
-trace-agent.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 brotli = "9"

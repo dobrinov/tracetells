@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------- Analysis
 
 // When an analysis last ran, what it read, how much is new since, and what to
-// do about it: run /trace:analyse in the coding agent, or analyse here.
+// do about it: run /trace:analyse in the coding agent.
 const ANALYSE_COMMAND = "/trace:analyse";
 
 function fullDate(ts) {
@@ -35,13 +35,11 @@ function analysisPanel(a) {
           <span>In Claude Code, run</span>
           <code class="command">${ANALYSE_COMMAND}</code>
           <button type="button" data-copy="${ANALYSE_COMMAND}">Copy</button>
-          <button type="button" class="link" data-analyse-here>or analyse here</button>
           <span class="hint">It shows you what it found; the insights you keep are saved here and this panel resets.</span>
         </div>`
       : `<div class="analysis-how">
-          <span>Analysis runs in your coding agent, which reads your code too.</span>
-          <a class="button primary" href="#/setup">Connect your coding agent</a>
-          <button type="button" data-analyse-here>Analyse here instead</button>
+          <span>Analysis runs in your coding agent, with the model you choose, over MCP. It reads your code too.</span>
+          <a class="button primary" href="#/setup/install">Connect your coding agent</a>
         </div>`;
   return `<section class="analysis-panel next-${esc(a.next)}" aria-label="Analysis">
     <div class="analysis-head">
@@ -58,7 +56,7 @@ function analysisPanel(a) {
   </section>`;
 }
 
-// Wires a rendered panel: copy, analyse here, and noticing when the agent saves.
+// Wires a rendered panel: copy, and noticing when the agent saves.
 function wireAnalysisPanel(a) {
   view.querySelectorAll(".analysis-panel [data-copy]").forEach((b) =>
     b.addEventListener("click", async () => {
@@ -68,7 +66,6 @@ function wireAnalysisPanel(a) {
       }
     })
   );
-  view.querySelectorAll("[data-analyse-here]").forEach((b) => b.addEventListener("click", () => document.getElementById("run-analysis").click()));
   watchAnalysis(a);
 }
 
@@ -95,6 +92,6 @@ function analysisBadge(a) {
   if (!btn || btn.disabled) return;
   btn.hidden = a.next !== "analyse" || !can("user") || Boolean(auth?.impersonating);
   btn.classList.toggle("ready", a.next === "analyse");
-  btn.textContent = a.next === "analyse" ? `Run analysis · ${num(a.new_sessions)} new` : "Run analysis";
+  btn.textContent = `Analyse · ${num(a.new_sessions)} new`;
   btn.title = a.message;
 }

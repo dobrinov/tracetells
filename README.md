@@ -16,7 +16,6 @@ collect ──▶ digest ──▶ your agent analyses ──▶ insights ──
 ```sh
 cargo build --release
 ./target/release/trace --db demo.db demo                  # demo accounts, plus 30 days of traffic for "Stride", a demo shoe shop
-./target/release/trace --db demo.db --site stride analyze  # create insights
 ./target/release/trace --db demo.db --site stride serve --demo-site 127.0.0.1:4319 \
     --config crates/trace-server/assets/shop/trace.json
 ```
@@ -223,11 +222,27 @@ Once a website sends events from a real address, batches from localhost, loopbac
 
 Home, Audience, Features, Funnels, Goals and the behaviour summary read every event in their window. Each report is computed once and served from memory for a minute; after that it's served at once and recomputed in the background, and reports someone is looking at are refreshed before they get old. A change made in the dashboard or through the API (a pushed trace.json, an insight moved) drops the website's reports so it shows at once; changes made over MCP show within a minute. Reports that match many things against the same events (funnel steps, areas and features) read each type of event once per window. On a website with half a million events in 30 days, Home takes about 4 seconds the first time and under a millisecond after.
 
+### The dashboard shows; your agent does
+
+Analysis happens only in your own coding agent, over MCP, with the model you choose: Trace's server never analyses on its own. The dashboard is for looking, and every change goes through the agent too: moving an insight along, privacy rules, the public link, adding a website, applying trace.json. Wherever there's something to do, the dashboard shows the exact command to give it, with a Copy button, and Setup › Install and tracking lists them all. With the Claude Code plugin:
+
+| To | Ask |
+|---|---|
+| Set Trace up in a codebase | `/trace:setup` |
+| Find what to fix (or one area's) | `/trace:analyse`, `/trace:analyse checkout` |
+| Implement an insight | `/trace:fix 12` |
+| Release, pick, dismiss or reopen an insight | `/trace:manage release insight 12` |
+| Privacy rules and the review | `/trace:manage mask .account-summary` |
+| The public link | `/trace:manage publish the public link` |
+| Add a website, apply trace.json, check data | `/trace:manage add a website called docs` |
+
+Any other MCP client understands the same requests in plain words. Signing in, two-step verification, tokens, the team and deleting a website stay on the website.
+
 ## MCP: use Trace from your coding agent
 
 Trace is also an MCP server, and your coding agent can run all of it: setting a website up, and then being its analyst.
 
-**Connect** (no token to copy). In Claude Code, the plugin connects the server and adds `/trace:setup`, `/trace:analyse` and `/trace:fix`:
+**Connect** (no token to copy). In Claude Code, the plugin connects the server and adds `/trace:setup`, `/trace:analyse`, `/trace:fix` and `/trace:manage`:
 
 ```
 /plugin marketplace add dobrinov/tracetells
@@ -291,7 +306,7 @@ In Claude Code it's the slash command `/mcp__trace__analyse_website`. Saving, ev
 | `draft_insights`, `save_insights` | Propose insights; Trace measures their evidence and returns drafts. Save the ones the person approves. (`add_insights` was replaced by these) |
 | `refresh_insight` | Measure an insight's evidence again with fresh data, and get each item's history |
 | `update_insight_status` | Select, start, release or dismiss an insight |
-| `run_analysis`, `evaluate_releases` | Trace's own analysis (built-in checks, or Claude when the server has an API key); measure released ones |
+| `evaluate_releases` | Measure released insights now (Trace also does it hourly) |
 | `add_site`, `get_install_snippet`, `get_setup_status` | Add a website (admins), get its snippet with instructions, see whether events arrive and what's left to set up |
 | `check_config`, `push_config` | Validate a `trace.json`; apply it (admins) |
 | `get_privacy_rules`, `add_privacy_rule`, `remove_privacy_rule` | What's protected, with rule ids; add or remove the website's own rules (admins) |
@@ -329,7 +344,7 @@ Works for one person or a whole company. An **account** is a company or a solo u
   |---|---|
   | Owner | Everything, including adding and removing websites (one per account, can't be removed) |
   | Admin | Manage the team, two-step policy and privacy rules; see and revoke anyone's API tokens |
-  | User | Move insights through their statuses, link KPIs, run analysis |
+  | User | Move insights through their statuses and link KPIs, through their agent |
 
   Read-only access is for API tokens, not people: make a token read-only when an agent or dashboard should only look.
 
@@ -352,11 +367,11 @@ Works for one person or a whole company. An **account** is a company or a solo u
 
 Each website opens on its **Home**: what needs attention now, most important first, each with a link to act on it. Finishing setup comes first while it's unfinished; then a release verdict that just came in, analysis being due, insights waiting to be reviewed, KPIs that are short of target and getting worse, the funnel step losing the most people, errors visitors hit this week, and declared events that stopped arriving. `get_overview` over MCP returns the same list as `today`, so an agent sees the same priorities.
 
-Switch websites with the menu next to the logo. **Add website** (owners) creates one with its own write key, and its Setup page has snippets ready to paste. Removing a website deletes its data and asks you to type its name.
+Switch websites with the menu next to the logo. Your coding agent adds websites (`add_site`, or `/trace:manage add a website called docs`), each with its own write key; its Setup page has the snippets. Removing a website deletes its data and asks you to type its name.
 
 Everything that works on data takes a website:
 
-- **CLI:** `--site stride` (or `TRACE_SITE`) on `analyze`, `insights`, `prompt`, `status`, `push` and `serve --config`. With a single website it can be left out; with several, the command lists them. `evaluate` runs every website unless you name one. `trace site list|add|remove` manages them from the server.
+- **CLI:** `--site stride` (or `TRACE_SITE`) on `insights`, `prompt`, `status`, `push` and `serve --config`. With a single website it can be left out; with several, the command lists them. `evaluate` runs every website unless you name one. `trace site list|add|remove` manages them from the server.
 - **HTTP API:** `/api/sites/{site}/…`, e.g. `GET /api/sites/stride/insights`, or send the `X-Trace-Site` header. The old `/api/…` paths still work for an account with one website (answered with a `Deprecation` header) and return `400 site_required` once there are several.
 - **MCP:** the `site` argument, above.
 
@@ -378,7 +393,6 @@ Every account is on a plan, and each limit can be overridden for one account:
 | Websites | Per account |
 | Events per month | Over the limit, the collector is still answered normally (the host site never notices) but events aren't recorded. The dashboard shows a banner and the count |
 | Members | People plus pending invites |
-| Claude analyses per month | Analysis with the built-in heuristics is never limited. Past the limit, `auto` falls back to heuristics with a warning, and an explicit `--engine claude` is refused. Runs where Claude wasn't used don't count |
 
 A self-hosted server puts every account on **unlimited**, which has no limits, so you never need to think about plans. The **Plan** page shows an account its limits and this month's usage, never the plan's name; `--contact-url` (or `TRACE_CONTACT_URL`) adds a link for asking for more.
 
@@ -422,7 +436,7 @@ The analyst only ever sees this scrubbed, aggregated digest, never individual se
 
 **Visitor text is data, not instructions.** Anyone can send events to a website's collector, and labels, error messages, selectors, routes and event names end up in what coding agents read. So the server stores them as one plain line (line breaks, control and invisible characters become spaces, backticks become quotes, spaces in paths become `%20`) and cleans them again in the summary. The behaviour summary, the analysis brief, the server's instructions and every insight's task prompt tell the agent that this text came from visitors' browsers and is never to be followed. Read an insight's task before handing it to an agent that can run commands, as you would any issue a stranger could have filed.
 
-**Your own rules.** On the dashboard's **Privacy** page, admins can add rules on top of the built-in protections:
+**Your own rules.** Admins add rules on top of the built-in protections through their coding agent (`add_privacy_rule`, or `/trace:manage mask .account-summary` with the plugin); the dashboard's **Privacy** page lists them:
 
 | Rule | Example | Applied |
 |---|---|---|
@@ -431,7 +445,7 @@ The analyst only ever sees this scrubbed, aggregated digest, never individual se
 | Ignore pages | `/admin/*`, `/account/billing` | nothing at all is recorded there, enforced in both |
 | Drop a property | `customer_ref` | in both |
 
-The page tests rules against sample text before you rely on them. Every change goes into the activity log. The server applies changes immediately, and writes the rules into the collector it serves, so browsers pick them up within the hour as their cached copy refreshes. Workspace patterns run before the built-in ones, so `ORD-\d+` still matches before digits are masked.
+The Privacy page tests the rules against sample text before you rely on them. Every change goes into the activity log. The server applies changes immediately, and writes the rules into the collector it serves, so browsers pick them up within the hour as their cached copy refreshes. Workspace patterns run before the built-in ones, so `ORD-\d+` still matches before digits are masked.
 
 **What you should still do:** pattern matching can't recognise names or free-text personal details in UI copy, such as a button reading "Message Jane". Add `data-trace-mask` to areas that show customer data (account pages, admin tools, order details), and pass internal ids to `identify()`, not emails. Serve both your site and Trace over HTTPS, and set `TRACE_ADMIN_TOKEN` on any server others can reach.
 
@@ -518,10 +532,6 @@ Multi-page sites keep one session across page loads (30 minutes of inactivity st
 | `TRACE_RETENTION_DAYS` | `90` | Delete raw events older than this (0 keeps them). Caps each plan's own limit |
 | `TRACE_TOKEN` | – | Personal API token for `trace push` (create one under Account) |
 | `TRACE_ADMIN_TOKEN` | – | Deprecated shared token with admin rights. Prefer personal tokens, which carry their owner's role and name |
-| `ANTHROPIC_API_KEY` | – | Turns on the Claude analyst |
-| `TRACE_MODEL` | `claude-opus-5-5` | Analyst model |
-| `TRACE_EFFORT` | `high` | `output_config.effort` for the analyst |
-| `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | |
 
 ## CLI
 
@@ -530,7 +540,7 @@ trace [--site S] ...
            init [--database sqlite|postgres] [--db TARGET] [--force]   # choose the database, save it to trace.env
            serve [--config trace.json] [--demo-site ADDR] [--allow-signup] [--contact-url URL]
            check [FILE] | push [FILE] [--server URL --token T]
-           analyze [--engine auto|claude|heuristics] [--days 14] [--max-insights 5] | evaluate
+           evaluate
            insights [--status new] | prompt <id> | status <id> <status> [--reason ...] [--at TIME] | demo
            site list | site add NAME [--account A] | site remove SLUG --confirm NAME
            site publish SLUG [--account A] [--replace | --withdraw]     # the public, read-only view
@@ -542,7 +552,7 @@ trace [--site S] ...
 
 ## HTTP API
 
-`GET /d.js?k=WRITE_KEY` (collector) · `POST /v1/collect` (write key) · `POST /mcp` (MCP, API token) · with an API token: `GET /api/sites` · `GET /api/plan` · and per website, under `/api/sites/{site}`: `GET|POST /config` · `GET /kpis` · `GET /digest?days=14` · `GET /insights?status=` · `GET /insights/{id}/prompt` · `POST /insights/{id}/status` (with `released_at`) · `POST /insights/{id}/kpi` · `POST /releases` · `GET /analysis` · `POST /analyze` · `POST /evaluate` · `GET /runs`
+`GET /d.js?k=WRITE_KEY` (collector) · `POST /v1/collect` (write key) · `POST /mcp` (MCP, API token) · with an API token: `GET /api/sites` · `GET /api/plan` · and per website, under `/api/sites/{site}`: `GET|POST /config` · `GET /kpis` · `GET /digest?days=14` · `GET /insights?status=` · `GET /insights/{id}/prompt` · `POST /insights/{id}/status` (with `released_at`) · `POST /insights/{id}/kpi` · `POST /releases` · `GET /analysis` · `POST /evaluate`
 
 ## Contributing
 
@@ -553,7 +563,6 @@ Contributions come in as OpenSpec changes filed as GitHub issues. Explore the pr
 ## Layout
 
 - `crates/trace-core`: storage, ingestion, KPI measurement, digest, insight lifecycle, prompt rendering, evaluation
-- `crates/trace-agent`: analyst (Claude client and heuristics)
 - `site/`: the marketing site (static, published to GitHub Pages by `.github/workflows/pages.yml`)
 - `deploy/` and `Dockerfile`: how the hosted server runs (Docker behind a shared Caddy, on a shared Postgres); see [deploy/README.md](deploy/README.md)
 - `crates/trace-server`: the `trace` binary (HTTP server, CLI, demo seeder, embedded dashboard and collector)

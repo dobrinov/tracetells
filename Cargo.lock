@@ -2225,20 +2225,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 
 [[package]]
-name = "trace-agent"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "reqwest",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
- "trace-core",
- "tracing",
-]
-
-[[package]]
 name = "trace-core"
 version = "0.1.0"
 dependencies = [
@@ -2279,7 +2265,6 @@ dependencies = [
  "tokio",
  "tower",
  "tower-http",
- "trace-agent",
  "trace-core",
  "tracing",
  "tracing-subscriber",

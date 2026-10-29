@@ -91,7 +91,7 @@
           <li><strong>Sign up</strong> at <a href="https://app.tracetells.com/#/signup" data-app-link data-trace-event="start_free" data-trace-props='{"place":"help"}'>app.tracetells.com</a>. Your account comes with its first website.</li>
           <li><strong>Add the tag</strong> to every page, before <code>&lt;/head&gt;</code>. Setup › Get started shows it with your website's key. The first visit ticks the step off.</li>
           <li><strong>Say what success means</strong> in a <code>trace.json</code> in your repository: the events your app sends, your goals, funnels and product areas. In Claude Code, <code>/trace:setup</code> writes it for you.</li>
-          <li><strong>Analyse</strong> once Home says it's time, with <code>/trace:analyse</code> in your coding agent or <em>Analyse here</em> in the dashboard. Pick the insights worth doing, ship one, mark it released, and Trace gives a verdict on its goal.</li>
+          <li><strong>Analyse</strong> once Home says it's time, with <code>/trace:analyse</code> in your coding agent. Pick the insights worth doing, ship one with <code>/trace:fix</code>, mark it released with <code>/trace:manage</code>, and Trace gives a verdict on its goal.</li>
         </ol>
       </section>
 
@@ -130,12 +130,13 @@ trace push trace.json --server https://app.tracetells.com --token $TRACE_TOKEN</
 
       <section id="agent">
         <h2>Your coding agent</h2>
-        <p>Trace is an MCP server. In Claude Code, the plugin connects it and adds three commands:</p>
+        <p>Trace's dashboard is for looking; analysis and every change happen in your coding agent, over MCP, with the model you choose. In Claude Code, the plugin connects Trace and adds four commands:</p>
         <pre class="snippet" tabindex="0">/plugin marketplace add dobrinov/tracetells
 /plugin install trace@tracetells</pre>
         <ul class="help-list">
           <li>Then run <code>/mcp</code>, choose <strong>plugin:trace:trace</strong> and <strong>Authenticate</strong>. Your browser opens Trace to approve it; there's no token to copy.</li>
-          <li><code>/trace:setup</code> adds the tag and writes trace.json from your code. <code>/trace:analyse</code> finds what to fix (add an area's key to look at one part of the product). <code>/trace:fix</code> implements an insight.</li>
+          <li><code>/trace:setup</code> adds the tag and writes trace.json from your code. <code>/trace:analyse</code> finds what to fix (add an area's key to look at one part of the product). <code>/trace:fix 12</code> implements an insight.</li>
+          <li><code>/trace:manage</code> does everything else: <code>release insight 12</code>, <code>dismiss insight 4: …</code>, <code>mask .account-summary</code>, <code>publish the public link</code>, <code>add a website called docs</code>, <code>push trace.json</code>. The dashboard is for looking, and shows the command wherever there's something to do.</li>
           <li>Other MCP clients connect to <code>https://app.tracetells.com/mcp</code> and sign in the same way.</li>
           <li>Your agent sees the same aggregated summaries as the dashboard, never sessions or people, and analyses with its own model.</li>
         </ul>
@@ -147,7 +148,7 @@ trace push trace.json --server https://app.tracetells.com --token $TRACE_TOKEN</
           <li><strong>Never collected:</strong> input values, page titles, query strings, page content, recordings.</li>
           <li><strong>Scrubbed twice:</strong> emails, cards, IBANs, tokens and phone numbers are removed in the browser and again on the server.</li>
           <li><strong>Cookieless:</strong> visits are told apart with a hash that changes every day and can't be traced back.</li>
-          <li><strong>Your rules:</strong> admins mask elements, ignore pages, redact patterns and drop fields per website, under Setup › Privacy.</li>
+          <li><strong>Your rules:</strong> admins mask elements, ignore pages, redact patterns and drop fields per website, through their agent (<code>/trace:manage mask .account-summary</code>); Setup › Privacy lists them.</li>
           <li><strong>Your own machine:</strong> once your website is live, visits from localhost and private addresses are left out.</li>
         </ul>
         <p><a href="https://github.com/dobrinov/tracetells#privacy-and-sensitive-data" data-trace-event="read_docs" data-trace-props='{"topic":"privacy"}'>How privacy works, in detail</a> · <a href="privacy.html">Privacy policy</a></p>

@@ -177,28 +177,11 @@ async function route() {
   }
 }
 
-document.getElementById("run-analysis").addEventListener("click", async (e) => {
-  const btn = e.currentTarget;
-  btn.disabled = true;
-  btn.textContent = "Analysing…";
-  measure("analysis_run");
-  try {
-    const r = await post("/analyze");
-    const n = r.created.length;
-    toast(
-      `${n} new insight${n === 1 ? "" : "s"} via ${r.engine}${r.duplicates ? `, ${r.duplicates} already known` : ""}.` +
-        (r.warning ? ` ${r.warning}` : ""),
-      Boolean(r.warning && !n)
-    );
-    insightTab = "new";
-    if (location.hash === "#/improve/insights") route();
-    else location.hash = "#/improve/insights";
-  } catch (err) {
-    toast(`Analysis failed: ${err.message}`, true);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "Run analysis";
-    btn.classList.remove("ready");
+// The header's "Analyse · N new": analysis runs in your agent, so this copies the command.
+document.getElementById("run-analysis").addEventListener("click", async () => {
+  if (await copyText(ANALYSE_COMMAND)) {
+    toast(`Copied ${ANALYSE_COMMAND}. Paste it into Claude Code; the insights it saves show up here.`);
+    measure("copied", { what: "analyse" });
   }
 });
 

@@ -71,7 +71,7 @@ function onSubmit(form, action) {
   });
 }
 
-const LIMIT_KEYS = ["retention_days", "max_sites", "monthly_events", "max_members", "monthly_ai_runs"];
+const LIMIT_KEYS = ["retention_days", "max_sites", "monthly_events", "max_members"];
 const limitInput = (name, value, placeholder = "no limit") =>
   `<input name="${name}" type="number" min="0" step="1" value="${value == null ? "" : value}" placeholder="${placeholder}">`;
 
@@ -123,14 +123,13 @@ async function renderAccounts(id) {
     <h1>Accounts</h1>
     <p class="sub">Plans, limits and usage. Customers never see plan names.</p>
     ${table(
-      [{ label: "Account" }, { label: "Plan" }, { label: "Websites", num: 1 }, { label: "Members", num: 1 }, { label: "Events this month" }, { label: "Claude runs", num: 1 }, { label: "Created" }],
+      [{ label: "Account" }, { label: "Plan" }, { label: "Websites", num: 1 }, { label: "Members", num: 1 }, { label: "Events this month" }, { label: "Created" }],
       o.accounts.map((a) => [
         `<a href="#/accounts/${a.id}">${esc(a.name)}</a>`,
         `${esc(a.plan)}${Object.keys(a.overrides).length ? ` <span class="chip">+${Object.keys(a.overrides).length} override${Object.keys(a.overrides).length > 1 ? "s" : ""}</span>` : ""}`,
         num(a.sites),
         num(a.members),
         usageCell(a),
-        num(a.usage.ai_runs),
         date(a.created_at),
       ])
     )}
@@ -189,7 +188,7 @@ async function showAccount(id, o) {
         ${LIMIT_KEYS.map((k) => {
           const has = Object.prototype.hasOwnProperty.call(a.overrides, k);
           const mode = !has ? "inherit" : a.overrides[k] == null ? "none" : "custom";
-          const used = { monthly_events: a.usage.events, monthly_ai_runs: a.usage.ai_runs, max_sites: a.sites, max_members: a.members }[k];
+          const used = { monthly_events: a.usage.events, max_sites: a.sites, max_members: a.members }[k];
           return `<tr data-limit="${k}"><td>${esc(labels[k])}</td><td>${plan.limits[k] == null ? "no limit" : num(plan.limits[k])}</td>
             <td><select name="mode" aria-label="${esc(labels[k])}"><option value="inherit" ${mode === "inherit" ? "selected" : ""}>Same as plan</option><option value="none" ${mode === "none" ? "selected" : ""}>No limit</option><option value="custom" ${mode === "custom" ? "selected" : ""}>Custom</option></select>
               ${limitInput("value", has ? a.overrides[k] : null, "")}</td><td>${used == null ? "–" : num(used)}</td></tr>`;

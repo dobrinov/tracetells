@@ -111,26 +111,57 @@ It waits for the site's own consent tool (data-consent="required"): call trace.c
 // The public view card: off, or on with its link.
 function publicCard(pub) {
   const what = `Anyone with the link sees ${esc(project.name)}'s KPIs, behaviour, errors and insights, read-only. Never settings, people, tokens, the write key or privacy rules, and rows from fewer than 5 sessions are left out.`;
-  if (!pub || !pub.public)
-    return `<p class="hint">Off. ${what}</p>${can("admin") ? `<button id="public-on">Make public</button>` : ""}`;
+  if (!pub || !pub.public) return `<p class="hint">Off. ${what}</p>${can("admin") ? askAgent("/trace:manage publish the public link", "To share it") : ""}`;
   return `<p class="hint">On since ${esc(new Date(pub.since).toLocaleDateString())}. ${what}</p>
     <div class="copy-row"><pre class="snippet">${esc(pub.url)}</pre><button data-copy="${esc(pub.url)}">Copy</button></div>
-    ${can("admin") ? `<div class="actions"><button class="quiet" id="public-rotate">Replace link</button><button class="quiet danger" id="public-off">Make private</button></div>` : ""}`;
+    ${can("admin") ? `${askAgent("/trace:manage replace the public link", "A new link")}${askAgent("/trace:manage withdraw the public link", "Make it private")}` : ""}`;
 }
 
+// The things people ask their agent for, in one place: the dashboard shows,
+// the agent does.
+const AGENT_JOBS = [
+  ["Set Trace up in this codebase: the tag, trace.json, masks", "/trace:setup"],
+  ["Find what to fix", "/trace:analyse"],
+  ["Look at one part of the product", "/trace:analyse checkout"],
+  ["Implement an insight", "/trace:fix 12"],
+  ["Mark it released once it's live", "/trace:manage release insight 12"],
+  ["Dismiss one, with why", "/trace:manage dismiss insight 4: we're redesigning that page"],
+  ["Keep something out of what's collected", "/trace:manage mask .account-summary"],
+  ["Confirm you've reviewed privacy", "/trace:manage confirm the privacy review"],
+  ["Share a read-only dashboard", "/trace:manage publish the public link"],
+  ["Add another website", "/trace:manage add a website called docs"],
+  ["Apply an edited trace.json", "/trace:manage push trace.json"],
+  ["Check that data and events arrive", "/trace:manage is Trace receiving data?"],
+];
+
 async function renderSetup() {
-  const [runs, pub] = await Promise.all([api("/runs"), api("/publish").catch(() => null)]);
-  const { installs, mcpCommand, mcpJson, pluginInstall, pluginServerNote, setupPrompt, custom, analysisHook } = setupSnippets();
+  const pub = await api("/publish").catch(() => null);
+  const { installs, mcpCommand, mcpJson, pluginInstall, pluginServerNote, custom, analysisHook } = setupSnippets();
   let installTab = store("trace_install") || "site";
   if (!installs[installTab]) installTab = "site";
   view.innerHTML = `
-    <h1>Setup</h1>
-    <p class="sub">Install the collector, then let the analyst do its work. New here? <a href="#/start">Follow the setup checklist</a>.</p>
+    <h1>Install and tracking</h1>
+    <p class="sub">This dashboard is for looking. Setting Trace up, analysing, fixing and every change happen in your coding agent, over MCP: Claude Code, Cursor or any MCP client, with the model you choose. New here? <a href="#/setup/start">Follow the setup steps</a>.</p>
     <div class="card setup-status" id="setup-status">${setupStatus()}</div>
 
+    <h2>1. Connect your coding agent</h2>
+    <p class="hint">In Claude Code, install the Trace plugin${pluginServerNote}:</p>
+    <div class="copy-row"><pre class="snippet">${esc(pluginInstall)}</pre><button data-copy="${esc(pluginInstall)}">Copy</button></div>
+    <p class="hint">Then run <code>/mcp</code>, choose <strong>plugin:trace:trace</strong> and <strong>Authenticate</strong>. Your browser opens Trace, where you approve it: no token to copy. Without the plugin, add the server alone:</p>
+    <div class="copy-row"><pre class="snippet">${esc(mcpCommand)}</pre><button data-copy="${esc(mcpCommand)}">Copy</button></div>
+    <p class="hint">Other MCP clients sign in the same way with:</p>
+    <div class="copy-row"><pre class="snippet">${esc(mcpJson)}</pre><button data-copy="${esc(mcpJson)}">Copy</button></div>
+    <p class="hint">Connected apps appear under <a href="#/account">Account</a>, where you can disconnect them. Your agent sees only aggregated patterns, like this dashboard.</p>
 
-    <h2>1. Add the collector to your site</h2>
-    <p class="hint">The collector records pageviews, clicks, rage and dead clicks, errors, scroll depth and form starts/submits. It never records what users type. Add <code>data-trace-mask</code> to any element whose text is private. It does its work when the browser is idle, so it doesn't slow your pages down.</p>
+    <h2>2. What to ask it</h2>
+    <p class="hint">With the plugin, these are commands; any MCP client understands the same requests in plain words.</p>
+    ${table(
+      [{ label: "To" }, { label: "Ask your agent" }, { label: "" }],
+      AGENT_JOBS.map(([what, command]) => [esc(what), `<code>${esc(command)}</code>`, html`<button type="button" class="quiet" data-ask="${command}">Copy</button>`])
+    )}
+
+    <h2>3. The tag</h2>
+    <p class="hint"><code>/trace:setup</code> adds it for you. By hand: it records pageviews, clicks, rage and dead clicks, errors, scroll depth and form starts and submits, never what people type. Add <code>data-trace-mask</code> to any element whose text is private.</p>
     <div class="tabs" role="tablist">
       ${Object.entries(installs)
         .map(([id, i]) => `<button role="tab" data-install="${id}" class="${id === installTab ? "active" : ""}" aria-selected="${id === installTab}">${i.label}</button>`)
@@ -140,24 +171,12 @@ async function renderSetup() {
     ${consentToggle()}
     <div class="copy-row"><pre class="snippet">${esc(installs[installTab].code)}</pre><button data-copy="${esc(installs[installTab].code)}">Copy</button></div>
 
-    <h2>2. Define KPIs and events in code</h2>
-    <p class="hint">Add a <code>trace.json</code> to your repository with the product name, the custom events your app sends and the KPIs you care about. Validate it with <code>trace check</code> and publish it with <code>trace push --server ${esc(location.origin)}</code>, ideally from CI on every merge. The <a href="#/kpis">KPIs</a> page shows the results and whether each event is arriving.</p>
-
-    <h2>3. Track the moments that matter</h2>
+    <h2>4. Goals, events, funnels and areas</h2>
+    <p class="hint">They live in <code>trace.json</code> in your repository. <code>/trace:setup</code> writes it from your code; after editing, <code>/trace:manage push trace.json</code> applies it, or <code>trace push</code> from CI. Custom events are sent like this:</p>
     <div class="copy-row"><pre class="snippet">${esc(custom)}</pre><button data-copy="${esc(custom)}">Copy</button></div>
 
-    <h2>4. Connect your coding agent (MCP)</h2>
-    <p class="hint">Your coding agent can do everything on this page from your codebase: add the snippet, write and push trace.json, add privacy rules, then analyse the behaviour, save insights and mark them released when they ship. It sees only aggregated patterns, like this dashboard. In Claude Code, install the Trace plugin${pluginServerNote}:</p>
-    <div class="copy-row"><pre class="snippet">${esc(pluginInstall)}</pre><button data-copy="${esc(pluginInstall)}">Copy</button></div>
-    <p class="hint">Then run <code>/mcp</code>, choose <strong>plugin:trace:trace</strong> and <strong>Authenticate</strong>. Your browser opens Trace, where you approve it: no token to copy. The plugin adds <code>/trace:setup</code>, <code>/trace:analyse</code> and <code>/trace:fix</code>. Without the plugin, add the server alone:</p>
-    <div class="copy-row"><pre class="snippet">${esc(mcpCommand)}</pre><button data-copy="${esc(mcpCommand)}">Copy</button></div>
-    <p class="hint">Other MCP clients (Cursor and others) sign in the same way with:</p>
-    <div class="copy-row"><pre class="snippet">${esc(mcpJson)}</pre><button data-copy="${esc(mcpJson)}">Copy</button></div>
-    <p class="hint">Ask it to set things up:</p>
-    <div class="copy-row"><pre class="snippet wrap">${esc(setupPrompt)}</pre><button data-copy="${esc(setupPrompt)}">Copy</button></div>
-    <p class="hint">And to analyse: run <code>/trace:analyse</code> with the plugin, <code>/mcp__trace__analyse_website</code> without it, or pick the <strong>analyse_website</strong> prompt in other clients. Connected apps appear under <a href="#/account">Account</a>, where you can disconnect them. CI and scripts use a personal API token from there instead.</p>
-    <h3>Get told when it's time to analyse</h3>
-    <p class="hint">Trace says a website is worth analysing once it has 100 new sessions since the last analysis (30 after a week); the Insights page shows it too. To hear it from Claude Code each time you start it, add this to <code>~/.claude/settings.json</code> and put your token in the <code>TRACE_TOKEN</code> environment variable (in your shell profile, not in the file). It prints nothing until there's something to analyse.</p>
+    <h2>5. Hear when it's time to analyse</h2>
+    <p class="hint">Trace says a website is worth analysing once it has 100 new sessions since the last analysis (30 after a week); Home shows it too. To hear it from Claude Code each time you start it, add this to <code>~/.claude/settings.json</code> and put a token from Account in the <code>TRACE_TOKEN</code> environment variable. It prints nothing until there's something to analyse.</p>
     <div class="copy-row"><pre class="snippet">${esc(analysisHook)}</pre><button data-copy="${esc(analysisHook)}">Copy</button></div>
 
     <h2>Public view</h2>
@@ -169,57 +188,12 @@ async function renderSetup() {
     <p class="hint">Deletes ${esc(project.name)} and everything collected and configured for it. This can't be undone.</p>
     <button class="quiet danger" id="remove-site">Remove ${esc(project.name)}…</button>`
         : ""
-    }
-
-    <h2>5. Analysis runs</h2>
-    <p class="hint">${
-      project.claude
-        ? `Besides your agent, this server analyses with Claude (<code>${esc(project.claude.model)}</code>, effort <code>${esc(project.claude.effort)}</code>), falling back to the built-in checks if Claude is unavailable.`
-        : `Your coding agent does the analysis (above). Trace's own runs are the built-in checks: rage clicks, dead clicks, errors and form drop-off.`
-    }</p>
-    <p class="hint">From the command line: <code>trace analyze</code>, <code>trace evaluate</code>, <code>trace prompt &lt;id&gt; | claude</code>.</p>
-    ${table(
-      [{ label: "Run" }, { label: "When" }, { label: "Engine" }, { label: "Insights", num: 1 }, { label: "Notes" }],
-      runs.map((r) => [
-        `#${r.id}`,
-        new Date(r.started_at).toLocaleString(),
-        esc(r.engine + (r.model ? ` · ${r.model}` : "")),
-        num(r.insights_created),
-        esc(r.error || ""),
-      ]),
-      "No analysis runs yet."
-    )}`;
+    }`;
   view.querySelectorAll("[data-copy]").forEach((b) =>
     b.addEventListener("click", async () => {
       if (await copyText(b.dataset.copy)) toast("Copied");
     })
   );
-  // `fresh`: the card was re-rendered, so its Copy button needs binding too.
-  const bindPublic = (fresh) => {
-    const card = view.querySelector("#public-card");
-    const act = async (method, path, done) => {
-      try {
-        const r = await api(path, { method });
-        card.innerHTML = publicCard(method === "DELETE" ? null : r);
-        bindPublic(true);
-        toast(done);
-      } catch (e) {
-        toast(e.message, true);
-      }
-    };
-    card.querySelector("#public-on")?.addEventListener("click", () => {
-      measure("public_link_created");
-      act("POST", "/publish", "Public link created");
-    });
-    card.querySelector("#public-rotate")?.addEventListener("click", () => {
-      if (confirm("Replace the link? The current one stops working at once.")) act("POST", "/publish/rotate", "New link created; the old one no longer works");
-    });
-    card.querySelector("#public-off")?.addEventListener("click", () => {
-      if (confirm(`Make ${project.name} private? The link stops working at once.`)) act("DELETE", "/publish", "Public view switched off");
-    });
-    if (fresh) card.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => (await copyText(b.dataset.copy)) && toast("Copied")));
-  };
-  bindPublic(false);
 
   view.querySelector("#remove-site")?.addEventListener("click", async () => {
     const typed = prompt(`Type the website's name, "${project.name}", to delete it and all its data:`);
@@ -354,8 +328,8 @@ async function renderStart() {
       <div class="actions">
         ${
           can("admin")
-            ? `<button class="primary" data-reviewed>I've reviewed this</button><a class="button" href="#/privacy">Add a rule</a>`
-            : `<span class="hint">An admin of your account confirms this step.</span><a class="button" href="#/privacy">See the privacy page</a>`
+            ? `${askAgent("/trace:manage confirm the privacy review", "Reviewed it?")}${askAgent("/trace:manage mask .account-summary", "Something to keep out?")}`
+            : `<span class="hint">An admin of your account confirms this step, through their coding agent.</span>`
         }
       </div>`,
     goals: () => {
@@ -423,11 +397,6 @@ async function renderStart() {
     })
   );
   bindConsentToggle(renderStart);
-  view.querySelector("[data-reviewed]")?.addEventListener("click", async () => {
-    await post("/onboarding/privacy-reviewed");
-    toast("Thanks. Privacy reviewed.");
-    location.hash = next ? `#/start/${next.key}` : "#/home";
-  });
   if (current.key === "privacy") {
     const p = await api("/privacy");
     const list = view.querySelector("#built-in");

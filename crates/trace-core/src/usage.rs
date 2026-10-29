@@ -29,18 +29,17 @@ pub struct Usage {
     pub month: String,
     pub events: i64,
     pub events_dropped: i64,
-    pub ai_runs: i64,
 }
 
 pub async fn get(pool: &Pool, account_id: i64, month: &str) -> Result<Usage> {
-    let row: Option<(i64, i64, i64)> =
-        sqlx::query_as("SELECT events, events_dropped, ai_runs FROM usage WHERE account_id = $1 AND month = $2")
+    let row: Option<(i64, i64)> =
+        sqlx::query_as("SELECT events, events_dropped FROM usage WHERE account_id = $1 AND month = $2")
             .bind(account_id)
             .bind(month)
             .fetch_optional(pool)
             .await?;
-    let (events, events_dropped, ai_runs) = row.unwrap_or_default();
-    Ok(Usage { month: month.to_string(), events, events_dropped, ai_runs })
+    let (events, events_dropped) = row.unwrap_or_default();
+    Ok(Usage { month: month.to_string(), events, events_dropped })
 }
 
 pub async fn add_events(pool: &Pool, account_id: i64, kept: i64, dropped: i64) -> Result<()> {
@@ -57,32 +56,6 @@ pub async fn add_events(pool: &Pool, account_id: i64, kept: i64, dropped: i64) -
     .bind(dropped)
     .execute(pool)
     .await?;
-    Ok(())
-}
-
-/// Takes one Claude analysis run if the limit allows it. Returns false, and
-/// counts nothing, when the month's runs are used up.
-pub async fn take_ai_run(pool: &Pool, account_id: i64, limit: Option<i64>) -> Result<bool> {
-    let month = this_month();
-    sqlx::query("INSERT INTO usage (account_id, month) VALUES ($1, $2) ON CONFLICT DO NOTHING").bind(account_id).bind(&month).execute(pool).await?;
-    // One statement, so two runs at once can't both take the last one.
-    let r = sqlx::query("UPDATE usage SET ai_runs = ai_runs + 1 WHERE account_id = $1 AND month = $2 AND ($3 IS NULL OR ai_runs < $4)")
-        .bind(account_id)
-        .bind(&month)
-        .bind(limit)
-        .bind(limit)
-        .execute(pool)
-        .await?;
-    Ok(r.rows_affected() == 1)
-}
-
-/// Gives back a run taken with [`take_ai_run`] that ended up not using Claude.
-pub async fn refund_ai_run(pool: &Pool, account_id: i64) -> Result<()> {
-    sqlx::query("UPDATE usage SET ai_runs = CASE WHEN ai_runs > 0 THEN ai_runs - 1 ELSE 0 END WHERE account_id = $1 AND month = $2")
-        .bind(account_id)
-        .bind(this_month())
-        .execute(pool)
-        .await?;
     Ok(())
 }
 

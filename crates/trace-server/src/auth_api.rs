@@ -140,7 +140,7 @@ pub(crate) fn set_cookie(res: &mut Response, token: Option<&str>, secure: bool) 
 
 /// Paths about one website; everything else is about the account.
 fn is_site_path(path: &str) -> bool {
-    ["/project", "/config", "/digest", "/kpis", "/funnels", "/audience", "/areas", "/today", "/insights", "/analyze", "/analysis", "/releases", "/publish", "/query", "/evaluate", "/runs", "/privacy", "/onboarding"]
+    ["/project", "/config", "/digest", "/kpis", "/funnels", "/audience", "/areas", "/today", "/insights", "/analysis", "/releases", "/publish", "/query", "/evaluate", "/privacy", "/onboarding"]
         .iter()
         .any(|p| path == *p || path.starts_with(&format!("{p}/")))
 }
@@ -149,8 +149,7 @@ fn is_site_path(path: &str) -> bool {
 /// needs an admin, so a forgotten entry fails closed.
 fn required_role(method: &Method, path: &str) -> Role {
     let read = matches!(*method, Method::GET | Method::HEAD);
-    let user_actions = path == "/analyze"
-        || path == "/evaluate"
+    let user_actions = path == "/evaluate"
         || path == "/releases"
         || path == "/query"
         || (path.starts_with("/insights/") && (path.ends_with("/status") || path.ends_with("/kpi") || path.ends_with("/refresh")));
@@ -892,11 +891,9 @@ async fn plan_and_usage(State(state): State<AppStateRef>, Extension(p): Extensio
         "max_sites": db::sites(&state.pool, a).await?.len(),
         "monthly_events": usage.events,
         "max_members": auth::user_count(&state.pool, a).await? + auth::pending_invites(&state.pool, a).await?.len() as i64,
-        "monthly_ai_runs": usage.ai_runs,
     });
     Ok(Json(json!({
-        // Claude analyses only count on a server that runs Claude itself.
-        "limits": trace_core::plans::LIMITS.iter().filter(|(key, _)| *key != "monthly_ai_runs" || state.claude.is_some()).map(|(key, label)| json!({
+        "limits": trace_core::plans::LIMITS.iter().map(|(key, label)| json!({
             "key": key, "label": label, "limit": plan.effective.get(key), "used": used[*key],
         })).collect::<Vec<_>>(),
         "month": usage.month,
@@ -914,7 +911,6 @@ mod tests {
     fn roles_per_endpoint() {
         assert_eq!(required_role(&Method::GET, "/insights"), Role::User);
         assert_eq!(required_role(&Method::POST, "/insights/3/status"), Role::User);
-        assert_eq!(required_role(&Method::POST, "/analyze"), Role::User);
         assert_eq!(required_role(&Method::POST, "/config"), Role::Admin);
         assert_eq!(required_role(&Method::POST, "/sites"), Role::Admin);
         assert_eq!(required_role(&Method::GET, "/team"), Role::Admin);

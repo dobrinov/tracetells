@@ -10,7 +10,6 @@ use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use trace_agent::{ClaudeConfig, Engine};
 use trace_core::model::InsightStatus;
 use trace_core::privacy::{self, HostRules, RuleKind};
 use trace_core::{Pool, config, db, digest, evaluate, insights, ingest, kpi};
@@ -23,7 +22,6 @@ pub struct AppState {
     pub pool: Pool,
     /// Deprecated shared token; personal API tokens replace it.
     pub admin_token: Option<String>,
-    pub claude: Option<ClaudeConfig>,
     /// One-time code for creating the first account; None once one exists.
     pub setup_code: Mutex<Option<String>>,
     /// Sign-in, two-step and sign-up attempts.
@@ -59,11 +57,10 @@ pub struct AppState {
 pub type AppStateRef = Arc<AppState>;
 
 impl AppState {
-    pub fn new(pool: Pool, claude: Option<ClaudeConfig>) -> Self {
+    pub fn new(pool: Pool) -> Self {
         Self {
             pool,
             admin_token: None,
-            claude,
             setup_code: Mutex::new(None),
             limiter: Default::default(),
             collect_limits: Default::default(),
@@ -145,9 +142,7 @@ pub fn router(state: AppStateRef) -> Router {
         .route("/releases", post(record_release))
         .route("/query", get(query_get).post(query_post))
         .merge(crate::public::admin_routes())
-        .route("/analyze", post(analyze))
         .route("/evaluate", post(run_evaluate))
-        .route("/runs", get(list_runs))
         .route("/analysis", get(get_analysis))
         .route("/privacy", get(get_privacy))
         .route("/privacy/rules", post(add_privacy_rule))
@@ -508,7 +503,6 @@ async fn get_project(State(state): State<AppStateRef>, Extension(CurrentSite(sit
         "slug": site.slug,
         "write_key": site.write_key,
         "collection": db::collection(&state.pool, site.id).await?,
-        "claude": state.claude.as_ref().map(|c| json!({ "model": c.model, "effort": c.effort })),
     })))
 }
 
@@ -778,38 +772,6 @@ async fn set_kpi(
     Ok(Json(serde_json::to_value(insight).map_err(anyhow::Error::from)?))
 }
 
-#[derive(Deserialize, Default)]
-struct AnalyzeBody {
-    #[serde(default)]
-    engine: Option<String>,
-    #[serde(default)]
-    days: Option<u32>,
-    #[serde(default)]
-    max_insights: Option<usize>,
-}
-
-async fn analyze(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, body: Bytes) -> ApiResult<Json<Value>> {
-    // Options are optional: an empty body means the defaults.
-    let body: AnalyzeBody = if body.iter().all(u8::is_ascii_whitespace) {
-        AnalyzeBody::default()
-    } else {
-        serde_json::from_slice(&body).map_err(ApiError::bad_request)?
-    };
-    let engine = match body.engine.as_deref() {
-        None | Some("auto") => Engine::Auto,
-        Some("claude") => Engine::Claude,
-        Some("heuristics") => Engine::Heuristics,
-        Some(other) => return Err(ApiError::bad_request(format!("unknown engine {other:?}"))),
-    };
-    let opts = trace_agent::Options {
-        engine,
-        days: body.days.unwrap_or(14).clamp(1, 365),
-        max_insights: body.max_insights.unwrap_or(5).clamp(1, 20),
-    };
-    let report = crate::analysis::run(&state.pool, &site, state.claude.as_ref(), &opts).await.map_err(ApiError::bad_request)?;
-    Ok(Json(serde_json::to_value(report).map_err(anyhow::Error::from)?))
-}
-
 async fn run_evaluate(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>) -> ApiResult<Json<Value>> {
     let evals = evaluate::run(&state.pool, site.id, evaluate::Options::default()).await?;
     Ok(Json(serde_json::to_value(evals).map_err(anyhow::Error::from)?))
@@ -844,24 +806,6 @@ async fn get_analysis(
     Ok(Json(serde_json::to_value(status).map_err(anyhow::Error::from)?).into_response())
 }
 
-async fn list_runs(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>) -> ApiResult<Json<Value>> {
-    let rows: Vec<(i64, String, Option<String>, i64, Option<i64>, i64, Option<String>)> = sqlx::query_as(
-        "SELECT id, engine, model, started_at, finished_at, insights_created, error FROM analysis_runs
-         WHERE project_id = $1 ORDER BY id DESC LIMIT 20",
-    )
-    .bind(site.id)
-    .fetch_all(&state.pool)
-    .await
-    .map_err(anyhow::Error::from)?;
-    Ok(Json(json!(rows
-        .into_iter()
-        .map(|(id, engine, model, started_at, finished_at, insights_created, error)| json!({
-            "id": id, "engine": engine, "model": model, "started_at": started_at,
-            "finished_at": finished_at, "insights_created": insights_created, "error": error,
-        }))
-        .collect::<Vec<_>>())))
-}
-
 // ---- MCP over Streamable HTTP ----------------------------------------------------
 
 /// MCP for remote agents: JSON-RPC in, JSON out, authenticated with an API token
@@ -886,7 +830,6 @@ async fn mcp_http(State(state): State<AppStateRef>, headers: HeaderMap, body: By
     let ctx = crate::mcp::Context {
         pool: &state.pool,
         account_id: principal.account(),
-        claude: state.claude.as_ref(),
         actor: format!("mcp: {}", principal.actor()),
         role: principal.role(),
         read_only: principal.read_only(),
@@ -1061,7 +1004,7 @@ mod isolation_tests {
     const SITE_ROUTES: &[(&str, &str)] = &[
         ("GET", "project"), ("GET", "config"), ("POST", "config"), ("GET", "digest"), ("GET", "kpis"), ("GET", "funnels"), ("GET", "audience"), ("GET", "areas"), ("GET", "today"),
         ("GET", "insights"), ("GET", "insights/1"), ("GET", "insights/1/prompt"), ("POST", "insights/1/status"), ("POST", "insights/1/kpi"), ("POST", "insights/1/refresh"), ("POST", "releases"), ("GET", "query"), ("GET", "publish"), ("POST", "publish"), ("DELETE", "publish"), ("POST", "publish/rotate"),
-        ("POST", "analyze"), ("POST", "evaluate"), ("GET", "runs"), ("GET", "privacy"), ("POST", "privacy/rules"),
+        ("POST", "evaluate"), ("GET", "privacy"), ("POST", "privacy/rules"),
         ("POST", "privacy/rules/1"), ("DELETE", "privacy/rules/1"), ("POST", "privacy/test"),
         ("GET", "onboarding"), ("POST", "onboarding/privacy-reviewed"), ("GET", "analysis"),
     ];
@@ -1069,7 +1012,7 @@ mod isolation_tests {
     async fn app() -> (tower::util::MapRequest<Router, fn(Request) -> Request>, AppStateRef, String) {
         let path = trace_core::db::test_target("api").await;
         let pool = db::connect(&path).await.unwrap();
-        let state = Arc::new(AppState::new(pool, None));
+        let state = Arc::new(AppState::new(pool));
         let router = router(state.clone());
         (tower::Layer::layer(&tower::util::MapRequestLayer::new(route_site_paths as fn(Request) -> Request), router), state, path)
     }
@@ -1216,7 +1159,7 @@ mod isolation_tests {
         let path = trace_core::db::test_target("signup").await;
         let pool = db::connect(&path).await.unwrap();
         trace_core::plans::set_default(&pool, "free").await.unwrap();
-        let mut st = AppState::new(pool, None);
+        let mut st = AppState::new(pool);
         st.allow_signup = true;
         let state = Arc::new(st);
         let app = tower::Layer::layer(&tower::util::MapRequestLayer::new(route_site_paths as fn(Request) -> Request), router(state.clone()));
@@ -1775,7 +1718,7 @@ mod isolation_tests {
     async fn one_login_in_two_accounts() {
         let path = trace_core::db::test_target("members-api").await;
         let pool = db::connect(&path).await.unwrap();
-        let mut st = AppState::new(pool, None);
+        let mut st = AppState::new(pool);
         st.allow_signup = true;
         let state = Arc::new(st);
         let app = tower::Layer::layer(&tower::util::MapRequestLayer::new(route_site_paths as fn(Request) -> Request), router(state.clone()));
@@ -1920,7 +1863,7 @@ mod isolation_tests {
         let (_, off) = send(&app, json_req("GET", "/api/auth/state", ("cookie", &cookie), Value::Null)).await;
         assert!(off["analytics_id"].is_null());
 
-        let mut measured = AppState::new(state.pool.clone(), None);
+        let mut measured = AppState::new(state.pool.clone());
         measured.dashboard_analytics = Some(("abc123".into(), "s3cret".into()));
         let measured: AppStateRef = Arc::new(measured);
         let app = tower::Layer::layer(&tower::util::MapRequestLayer::new(route_site_paths as fn(Request) -> Request), router(measured));
