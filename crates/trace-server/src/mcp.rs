@@ -695,7 +695,7 @@ async fn call(ctx: &Context<'_>, name: &str, args: &Value) -> anyhow::Result<Too
                 }
             }
             // Saving, even nothing, means the website has just been analysed.
-            trace_core::readiness::mark_analysed(pool, p).await?;
+            trace_core::readiness::mark_analysed(pool, p, &trace_core::readiness::agent_name(&ctx.actor)).await?;
             let detail = format!("{} saved, {} refused", created.len(), refused.len());
             trace_core::auth::audit_site(pool, ctx.account_id, Some(p), &ctx.actor, "insights.added", &detail).await?;
             ToolOutput::Json(json!({

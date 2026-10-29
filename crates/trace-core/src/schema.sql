@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS projects (
   privacy_reviewed_by TEXT,
   -- When the website was last analysed (an agent saving insights, or Trace's own analysis).
   analysed_at INTEGER,
+  analysed_by TEXT,
   -- The public, read-only link to this website's aggregated analytics, if
   -- published: its random token, when, and by whom.
   public_token TEXT UNIQUE,

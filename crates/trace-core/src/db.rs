@@ -261,6 +261,7 @@ async fn migrate(pool: &Pool, path: &str) -> Result<()> {
         ("projects", "privacy_reviewed_at", "INTEGER"),
         ("projects", "privacy_reviewed_by", "TEXT"),
         ("projects", "analysed_at", "INTEGER"),
+        ("projects", "analysed_by", "TEXT"),
         ("projects", "public_token", "TEXT"),
         ("projects", "public_since", "INTEGER"),
         ("projects", "public_by", "TEXT"),

@@ -8,7 +8,7 @@ use trace_core::{Pool, plans, usage};
 
 pub async fn run(pool: &Pool, site: &Project, claude: Option<&ClaudeConfig>, opts: &Options) -> Result<RunReport> {
     let report = run_within_plan(pool, site, claude, opts).await?;
-    trace_core::readiness::mark_analysed(pool, site.id).await?;
+    trace_core::readiness::mark_analysed(pool, site.id, "Trace").await?;
     Ok(report)
 }
 
