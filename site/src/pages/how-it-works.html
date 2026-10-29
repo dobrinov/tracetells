@@ -1,0 +1,97 @@
+<!--
+{"path": "/how-it-works/", "title": "How Trace works: an analytics MCP server for coding agents", "nav": "how",
+ "og_title": "How Trace works: analytics your coding agent can read", "og_image": "og/how-it-works.png",
+ "description": "One 8.3 KB script, one Rust server, goals in trace.json. Claude Code or Cursor reads the totals over MCP, ships the fix, and Trace checks it after release."}
+-->
+<section class="wrap page-head">
+  <p class="eyebrow">How it works</p>
+  <h1>Analytics your coding agent can read.</h1>
+  <p class="lede">A script measures in the browser. A server adds it up and ranks the problems. Your coding agent reads them over MCP, does the thinking and the fixing with the model you already use, and Trace checks the result.</p>
+</section>
+
+<section class="wrap" style="padding-bottom: 72px;">
+  <figure class="flow">
+    <div class="node"><span class="k">YOUR WEBSITE</span><strong>The collector</strong><p>Counts clicks, scrolls, forms and errors.</p></div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="node key"><span class="k">TRACE SERVER</span><strong>Totals, goals, verdicts</strong><p>Scrubs, aggregates, ranks problems.</p></div>
+    <div class="arrow" aria-hidden="true">⇄</div>
+    <div class="node"><span class="k">YOUR CODING AGENT</span><strong>Analyses and fixes</strong><p>Reads Trace over MCP, edits your repo.</p></div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="node dark"><span class="k">A RELEASE</span><strong>Did it work?</strong><p>Trace compares the goal before and after.</p></div>
+    <figcaption>Visitor data flows left to right as totals. Your agent only ever reads the totals.</figcaption>
+  </figure>
+</section>
+
+<section class="rule">
+  <div class="wrap section-md split">
+    <div>
+      <p class="eyebrow accent">01 · The collector</p>
+      <h2>One tag, 8.3 KB.</h2>
+      <p class="sub">It records pageviews, clicks, rage and dead clicks, scroll depth, time on page, form starts and submits, JavaScript errors and failed requests. It works on multi-page sites and single-page apps alike.</p>
+      <p class="sub">It never reads what people type. It keeps no ids beyond the open page, and writes nothing to the device. Each click costs about 3 microseconds, and events leave in small batches when the browser is idle.</p>
+      <p class="mt"><a href="/docs/install/">Install the tag</a></p>
+    </div>
+    <pre class="code">&lt;script src="https://app.tracetells.com/d.js"
+        data-key="YOUR_KEY" defer&gt;&lt;/script&gt;
+
+// optional: your own events
+trace.track("signed_up", { plan: "free" })</pre>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap section-md split">
+    <div>
+      <p class="eyebrow accent">02 · The server</p>
+      <h2>One Rust binary.</h2>
+      <p class="sub">It scrubs every batch a second time and turns events into totals: per page, per element, per funnel step, per product area. Visits are told apart with a hash of address and browser, salted daily, so the same person counts again the next day unless they sign in.</p>
+      <p class="sub">SQLite to try it, Postgres for production. The dashboard ships inside the same binary.</p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div class="card"><h3>Problems, ranked</h3><p>By the number of visits they hurt, not by how loud they are.</p></div>
+      <div class="card"><h3>Goals, against targets</h3><p>Conversion, completion and error rates, with the target you set.</p></div>
+      <div class="card"><h3>A verdict for every release</h3><p>14 days before against 14 days after, with a Welch test, so a lucky week isn't called a win. Too little data, and it says so instead of guessing.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap section-md split">
+  <div>
+    <p class="eyebrow accent">03 · Goals as code</p>
+    <h2>Your goals live in your repo.</h2>
+    <p class="sub">Events, goals, funnels and product areas go in <code>trace.json</code>, next to the code that sends them. Review them in a pull request. Check and apply them from CI.</p>
+    <p class="mt"><a href="/docs/trace-json/">The trace.json reference</a></p>
+  </div>
+  <pre class="code">"checkout_conversion": {
+  "from": { "pageview": "/checkout" },
+  "to":   { "pageview": "/checkout/success" },
+  "goal": "increase",
+  "target": "55%"
+}</pre>
+</section>
+
+<section class="inverse">
+  <div class="wrap section-md split">
+    <div>
+      <p class="eyebrow">04 · Your coding agent</p>
+      <h2>The analysis runs on your side.</h2>
+      <p class="mt">Trace has no AI of its own. Your agent connects over MCP, reads the totals and your goals, and proposes a few fixes with their evidence. You choose which to keep. It then makes the change in your code. No agent? Every problem is also a ready-written task you can send to a developer.</p>
+      <p class="mt">Works with Claude Code, Cursor, Codex or any MCP client, with whichever model you trust.</p>
+      <p class="mt"><a href="/docs/coding-agent/">The MCP tools, one by one</a></p>
+    </div>
+    <pre class="code" style="border: 1px solid var(--inverse-line);">&gt; /trace:setup
+  adds the tag, writes trace.json
+&gt; /trace:analyse
+  3 problems found, 2 saved
+&gt; /trace:fix 12
+  card is now one link · PR opened</pre>
+  </div>
+</section>
+
+<section class="wrap section" style="text-align: center;">
+  <h2>See it working on a real shop.</h2>
+  <div class="actions" style="justify-content: center;">
+    <a class="btn btn-p" href="/try/" data-trace-event="open_demo" data-trace-props='{"place":"how"}'>Try the demo</a>
+    <a class="btn btn-s" href="https://app.tracetells.com/#/signup" data-trace-event="start_free" data-trace-props='{"place":"how"}'>Start free</a>
+  </div>
+</section>

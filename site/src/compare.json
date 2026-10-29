@@ -1,0 +1,1090 @@
+[
+ {
+  "slug": "fullstory-alternative",
+  "name": "FullStory",
+  "link": "FullStory alternative",
+  "title": "FullStory alternative without session replay | Trace",
+  "og_title": "A FullStory alternative that records no one",
+  "description": "Trace ranks UX problems by visits affected without recording sessions or setting cookies. When to keep FullStory, when to switch, and how to test both.",
+  "h1": "A FullStory alternative that tells you which fix to ship, without recording anyone.",
+  "sub": "FullStory records each visit so you can watch it back. Trace records nothing personal, adds up what all visitors did, ranks the problems by visits affected, and checks after each release whether the fix worked. It's hosted in the EU, so legal has less to argue about.",
+  "keep": [
+   "Support teams watching one customer's session to answer a ticket",
+   "Designers who want to see hesitation and confusion that never turns into a click",
+   "Enterprise integrations, exports and the AI features you already rely on"
+  ],
+  "pick": [
+   "Frustration and errors you can act on without recording sessions in the EU",
+   "A dashboard a PM can read in five minutes: problems ranked, goals against targets",
+   "A verdict on every release, so you know which fixes worked"
+  ],
+  "rows": [
+   [
+    "How problems surface",
+    "Frustration signals in sessions, prioritised by its AI",
+    "Ranked by visits affected, with the element and page"
+   ],
+   [
+    "What is stored",
+    "Full session recordings, with masking rules",
+    "Totals per page and element. No recordings."
+   ],
+   [
+    "Cookies",
+    "First-party cookies to follow visitors",
+    "None by default"
+   ],
+   [
+    "Browser errors",
+    "Error clicks and console errors, searchable",
+    "Counted, with the visits they broke"
+   ],
+   [
+    "Coding agents",
+    "MCP server in beta, with StoryAI",
+    "MCP server built for the loop: problem, fix, verdict"
+   ],
+   [
+    "Did it work?",
+    "Not built in",
+    "A verdict 14 days after each release"
+   ],
+   [
+    "Price",
+    "Sales-led",
+    "Free to start, or self-host for free"
+   ],
+   [
+    "Self-host",
+    "No",
+    "Yes, open source"
+   ]
+  ],
+  "map_intro": "Most of what your team does in FullStory has a direct counterpart. Replays are the one thing with none, on purpose.",
+  "map": [
+   [
+    "Frustration signals: rage, dead and error clicks",
+    "Problems, ranked by visits affected"
+   ],
+   [
+    "Funnels",
+    "Funnels in trace.json, reviewed in a pull request"
+   ],
+   [
+    "Custom events (FS.event)",
+    "<code>trace.track()</code>"
+   ],
+   [
+    "Segments by page or feature",
+    "Product areas and features"
+   ],
+   [
+    "Watching a replay to understand why",
+    "The element, page, error and share of visits. Mask anything sensitive."
+   ]
+  ],
+  "extra": [
+   [
+    "What you give up without replays",
+    "<p>Replays show hesitation: a cursor that hovers, a visitor who reads the same paragraph twice, copy that gets misread. Trace can't see any of that, because it never records a session. What it does see is every click that went nowhere, every error, every form left half done and every step people drop out of, counted across all visitors instead of the few sessions someone had time to watch.</p><p>In practice most fixes come from the second list. For the first, five short user interviews tell you more than a thousand replays, and they don't need a recording of anyone.</p>"
+   ]
+  ],
+  "week1": "Compare Trace's top three problems with what your team found in replays. Ship the first one.",
+  "week4": "Read the verdict on what you shipped. Keep what still earns its place. Most teams keep replays for support.",
+  "faq": [
+   [
+    "Can Trace replace FullStory?",
+    "For finding and fixing UX problems, often yes. If support watches replays to resolve tickets, keep FullStory for that."
+   ],
+   [
+    "Without replays, how do I know why people struggle?",
+    "Trace tells you where and how often: the element, the page, the error and the share of visits. In our demo shop, that is enough to see that 436 visits clicked a photo that isn't a link."
+   ],
+   [
+    "Can a PM use it without a coding agent?",
+    "Yes. The dashboard ranks the problems and shows goals and funnels. Each problem is a written task you can hand to a developer."
+   ]
+  ],
+  "related": [
+   "hotjar-alternative",
+   "logrocket-alternative",
+   "microsoft-clarity-alternative"
+  ],
+  "checked": "29 October 2026"
+ },
+ {
+  "slug": "hotjar-alternative",
+  "name": "Hotjar",
+  "link": "Hotjar alternative",
+  "title": "Hotjar alternative without cookies or recordings | Trace",
+  "og_title": "A Hotjar alternative that counts every visitor",
+  "description": "Count rage and dead clicks per element for visitors who decline cookies too. Where Hotjar heatmaps and surveys still win, and where Trace goes further.",
+  "h1": "A Hotjar alternative that counts every visitor, not just the ones who accept cookies.",
+  "sub": "Where consent is required, Hotjar only sees visitors who say yes to its cookies. Trace needs no cookies, so it counts frustration across visitors who decline too, and ends each problem with a fix and a verdict.",
+  "keep": [
+   "Heatmap images to share with designers and stakeholders",
+   "On-site surveys and feedback widgets",
+   "Recordings to watch individual visits"
+  ],
+  "pick": [
+   "Numbers that don't drop when people decline your cookie banner",
+   "Browser errors and failed requests next to the clicks they break",
+   "Problems ranked for you, and a verdict after each fix ships"
+  ],
+  "rows": [
+   [
+    "Who is counted",
+    "Visitors who accept its cookies, where consent applies",
+    "Visitors who load the script, consent or not. Ad blockers still block it."
+   ],
+   [
+    "What you look at",
+    "Heatmaps, recordings, survey answers",
+    "A ranked list of problems, goals and funnels"
+   ],
+   [
+    "Frustration signals",
+    "Rage clicks and u-turns, filtered in recordings",
+    "Rage and dead clicks per element, as rates"
+   ],
+   [
+    "Browser errors",
+    "Filter recordings by JavaScript errors",
+    "Counted, with the visits they broke"
+   ],
+   [
+    "Did it work?",
+    "No per-release verdict",
+    "A verdict 14 days after each release"
+   ],
+   [
+    "Self-host",
+    "No",
+    "Yes, open source"
+   ]
+  ],
+  "map_intro": "If you aren't a developer, the tag goes into your site's template once. On Shopify that's theme.liquid, or your agency can do it in minutes.",
+  "map": [
+   [
+    "Click heatmap",
+    "Clicks, dead clicks and rage clicks per element, as numbers"
+   ],
+   [
+    "Recordings filtered by rage clicks",
+    "Problems ranked by visits affected"
+   ],
+   [
+    "Funnels",
+    "Funnels in trace.json"
+   ],
+   [
+    "Surveys",
+    "No equivalent. Keep Hotjar or a survey tool."
+   ]
+  ],
+  "extra": [
+   [
+    "Why the numbers differ",
+    "<p>In the EU and UK, Hotjar's cookies need consent, so its numbers cover only the visitors who click accept. On many sites that's half of them or fewer. The visitors who decline are often the more cautious ones, and they behave differently. Trace stores nothing on the device, so it needs no cookie consent and counts both groups. Ad blockers still block both tools.</p>"
+   ]
+  ],
+  "week1": "Compare the elements your heatmaps highlight with Trace's dead-click list. Send the top fix to your developer or agency.",
+  "week4": "Read the verdict on what you shipped. Keep what still earns its place. Compare Trace's visitor count with Hotjar's: the gap is your banner.",
+  "faq": [
+   [
+    "Does Trace have heatmaps?",
+    "Not as images. It counts clicks, dead clicks and rage clicks per element, which you can track over time."
+   ],
+   [
+    "Can I use it without a developer?",
+    "You need the tag added once. After that the dashboard shows the ranked problems, and each one is a written task you can send to your agency."
+   ],
+   [
+    "Does it work on Shopify checkout?",
+    "Not inside it. Shopify only allows sandboxed pixels on its checkout pages, so Trace sees your store up to the checkout button. The checkout itself is not measured yet."
+   ],
+   [
+    "Why are my Trace numbers higher than Hotjar's?",
+    "Trace counts visitors who decline cookies too. Ad blockers affect both."
+   ]
+  ],
+  "related": [
+   "microsoft-clarity-alternative",
+   "fullstory-alternative"
+  ],
+  "checked": "29 October 2026"
+ },
+ {
+  "slug": "microsoft-clarity-alternative",
+  "name": "Microsoft Clarity",
+  "link": "Microsoft Clarity alternative",
+  "title": "Microsoft Clarity alternative without recordings | Trace",
+  "og_title": "A Microsoft Clarity alternative without recordings",
+  "description": "Clarity is free, but it records your visitors and now needs consent in the EEA and UK. Trace finds the same frustration as numbers, cookieless and EU-hosted.",
+  "h1": "A Microsoft Clarity alternative that keeps your visitors' data out of Microsoft's hands.",
+  "sub": "Clarity is free and shows heatmaps, recordings, rage and dead clicks. In exchange, Microsoft processes recordings of your visitors, and in the EEA, UK and Switzerland it now needs their consent. Trace finds the same frustration as numbers, without recordings, cookies or a third party.",
+  "keep": [
+   "Free heatmaps and session recordings",
+   "Its Google Analytics integration",
+   "AI summaries of recordings"
+  ],
+  "pick": [
+   "No recordings and no consent needed for cookies",
+   "Data kept in the EU, or on your own server",
+   "Problems ranked, fixed by your coding agent and checked after release"
+  ],
+  "rows": [
+   [
+    "Price",
+    "Free",
+    "Free to start, or self-host for free"
+   ],
+   [
+    "What is stored",
+    "Session recordings",
+    "Totals per page and element"
+   ],
+   [
+    "Consent",
+    "Consent signal required in the EEA, UK and Switzerland since October 2025",
+    "No cookie, so no cookie consent"
+   ],
+   [
+    "Frustration",
+    "Rage clicks, dead clicks, quick backs",
+    "Rage and dead clicks per element, ranked"
+   ],
+   [
+    "Browser errors",
+    "JavaScript errors and click errors",
+    "Errors and failed requests, with visits broken"
+   ],
+   [
+    "Funnels",
+    "Yes",
+    "Yes, in trace.json"
+   ],
+   [
+    "Did it work?",
+    "No per-release verdict",
+    "A verdict 14 days after each release"
+   ],
+   [
+    "Self-host",
+    "No",
+    "Yes, open source"
+   ]
+  ],
+  "map_intro": "The frustration Clarity shows in recordings, Trace shows as rates you can track.",
+  "map": [
+   [
+    "Rage click and dead click filters",
+    "Problems ranked by visits affected"
+   ],
+   [
+    "Heatmaps",
+    "Clicks per element, as numbers"
+   ],
+   [
+    "JavaScript errors",
+    "Errors with the visits they broke"
+   ],
+   [
+    "Recordings",
+    "No equivalent, on purpose"
+   ]
+  ],
+  "week1": "Compare Trace's dead-click list with Clarity's. Ship the top fix.",
+  "week4": "Read the verdict on what you shipped. Keep what still earns its place.",
+  "faq": [
+   [
+    "Clarity is free. Why pay?",
+    "Trace is free too for one site, and free without limits self-hosted. What you pay Clarity with is your visitors' recordings."
+   ],
+   [
+    "Does Trace show recordings?",
+    "No. That is the point."
+   ]
+  ],
+  "related": [
+   "hotjar-alternative",
+   "google-analytics-alternative"
+  ],
+  "checked": "29 October 2026",
+  "extra": []
+ },
+ {
+  "slug": "logrocket-alternative",
+  "name": "LogRocket",
+  "link": "LogRocket alternative",
+  "title": "LogRocket alternative without session replay | Trace",
+  "og_title": "A LogRocket alternative that records no one",
+  "description": "LogRocket replays sessions with logs and network requests. Trace ranks frontend errors and frustration by visits affected, without recordings, and judges every fix.",
+  "h1": "A LogRocket alternative for teams who want the pattern, not the recording.",
+  "sub": "LogRocket lets developers replay a session with its console and network log to debug one user's problem. Trace looks at all visits at once: which errors and dead ends cost the most, what your coding agent should fix first, and whether the fix worked.",
+  "keep": [
+   "Debugging one user's bug report with their exact session",
+   "Console and network logs attached to a replay",
+   "An all-in-one tool your support and engineering already share"
+  ],
+  "pick": [
+   "Frontend errors ranked by how many visits they broke",
+   "No recordings of your users, and no cookies by default",
+   "A loop from problem to agent fix to a verdict on your goal"
+  ],
+  "rows": [
+   [
+    "Unit of analysis",
+    "One session, replayed",
+    "All visits, counted"
+   ],
+   [
+    "What is stored",
+    "Session recordings with logs",
+    "Totals per page and element"
+   ],
+   [
+    "Browser errors",
+    "With the replay around them",
+    "Ranked by visits broken, with the goal they hurt"
+   ],
+   [
+    "Cookies",
+    "First-party cookies, required",
+    "None by default"
+   ],
+   [
+    "Frustration",
+    "Rage and dead clicks, detected automatically",
+    "Rage and dead clicks per element"
+   ],
+   [
+    "Coding agents",
+    "MCP server; its AI can hand issues to agents",
+    "MCP server built for the loop: problem, fix, verdict"
+   ],
+   [
+    "Did it work?",
+    "Not built in",
+    "A verdict 14 days after each release"
+   ],
+   [
+    "Self-host",
+    "Enterprise plan only",
+    "Yes, open source, every edition"
+   ]
+  ],
+  "map_intro": "LogRocket answers 'what happened to this user?'. Trace answers 'what is happening to everyone?'.",
+  "map": [
+   [
+    "An error with its replay",
+    "The error, its page, and the share of visits it broke"
+   ],
+   [
+    "Issue prioritisation",
+    "Problems ranked by visits affected"
+   ],
+   [
+    "Funnels",
+    "Funnels in trace.json"
+   ],
+   [
+    "identify()",
+    "<code>trace.identify()</code> with a hash you make"
+   ]
+  ],
+  "week1": "Compare LogRocket's top issues with Trace's ranked list. Ship the costliest one.",
+  "week4": "Read the verdict on what you shipped. Keep what still earns its place.",
+  "faq": [
+   [
+    "Can I still debug a single user's bug?",
+    "Not with Trace. Keep LogRocket or rely on your error tracker's stack traces for that."
+   ],
+   [
+    "Will two scripts slow my site?",
+    "Trace adds 8.3 KB and does its work when the browser is idle."
+   ]
+  ],
+  "related": [
+   "fullstory-alternative",
+   "sentry-and-trace"
+  ],
+  "checked": "29 October 2026",
+  "extra": []
+ },
+ {
+  "slug": "posthog-alternative",
+  "name": "PostHog",
+  "link": "PostHog alternative",
+  "title": "PostHog alternative: smaller, cookieless, open source | Trace",
+  "og_title": "A PostHog alternative for teams who want answers",
+  "description": "PostHog is an open-source product suite. Trace does one job: rank what frustrates visitors, hand the fix to your coding agent, and check it. No recordings, no cookies.",
+  "h1": "A PostHog alternative for teams who want answers, not another platform.",
+  "sub": "PostHog is an open-source suite: analytics, replay, flags, experiments, surveys and error tracking. Trace does one job. It finds what frustrates visitors, ranks it, hands the fix to your coding agent, and checks the result, without recordings or cookies.",
+  "keep": [
+   "Feature flags and A/B experiments in the same tool",
+   "Session replay, surveys and a data warehouse",
+   "SQL over raw events"
+  ],
+  "pick": [
+   "A short ranked list instead of dashboards to build",
+   "No recordings and no cookies by default, hosted in the EU",
+   "A supported self-host: one binary with SQLite or Postgres"
+  ],
+  "rows": [
+   [
+    "Scope",
+    "Many products in one platform",
+    "One job: find, fix, verify"
+   ],
+   [
+    "Frustration",
+    "Rage clicks via autocapture, plus replay",
+    "Rage and dead clicks per element, ranked"
+   ],
+   [
+    "Browser errors",
+    "Error tracking product",
+    "Errors and failed requests, with visits broken"
+   ],
+   [
+    "Cookies",
+    "By default; optional cookieless mode",
+    "None by default"
+   ],
+   [
+    "Coding agents",
+    "MCP server",
+    "MCP server built for the loop: problem, fix, verdict"
+   ],
+   [
+    "Did it work?",
+    "Through an experiment you set up",
+    "A verdict 14 days after each release, no setup"
+   ],
+   [
+    "Self-host",
+    "Free hobby deploy (MIT), unsupported; Cloud recommended at scale",
+    "One binary, no limits"
+   ]
+  ],
+  "map_intro": "If you use PostHog mainly for product analytics and replay, here is where each piece lands.",
+  "map": [
+   [
+    "<code>posthog.capture()</code>",
+    "<code>trace.track()</code>"
+   ],
+   [
+    "Insights: funnels, retention",
+    "Funnels and retention in trace.json"
+   ],
+   [
+    "Rage clicks in replays",
+    "Problems ranked by visits affected"
+   ],
+   [
+    "Feature flags, experiments",
+    "No equivalent. Keep PostHog for these."
+   ]
+  ],
+  "week1": "Compare Trace's top problems with what your PostHog dashboards show. Ship one with /trace:fix.",
+  "week4": "Read the verdict on what you shipped. Keep what still earns its place. Flags and experiments can stay in PostHog.",
+  "faq": [
+   [
+    "Both are open source. Why switch?",
+    "You may not need to. Trace is smaller, records no sessions, and closes the loop from problem to verified fix."
+   ],
+   [
+    "Can I self-host on a small server?",
+    "Yes. Trace is one binary; SQLite is enough to start."
+   ],
+   [
+    "Does Trace do feature flags?",
+    "No, and it won't. It reads your releases and judges them."
+   ]
+  ],
+  "related": [
+   "mixpanel-alternative",
+   "amplitude-alternative"
+  ],
+  "checked": "29 October 2026",
+  "extra": []
+ },
+ {
+  "slug": "mixpanel-alternative",
+  "name": "Mixpanel",
+  "link": "Mixpanel alternative",
+  "title": "Open-source Mixpanel alternative | Trace",
+  "og_title": "An open-source Mixpanel alternative that checks every fix",
+  "description": "Clicks, forms and errors captured from one tag, funnels defined in your repo, self-hostable. When Mixpanel's cohort depth is worth keeping.",
+  "h1": "An open-source Mixpanel alternative that ranks problems and checks every fix.",
+  "sub": "Mixpanel is built for exploring your events: autocapture, cohorts, breakdowns by any property. Trace starts from the other end. It finds where visitors struggle on its own, hands the fix to your coding agent, and tells you after the release whether your goal moved.",
+  "keep": [
+   "Deep, ad-hoc analysis: cohorts, segments and breakdowns by any property",
+   "Experiments, years of history and exports to your warehouse",
+   "A tracking plan your whole company already queries"
+  ],
+  "pick": [
+   "Problems ranked by visits affected, without building a report first",
+   "Browser errors and failed requests next to your funnels, from one tag",
+   "Goals in your repo, fixes by your agent, a verdict for every release, and self-hosting"
+  ],
+  "rows": [
+   [
+    "Capture",
+    "Autocapture or a tracking plan",
+    "One tag captures clicks, forms, scrolls and errors"
+   ],
+   [
+    "Where problems show up",
+    "In reports someone builds and reads",
+    "Ranked by visits affected, on its own"
+   ],
+   [
+    "Frustration",
+    "Rage and dead clicks via autocapture, plus replay",
+    "Rage and dead clicks per element"
+   ],
+   [
+    "Browser errors",
+    "Not captured. Console logs only inside replays.",
+    "Exceptions and failed requests, with visits broken"
+   ],
+   [
+    "Funnels and retention",
+    "Yes, with deep segmentation",
+    "Yes, defined in trace.json. Retention for signed-in users."
+   ],
+   [
+    "Coding agents",
+    "MCP server for querying reports",
+    "MCP server built for the loop: problem, fix, verdict"
+   ],
+   [
+    "Did it work?",
+    "Through an experiment you set up",
+    "A verdict 14 days after each release, no setup"
+   ],
+   [
+    "Self-host",
+    "No",
+    "Yes, open source"
+   ]
+  ],
+  "map_intro": "You don't need to re-instrument. Keep the few events that mark a goal, and let the tag capture the rest.",
+  "map": [
+   [
+    "<code>mixpanel.track(\"Signed Up\")</code>",
+    "<code>trace.track(\"signed_up\")</code>"
+   ],
+   [
+    "<code>mixpanel.identify(id)</code>",
+    "<code>trace.identify()</code> with a hash: Trace never sees the real id"
+   ],
+   [
+    "Funnel report",
+    "A funnel in trace.json, reviewed in a pull request"
+   ],
+   [
+    "Retention report",
+    "Retention and DAU/MAU for signed-in users"
+   ],
+   [
+    "Lexicon",
+    "The events list in trace.json, checked in CI"
+   ]
+  ],
+  "week1": "Let /trace:setup copy your key events into trace.json. Compare Trace's top problems with your funnel drop-offs.",
+  "week4": "Read the verdict on what you shipped. Keep what still earns its place. Mixpanel stays the place for open questions; Trace becomes the to-do list.",
+  "faq": [
+   [
+    "Do I need to re-instrument my events?",
+    "No. Clicks, pageviews, forms and errors are automatic. Call trace.track() only for the events that mark a goal."
+   ],
+   [
+    "How accurate is cookieless counting?",
+    "A visitor is a hash of address and browser, salted daily. Two people behind one office network with the same browser can look like one, and a returning visitor counts again the next day unless signed in. Funnels and error rates per visit are unaffected."
+   ],
+   [
+    "Can my coding agent read Mixpanel too?",
+    "Yes, through Mixpanel's MCP server. The difference is what it gets: Trace hands it ranked problems with evidence, and checks the fix."
+   ]
+  ],
+  "related": [
+   "amplitude-alternative",
+   "posthog-alternative"
+  ],
+  "checked": "29 October 2026",
+  "extra": []
+ },
+ {
+  "slug": "amplitude-alternative",
+  "name": "Amplitude",
+  "link": "Amplitude alternative",
+  "title": "Amplitude alternative without cookies | Trace",
+  "og_title": "An Amplitude alternative that tells you what to fix",
+  "description": "Amplitude is deep product analytics for data teams. Trace ranks what frustrates visitors, hands the fix to your coding agent, and judges every release. Cookieless.",
+  "h1": "An Amplitude alternative that tells you what to fix, then checks it.",
+  "sub": "Amplitude is a deep product analytics platform with experiments and replay. Trace is for teams without an analyst: it ranks what frustrates visitors, hands the fix to your coding agent, and judges every release, without cookies.",
+  "keep": [
+   "Behavioural cohorts and analysis across many teams",
+   "Experimentation and governance at enterprise scale",
+   "An analyst who builds and reads charts every day"
+  ],
+  "pick": [
+   "Useful results from one tag, with no tracking plan to maintain",
+   "Errors and frustration next to your funnels",
+   "Open source, self-hostable, and hosted in the EU"
+  ],
+  "rows": [
+   [
+    "Who it is for",
+    "Product and data teams with analysts",
+    "Small product teams with developers"
+   ],
+   [
+    "Capture",
+    "SDKs and autocapture",
+    "One tag"
+   ],
+   [
+    "Frustration",
+    "Rage and dead clicks, opt-in",
+    "Rage and dead clicks, always on"
+   ],
+   [
+    "Browser errors",
+    "Only errors right after a click",
+    "Exceptions and failed requests, with visits broken"
+   ],
+   [
+    "Cookies",
+    "By default",
+    "None by default"
+   ],
+   [
+    "Did it work?",
+    "Through an experiment you set up",
+    "A verdict 14 days after each release, no setup"
+   ],
+   [
+    "Self-host",
+    "No",
+    "Yes, open source"
+   ]
+  ],
+  "map_intro": "Keep the events that mark your goals. The tag captures the rest.",
+  "map": [
+   [
+    "<code>amplitude.track()</code>",
+    "<code>trace.track()</code>"
+   ],
+   [
+    "Funnel and retention charts",
+    "Funnels and retention in trace.json"
+   ],
+   [
+    "User ID",
+    "<code>trace.identify()</code> with a hash"
+   ],
+   [
+    "Experiments",
+    "No equivalent. A verdict per release instead."
+   ]
+  ],
+  "week1": "Compare Trace's ranked problems with the drop-offs in your Amplitude funnels. Ship one fix.",
+  "week4": "Read the verdict on what you shipped. Keep what still earns its place.",
+  "faq": [
+   [
+    "Is Trace as deep as Amplitude?",
+    "No. It answers fewer questions, and answers them without someone building charts."
+   ],
+   [
+    "Can we keep Amplitude?",
+    "Yes. Run both; Trace adds 8.3 KB."
+   ]
+  ],
+  "related": [
+   "mixpanel-alternative",
+   "posthog-alternative"
+  ],
+  "checked": "29 October 2026",
+  "extra": []
+ },
+ {
+  "slug": "google-analytics-alternative",
+  "name": "Google Analytics",
+  "link": "Google Analytics alternative",
+  "title": "Google Analytics alternative without cookies | Trace",
+  "og_title": "A Google Analytics alternative for why visitors leave",
+  "description": "Count visitors without a cookie banner and keep data in the EU or on your own server. When GA4 still fits for ads and attribution, and when Trace fits.",
+  "h1": "A Google Analytics alternative for the part GA doesn't answer: why visitors leave.",
+  "sub": "GA4 is free and built around acquisition and ads. Trace is built around the experience on your pages: what frustrates visitors, what breaks, and which fix moved your goal. Without cookies, and without your data going to an ad company.",
+  "keep": [
+   "Google Ads, Search Console and campaign attribution",
+   "Channel reports your marketing team lives in",
+   "Up to 14 months of event history for free"
+  ],
+  "pick": [
+   "Data that stays with you, hosted in the EU or on your own server",
+   "Visitor counts that don't drop when people decline GA's cookies",
+   "Clear answers about UX: what to fix first, and whether it worked"
+  ],
+  "rows": [
+   [
+    "Built for",
+    "Acquisition, campaigns and ads",
+    "The experience on your pages"
+   ],
+   [
+    "Visitors who decline cookies",
+    "Estimated with modelling in advanced consent mode",
+    "Counted directly, no cookie needed"
+   ],
+   [
+    "Who processes the data",
+    "Google",
+    "Trace in Finland, or only your own server"
+   ],
+   [
+    "Frustration and errors",
+    "Not without custom work",
+    "Dead clicks, rage clicks, errors, failed requests"
+   ],
+   [
+    "Campaigns",
+    "Yes, its strength",
+    "Per landing page, not per campaign"
+   ],
+   [
+    "Data kept",
+    "Up to 14 months",
+    "30 days free, longer on paid plans, unlimited self-hosted"
+   ],
+   [
+    "Self-host",
+    "No",
+    "Yes, open source"
+   ]
+  ],
+  "map_intro": "You don't need to choose. Most teams keep GA for campaigns and put Trace on the pages that matter.",
+  "map": [
+   [
+    "Landing page report",
+    "Pages with exit rate, scroll, problems"
+   ],
+   [
+    "Funnel exploration",
+    "Funnels in trace.json"
+   ],
+   [
+    "Conversions (key events)",
+    "Goals with targets"
+   ],
+   [
+    "Custom events (gtag)",
+    "<code>trace.track()</code>"
+   ]
+  ],
+  "week1": "Keep GA for campaigns. Put Trace on the pages your ads land on, and fix their worst problem.",
+  "week4": "Read the verdict on what you shipped. Keep what still earns its place. Compare conversion on that landing page before and after.",
+  "faq": [
+   [
+    "Why does Trace show more visitors than GA?",
+    "GA counts those who accept cookies and estimates the rest. Trace counts them directly, because it needs no cookie."
+   ],
+   [
+    "Can I remove my cookie banner?",
+    "Only if nothing else on your site needs one. GA and Ads still do. Check with your own counsel."
+   ],
+   [
+    "Do my marketers need to learn something new?",
+    "The dashboard is one page of ranked problems and goals. The technical parts are for your developers."
+   ]
+  ],
+  "related": [
+   "plausible-vs-trace",
+   "umami-vs-trace",
+   "microsoft-clarity-alternative"
+  ],
+  "checked": "29 October 2026",
+  "extra": []
+ },
+ {
+  "slug": "plausible-vs-trace",
+  "name": "Plausible",
+  "link": "Plausible vs Trace",
+  "title": "Plausible vs Trace: cookieless analytics, one level deeper",
+  "og_title": "Plausible vs Trace: both cookieless, Trace goes deeper",
+  "description": "Both are open source and cookie-free. Plausible counts traffic; Trace finds the clicks and errors that stop visitors. Many teams run both.",
+  "h1": "Plausible vs Trace: both cookieless. Trace goes one level deeper.",
+  "sub": "We share the same values: no cookies, open source, nothing personal, hosted in the EU. Plausible tells you how many came and where from. Trace looks at what happens next: the clicks that fail, the errors that break pages and the fixes that help. Many teams will run both.",
+  "keep": [
+   "A simple traffic dashboard: visitors, sources, top pages",
+   "Marketing attribution: campaigns, referrers, UTM tags",
+   "The lightest possible script, and nothing more"
+  ],
+  "pick": [
+   "Dead clicks, rage clicks and errors, not only pageviews",
+   "Funnels and goals that point at a specific element to fix, also when self-hosted",
+   "A coding agent that turns the worst problem into a change, and a verdict after"
+  ],
+  "rows": [
+   [
+    "Privacy",
+    "No cookies, no personal data, open source",
+    "The same. Trace collects more per page, so it scrubs more."
+   ],
+   [
+    "Counting visitors",
+    "Daily-salted hash",
+    "Daily-salted hash, the same method"
+   ],
+   [
+    "What it measures",
+    "Visits, sources, pages, goals",
+    "Clicks, scrolls, forms and errors on each page"
+   ],
+   [
+    "Funnels",
+    "Cloud Business plan only, not in Community Edition",
+    "Every edition, self-hosted too"
+   ],
+   [
+    "Frustration and errors",
+    "No",
+    "Yes, per element and page"
+   ],
+   [
+    "Traffic sources and campaigns",
+    "Yes, its strength",
+    "Referring site only"
+   ],
+   [
+    "Script size",
+    "About 2.5 KB",
+    "8.3 KB"
+   ],
+   [
+    "Self-host",
+    "Community Edition",
+    "Community edition, no limits"
+   ]
+  ],
+  "map_intro": "Keep Plausible for traffic. Trace adds the layer beneath it.",
+  "map": [
+   [
+    "Goals",
+    "Goals with targets, in trace.json"
+   ],
+   [
+    "Funnels (Cloud Business)",
+    "Funnels in every edition"
+   ],
+   [
+    "Custom events (<code>plausible()</code>)",
+    "<code>trace.track()</code>"
+   ],
+   [
+    "Top pages",
+    "Pages with exit rate, scroll, time and problems"
+   ]
+  ],
+  "week1": "Keep Plausible for traffic. Use Trace's ranked list to fix the page with the worst drop-off.",
+  "week4": "Read the verdict on what you shipped. Keep what still earns its place. Both scripts can stay for good.",
+  "faq": [
+   [
+    "Should I replace Plausible?",
+    "Not necessarily. Plausible is excellent for traffic. Add Trace for what happens after people arrive."
+   ],
+   [
+    "Is Trace as private as Plausible?",
+    "Both are cookieless and keep no personal data. Trace also records element labels and error messages, so it scrubs them twice. Patterns can't catch a name in a label, so mask those elements with data-trace-mask."
+   ],
+   [
+    "Does a busy site use up events faster?",
+    "Yes. Every click is an event, so 100,000 Trace events go further on a small site than on a busy one. Self-hosting has no limit."
+   ]
+  ],
+  "related": [
+   "umami-vs-trace",
+   "google-analytics-alternative"
+  ],
+  "checked": "29 October 2026",
+  "extra": []
+ },
+ {
+  "slug": "umami-vs-trace",
+  "name": "Umami",
+  "link": "Umami vs Trace",
+  "title": "Umami vs Trace: open-source, cookieless analytics compared",
+  "og_title": "Umami vs Trace: both open source, different questions",
+  "description": "Umami and Trace are both open source and cookieless. Umami reports traffic and events; Trace finds the clicks and errors that stop visitors and checks each fix.",
+  "h1": "Umami vs Trace: both open source and cookieless, answering different questions.",
+  "sub": "Umami is a clean, self-hostable way to see traffic, events and campaigns. Trace looks at what visitors run into on each page: dead clicks, rage clicks, errors and drop-offs, ranked and handed to your coding agent, with a verdict after each fix.",
+  "keep": [
+   "A simple, fast traffic dashboard",
+   "Campaign and UTM reports",
+   "Optional session replay and heatmaps in the same tool"
+  ],
+  "pick": [
+   "Frustration and browser errors, not only pageviews and events",
+   "Problems ranked for you instead of reports to read",
+   "A verdict on your goal after each release"
+  ],
+  "rows": [
+   [
+    "Privacy",
+    "Cookieless, open source",
+    "Cookieless, open source, scrubbed twice"
+   ],
+   [
+    "What it measures",
+    "Pageviews, events, sources",
+    "Clicks, scrolls, forms and errors on each page"
+   ],
+   [
+    "Reports",
+    "Funnels, retention, journeys, goals, UTM and attribution",
+    "Problems, goals, funnels, retention for signed-in users"
+   ],
+   [
+    "Frustration and errors",
+    "Opt-in JS errors; no rage or dead clicks",
+    "Dead clicks, rage clicks, errors, failed requests, always on"
+   ],
+   [
+    "Script size",
+    "About 3.9 KB",
+    "8.3 KB"
+   ],
+   [
+    "Self-host",
+    "Yes, MIT",
+    "Yes, AGPL server, MIT collector"
+   ]
+  ],
+  "map_intro": "Keep Umami for traffic if you like it. Trace adds the layer beneath it.",
+  "map": [
+   [
+    "<code>umami.track()</code>",
+    "<code>trace.track()</code>"
+   ],
+   [
+    "Goals",
+    "Goals with targets, in trace.json"
+   ],
+   [
+    "Funnels",
+    "Funnels in trace.json"
+   ],
+   [
+    "Pages",
+    "Pages with exit rate, scroll, time and problems"
+   ]
+  ],
+  "week1": "Keep Umami for traffic. Use Trace's ranked list to fix the page with the worst drop-off.",
+  "week4": "Read the verdict on what you shipped. Keep what still earns its place. Both scripts can stay.",
+  "faq": [
+   [
+    "Should I replace Umami?",
+    "Not necessarily. Add Trace for what happens after people arrive."
+   ],
+   [
+    "Can both run on one small server?",
+    "Yes. Trace is one binary with SQLite or Postgres."
+   ]
+  ],
+  "related": [
+   "plausible-vs-trace",
+   "google-analytics-alternative"
+  ],
+  "checked": "29 October 2026",
+  "extra": []
+ },
+ {
+  "slug": "sentry-and-trace",
+  "name": "Sentry",
+  "link": "Sentry and Trace",
+  "title": "Sentry and Trace: browser errors and the UX they cost",
+  "og_title": "Sentry and Trace: errors in your code, and what they cost",
+  "description": "Keep Sentry for stack traces and alerts. Trace ranks browser errors by visits broken, finds UX problems that throw no error, and judges each release.",
+  "h1": "Sentry and Trace: errors in your code, and what they cost your visitors.",
+  "sub": "Sentry is the place for stack traces, alerts and backend errors. Trace sees browser errors from the visitor's side: how many visits each one broke, which goal it hurt, and whether the fix brought conversion back. Most teams should run both.",
+  "keep": [
+   "Backend and mobile errors, stack traces with source maps",
+   "Alerts and on-call",
+   "Performance tracing"
+  ],
+  "pick": [
+   "Browser errors ranked by visits broken, next to the clicks that failed",
+   "UX problems that throw no error: dead clicks, rage clicks, drop-offs",
+   "A verdict on the goal after the fix ships"
+  ],
+  "rows": [
+   [
+    "Focus",
+    "Code: errors and performance",
+    "Visitors: frustration, errors and goals"
+   ],
+   [
+    "Backend errors",
+    "Yes",
+    "Not yet"
+   ],
+   [
+    "Browser errors",
+    "With stack traces",
+    "With visits affected and the goal they hurt"
+   ],
+   [
+    "Problems without an error",
+    "Rage and dead clicks inside replays",
+    "Dead clicks, rage clicks, forms abandoned, counted across all visits"
+   ],
+   [
+    "Coding agents",
+    "AI fixes and an MCP server",
+    "MCP server built for UX fixes and verdicts"
+   ],
+   [
+    "Self-host",
+    "Yes",
+    "Yes"
+   ]
+  ],
+  "map_intro": "Trace doesn't replace Sentry. Here is how the two divide the work.",
+  "map": [
+   [
+    "A new browser error",
+    "Trace shows how many visits it broke and on which page"
+   ],
+   [
+    "A release",
+    "Trace judges the goal 14 days before and after"
+   ],
+   [
+    "A broken button with no error",
+    "Trace sees it as a dead click, across every visit"
+   ]
+  ],
+  "week1": "Compare the browser errors Sentry lists with those Trace ranks by visits broken. Fix the costliest.",
+  "week4": "Read the verdict on what you shipped. Keep what still earns its place.",
+  "faq": [
+   [
+    "Should I remove Sentry?",
+    "No. Keep it for stack traces and alerts."
+   ],
+   [
+    "Will two scripts slow my site?",
+    "Trace adds 8.3 KB and does its work when the browser is idle."
+   ]
+  ],
+  "related": [
+   "logrocket-alternative",
+   "fullstory-alternative"
+  ],
+  "checked": "29 October 2026",
+  "extra": []
+ }
+]

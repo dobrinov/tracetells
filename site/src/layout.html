@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{title}}</title>
+<meta name="description" content="{{description}}">
+<link rel="canonical" href="{{url}}">
+{{robots}}<meta property="og:url" content="{{url}}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Trace">
+<meta property="og:title" content="{{og_title}}">
+<meta property="og:description" content="{{description}}">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="{{og_image}}">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="{{og_title}}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{og_title}}">
+<meta name="twitter:description" content="{{description}}">
+<meta name="twitter:image" content="{{og_image}}">
+<meta name="theme-color" content="#111316">
+<script>try{var t=localStorage.getItem('trace-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<!-- Trace on its own site, cookieless: nothing is stored on the visitor's device. -->
+<script src="https://app.tracetells.com/d.js?k=2ccf78ff3217411cb0027317dc5c616e" data-key="2ccf78ff3217411cb0027317dc5c616e" defer></script>
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="https://stats.aparatnata.com/js/pa-bozD2DJNoa8xOtm2eSY4T.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init()
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+{{jsonld}}
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="Trace, home">
+      <svg width="40" height="22" viewBox="2 15.5 60 33" aria-hidden="true"><rect x="3.5" y="25" width="14" height="14" rx="4.5" fill="#45c75b"/><rect class="sep" x="13.5" y="21" width="22" height="22" rx="6" fill="#2a9ba3" stroke-width="2.6"/><rect class="sep" x="30.5" y="17" width="30" height="30" rx="8" fill="#4a6cff" stroke-width="2.6"/></svg>
+      Trace
+    </a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="/how-it-works/"{{nav:how}}>How it works</a>
+      <a href="/privacy/"{{nav:privacy}}>Privacy</a>
+      <a href="/compare/"{{nav:compare}}>Compare</a>
+      <a href="/pricing/"{{nav:pricing}}>Pricing</a>
+      <a href="/docs/"{{nav:docs}}>Docs</a>
+      <a href="/try/"{{nav:try}}>Demo</a>
+    </nav>
+    <div class="header-actions">
+      <a href="https://app.tracetells.com/" data-trace-event="sign_in">Sign in</a>
+      <a class="btn btn-p" href="https://app.tracetells.com/#/signup" data-trace-event="start_free" data-trace-props='{"place":"header"}'>Start free</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+{{body}}
+</main>
+
+<footer class="site-footer">
+  <div class="wrap footer-cols">
+    <div><strong>Product</strong><a href="/how-it-works/">How it works</a><a href="/try/">Demo</a><a href="/pricing/">Pricing</a><a href="/docs/">Docs</a><a href="/glossary/">Glossary</a></div>
+    <div><strong>Alternatives</strong><a href="/compare/fullstory-alternative/">FullStory alternative</a><a href="/compare/hotjar-alternative/">Hotjar alternative</a><a href="/compare/microsoft-clarity-alternative/">Microsoft Clarity alternative</a><a href="/compare/logrocket-alternative/">LogRocket alternative</a><a href="/compare/posthog-alternative/">PostHog alternative</a><a href="/compare/mixpanel-alternative/">Mixpanel alternative</a><a href="/compare/amplitude-alternative/">Amplitude alternative</a><a href="/compare/google-analytics-alternative/">Google Analytics alternative</a><a href="/compare/plausible-vs-trace/">Plausible vs Trace</a><a href="/compare/umami-vs-trace/">Umami vs Trace</a><a href="/compare/sentry-and-trace/">Sentry and Trace</a></div>
+    <div><strong>Trust</strong><a href="/privacy/">How privacy works</a><a href="/privacy.html">Privacy policy</a><a href="/terms.html">Terms</a><a href="/terms.html#data-processing">Data processing</a><a href="https://github.com/dobrinov/tracetells/blob/main/SECURITY.md">Security</a></div>
+    <div><strong>Open source</strong><a href="https://github.com/dobrinov/tracetells" data-trace-event="self_host" data-trace-props='{"place":"footer"}'>GitHub</a><a href="/docs/self-hosting/">Self-hosting</a><a href="mailto:hello@tracetells.com" data-trace-event="contact">hello@tracetells.com</a></div>
+  </div>
+  <div class="wrap footer-base">
+    <span>Trace: analytics for the AI era. Built in the open by Deyan Dobrinov.</span>
+    <div class="theme-switch" role="group" aria-label="Colour theme" hidden>
+      <button type="button" data-theme-choice="system">Auto</button><button type="button" data-theme-choice="light">Light</button><button type="button" data-theme-choice="dark">Dark</button>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var root = document.documentElement, key = 'trace-theme', group = document.querySelector('.theme-switch');
+  if (!group) return;
+  var buttons = group.querySelectorAll('button[data-theme-choice]');
+  function sync() {
+    var current = root.getAttribute('data-theme') || 'system';
+    buttons.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.themeChoice === current)); });
+  }
+  buttons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var choice = b.dataset.themeChoice;
+      if (choice === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', choice);
+      try { if (choice === 'system') localStorage.removeItem(key); else localStorage.setItem(key, choice); } catch (e) {}
+      sync();
+    });
+  });
+  group.hidden = false;
+  sync();
+})();
+</script>
+</body>
+</html>

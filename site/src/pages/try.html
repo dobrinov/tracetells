@@ -1,0 +1,52 @@
+<!--
+{"path": "/try/", "title": "Live demo: rage and dead click tracking | Trace", "nav": "try",
+ "og_title": "Break our demo shop. Watch Trace notice.", "og_image": "og/try.png",
+ "description": "Break a demo shop with planted bugs and watch dead clicks, rage clicks and errors appear in a public Trace dashboard. No sign-up needed."}
+-->
+<section class="wrap page-head">
+  <p class="eyebrow">Try it · No sign-up</p>
+  <h1>Break our demo shop. Watch Trace notice.</h1>
+  <p class="lede">Stride is a fake running-shoe shop with real bugs in it. Trace measures it like any other website, and its dashboard is public.</p>
+</section>
+
+<section class="wrap split" style="padding-bottom: 72px; align-items: stretch;">
+  <div class="frame" style="flex-basis: 480px;">
+    <div class="frame-bar"><i></i><i></i><i></i><span style="margin-left: 8px;">tracetells.com/demo</span></div>
+    <div class="frame-body">
+      <img src="/img/stride-shop.png" width="1200" height="760" alt="The Stride demo shop's home page: Run further, feel lighter, with the Tempo Racer shoe.">
+      <a class="btn btn-p" href="/demo/" data-trace-event="open_demo" data-trace-props='{"place":"try"}' style="align-self: flex-start; margin-top: auto;">Open the shop</a>
+    </div>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 12px;">
+    <h2 style="font-size: 22px;">Things to try</h2>
+    <div class="numbered">
+      <div><span class="n">1</span><div><strong>Click a shoe's photo</strong><p>Nothing happens. Trace records a dead click on the product card.</p></div></div>
+      <div><span class="n">2</span><div><strong>Choose Annual on the Stride+ page</strong><p>The page throws an error. Trace counts the visits it broke.</p></div></div>
+      <div><span class="n">3</span><div><strong>Hammer "Pay now"</strong><p>It takes three seconds and shows nothing meanwhile. Click it again and again: Trace calls that a rage click.</p></div></div>
+      <div><span class="n">4</span><div><strong>Get your phone number wrong on sign-up</strong><p>The form wipes every field. Trace sees people start it and not finish.</p></div></div>
+    </div>
+    <div class="card dark">
+      <h3>Then open its dashboard</h3>
+      <p>Your clicks appear within a minute, next to the week's totals and the problems Trace has ranked.</p>
+      <div class="actions" style="margin-top: 14px;">
+        <a class="btn btn-light" href="https://app.tracetells.com/p/uDVoTzUDXjSybPZF5ANLG78-USVvW2TU" data-trace-event="view_public" data-trace-props='{"view":"shop"}'>Open the live dashboard</a>
+        <a class="btn btn-ghost" href="https://app.tracetells.com/#/signup" data-trace-event="start_free" data-trace-props='{"place":"try"}'>Start free</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap section-md split center">
+    <div>
+      <h2 style="font-size: 28px;">Now try it on your own site</h2>
+      <p class="sub">Free for one website. Ask your coding agent to set it up, paste one tag into your site's template, or send the instructions to your agency. Data starts arriving as soon as you deploy.</p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <pre class="code">/plugin marketplace add dobrinov/tracetells
+/plugin install trace@tracetells
+/trace:setup</pre>
+      <div class="actions" style="margin-top: 0;"><a class="btn btn-p" href="https://app.tracetells.com/#/signup" data-trace-event="start_free" data-trace-props='{"place":"try-own"}'>Start free</a><a class="btn btn-s" href="/docs/install/">Set it up by hand</a></div>
+    </div>
+  </div>
+</section>

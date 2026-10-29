@@ -1,0 +1,36 @@
+<!--
+{"path": "/glossary/rage-clicks/", "title": "What are rage clicks, and how do you fix them? | Trace", "og_image": "og/docs.png",
+ "og_title": "What are rage clicks?",
+ "description": "Rage clicks are several fast clicks on the same spot. What causes them, how to measure them as a rate without session replay, and how to fix the usual culprits.",
+ "crumbs": [["Glossary", "/glossary/"], ["Rage clicks", null]]}
+-->
+<article class="wrap page-head prose">
+  {{crumbs}}
+  <h1 class="mt">What are rage clicks?</h1>
+  <p class="lede">A rage click is a burst of fast clicks on the same spot. It's the clearest signal of frustration a website gets.</p>
+
+  <h2>What causes them</h2>
+  <ul>
+    <li><strong>Slow buttons with no feedback.</strong> "Pay now" takes three seconds and shows nothing, so people click again. And again.</li>
+    <li><strong>Dead elements</strong> that people expect to work, clicked harder in the hope they will.</li>
+    <li><strong>Errors.</strong> A handler that throws, so nothing happens however often you click.</li>
+    <li><strong>Tiny targets</strong> on phones, where the first taps miss.</li>
+  </ul>
+
+  <h2>Why they matter</h2>
+  <p>Rage clicks cluster on the most important buttons: pay, submit, sign up, next. A few percent of visits rage-clicking a checkout button is a few percent of revenue at risk, and repeated clicks on a payment button can also mean duplicate orders.</p>
+
+  <h2>How to measure them</h2>
+  <p>Trace's collector flags three or more clicks within 700 milliseconds, close together, and sends the element's selector and page, nothing else. The server turns that into the share of visits that rage-clicked each element, ranked by how many visits it hurt.</p>
+  <pre class="code">{ "measure": "session_rate", "match": { "rage_click": "button#pay" }, "breakdown": "device", "compare": true }</pre>
+
+  <h2>How to fix them</h2>
+  <ol>
+    <li>Show progress the moment a button is clicked: disable it and show a spinner or "Paying…".</li>
+    <li>Make sure the action can't run twice.</li>
+    <li>Fix any error that fires on the same element. Trace shows errors next to the clicks they break.</li>
+    <li>Release, then let Trace compare the rate over 14 days before and after.</li>
+  </ol>
+  <p>Try it on the <a href="/try/">demo shop's "Pay now" button</a>.</p>
+  <p class="mt">Related: <a href="/glossary/dead-clicks/">Dead clicks</a> · <a href="/compare/fullstory-alternative/">FullStory alternative</a></p>
+</article>

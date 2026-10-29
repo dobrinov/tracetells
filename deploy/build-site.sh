@@ -1,5 +1,6 @@
 #!/bin/sh
-# Builds tracetells.com into OUT_DIR: the marketing site from site/, plus the
+# Builds tracetells.com into OUT_DIR: the marketing site rendered from site/
+# (deploy/render-site.py: pages, sitemap, robots, redirects), plus the
 # Stride demo shop at /demo from the same source `trace serve --demo-site`
 # uses. GitHub Pages runs it (.github/workflows/pages.yml); run it locally to
 # check the result:
@@ -16,8 +17,8 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 shop="$root/crates/trace-server/assets/shop"
 
 rm -rf "$out"
+python3 "$root/deploy/render-site.py" "$root/site" "$out"
 mkdir -p "$out/demo/api/reviews"
-cp -R "$root/site/." "$out/"
 
 # The shop under /demo: static reviews (one in three requests asks for a file
 # that doesn't exist, a real failed request), cookieless like the rest of
@@ -59,9 +60,9 @@ cat > "$out/404.html" <<'HTML'
 </script>
 </head>
 <body>
-<main id="main" class="wrap legal">
-  <h1 class="display">Not found</h1>
-  <p>There's no page at this address. <a href="/">Go to the home page</a>.</p>
+<main id="main" class="wrap page-head">
+  <h1>Not found</h1>
+  <p class="lede">There's no page at this address. <a href="/">Go to the home page</a>, <a href="/docs/">the docs</a> or <a href="/try/">the demo</a>.</p>
 </main>
 </body>
 </html>

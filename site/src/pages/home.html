@@ -1,0 +1,154 @@
+<!--
+{"path": "/", "title": "Trace: analytics for the AI era. Cookieless and open source",
+ "og_title": "Trace: analytics for the AI era",
+ "description": "Trace finds dead clicks, rage clicks, errors and drop-offs without cookies or recordings, hands them to your coding agent over MCP, and checks whether each fix worked.",
+ "schema": ["software"]}
+-->
+<section class="hero">
+  <div class="wrap split center">
+    <div>
+      <p class="eyebrow">Cookieless · Open source · Built for MCP</p>
+      <h1>Analytics for the AI era.</h1>
+      <p class="lede-strong">Your coding agent can ship a change in minutes. Trace tells it what to change, and whether it worked.</p>
+      <p class="lede" style="margin-top: 14px; font-size: 17px;">It finds dead clicks, rage clicks, errors and drop-offs, ranks them by visits affected, and hands them to your agent over MCP. After the release it judges the result. No cookies, no recordings.</p>
+      <div class="actions">
+        <a class="btn btn-p" href="https://app.tracetells.com/#/signup" data-trace-event="start_free" data-trace-props='{"place":"hero"}'>Start free</a>
+        <a class="btn btn-s" href="/try/" data-trace-event="open_demo" data-trace-props='{"place":"hero"}'>Break our demo shop</a>
+      </div>
+      <div class="agent-paste">
+        <p>Using Claude Code? Paste this and it sets everything up:</p>
+        <pre class="code small">/plugin marketplace add dobrinov/tracetells
+/plugin install trace@tracetells
+/trace:setup</pre>
+      </div>
+    </div>
+    <div class="shot" role="img" aria-label="A Trace dashboard for the Stride demo shop: the top problem, a funnel drop-off, a failing request, and checkout conversion rising from 39.3% to 57.3% after a fix.">
+      <div class="shot-head"><span class="mono">Stride demo shop · last 7 days</span><span>878 visitors</span></div>
+      <div class="shot-card">
+        <span class="tag">TOP PROBLEM</span><span class="meta">436 visits</span>
+        <p class="title">Product photos look clickable, but do nothing</p>
+        <p class="body">Visitors click the shoe and nothing happens. Make the whole card a link.</p>
+      </div>
+      <div class="shot-card">
+        <div class="shot-row"><span>Stride+ page → sign-up</span><span class="bad">77% lost</span></div>
+        <div class="bar"><span style="width: 23%;"></span></div>
+        <div class="shot-row"><span>Reviews fail to load (500)</span><span class="bad">475 visits</span></div>
+      </div>
+      <div class="verdict">
+        <div><span class="k">AFTER THE FIX · 14 DAYS EACH SIDE</span><strong>Checkout conversion · it worked</strong></div>
+        <span class="v">39.3% → 57.3%</span>
+      </div>
+      <p class="tiny muted">Numbers from our demo shop, which has bugs planted on purpose.</p>
+    </div>
+  </div>
+</section>
+
+<section class="rule">
+  <div class="wrap section split">
+    <div>
+      <p class="eyebrow accent">Why Trace exists</p>
+      <h2 style="font-size: clamp(30px, 4.4vw, 40px);">Built for agents, not dashboards.</h2>
+      <p class="sub" style="font-size: 18px;">Analytics tools were built for people with time to read dashboards and watch replays. Now a coding agent can change your product in minutes, but it can't watch a replay or dig through reports. Trace gives it what it needs: the problems worth fixing, ranked and with evidence, over MCP. Then it checks that each change actually helped.</p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+      <div class="ticked"><h3>Made to be read by agents</h3><p>Summaries and evidence an agent can act on, not charts for a person to interpret.</p></div>
+      <div class="ticked"><h3>Made to check every change</h3><p>When shipping is fast, knowing what worked matters more than ever.</p></div>
+      <div class="ticked"><h3>Made without surveillance</h3><p>Your AI only ever sees patterns, so there is nothing personal to leak into a prompt.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap section-md">
+    <h2>Measure. Fix. Check.</h2>
+    <div class="grid mt-l">
+      <div class="card"><p class="step">1 · Trace measures</p><p>One script tag. It counts what happens on each page and ranks the problems by how many visits they hurt.</p></div>
+      <div class="card"><p class="step">2 · Your agent fixes</p><p>Claude Code, Cursor or any MCP client reads the problem and its evidence, and makes the change in your code. No agent yet? Each problem is also a written task for a developer.</p></div>
+      <div class="card"><p class="step">3 · Trace checks</p><p>After the release, Trace compares your goal over 14 days before and after, and says whether the fix worked.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap section">
+  <h2>What it shows you</h2>
+  <p class="sub">What you'd ask analytics and an error tracker, plus the frustration you'd hunt for in replays, from one script.</p>
+  <div class="grid-loose mt-l">
+    <div class="feature"><h3>Frustration</h3><p>Dead clicks, rage clicks, forms people give up on, pages they leave fast.</p></div>
+    <div class="feature"><h3>Errors in the browser</h3><p>Exceptions and failed requests, with the page and the number of visits they broke.</p></div>
+    <div class="feature"><h3>Funnels and goals</h3><p>Where people drop out of sign-up or checkout, against the targets you set.</p></div>
+    <div class="feature"><h3>Audience</h3><p>Visitors, bounce and engaged visits without cookies. DAU/MAU and retention for signed-in users, through a hashed id.</p></div>
+  </div>
+</section>
+
+<section class="inverse">
+  <div class="wrap section split">
+    <div>
+      <p class="eyebrow">Privacy</p>
+      <h2 style="font-size: clamp(30px, 4.4vw, 36px);">Patterns, never people.</h2>
+      <p class="mt" style="font-size: 17px;">Trace never records sessions, keystrokes or what's on screen. By default it stores nothing on your visitors' devices, so it doesn't need cookie consent.</p>
+      <p class="mt"><a href="/privacy/">What Trace collects, and what it never does</a></p>
+    </div>
+    <ul class="list-lines">
+      <li><strong>No recordings.</strong> No replays, no screenshots, no typed text.</li>
+      <li><strong>No cookies by default.</strong> Nothing written to the visitor's browser unless you switch on consent mode.</li>
+      <li><strong>Scrubbed twice.</strong> Emails, card numbers and tokens are removed in the browser, then again on the server.</li>
+      <li><strong>Hosted in the EU.</strong> Finland, or on your own server.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="wrap section split">
+  <div>
+    <h2>Small, on purpose</h2>
+    <p class="sub">A tiny script in the browser, one Rust server, and your goals in a file next to your code. Your agent connects over MCP.</p>
+    <p class="mt"><a href="/how-it-works/">How Trace works</a></p>
+  </div>
+  <div class="stats" style="flex-grow: 2;">
+    <div><b>8.3 KB</b><span>script, on the wire</span></div>
+    <div><b>~3 µs</b><span>per click recorded</span></div>
+    <div><b>0</b><span>cookies by default</span></div>
+    <div><b>14 days</b><span>before and after each release</span></div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap section-md">
+    <h2>Coming from another tool?</h2>
+    <p class="sub">An honest side-by-side, including when you should keep what you have.</p>
+    <div class="chips">
+      <a class="btn btn-s" href="/compare/fullstory-alternative/">FullStory alternative</a>
+      <a class="btn btn-s" href="/compare/hotjar-alternative/">Hotjar alternative</a>
+      <a class="btn btn-s" href="/compare/microsoft-clarity-alternative/">Microsoft Clarity alternative</a>
+      <a class="btn btn-s" href="/compare/posthog-alternative/">PostHog alternative</a>
+      <a class="btn btn-s" href="/compare/mixpanel-alternative/">Mixpanel alternative</a>
+      <a class="btn btn-s" href="/compare/google-analytics-alternative/">Google Analytics alternative</a>
+      <a class="btn btn-s" href="/compare/plausible-vs-trace/">Plausible vs Trace</a>
+      <a class="btn btn-s" href="/compare/sentry-and-trace/">Sentry and Trace</a>
+      <a class="btn btn-s" href="/compare/">All comparisons</a>
+    </div>
+  </div>
+</section>
+
+<section class="wrap section">
+  <h2>Hosted or community. Same product.</h2>
+  <div class="grid mt-l" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));">
+    <div class="card" style="padding: 28px;">
+      <h3 style="font-size: 20px;">Hosted</h3>
+      <p>Nothing to install, hosted in the EU. Free for one website and 100,000 events a month.</p>
+      <div class="actions" style="margin-top: 20px;"><a class="btn btn-p" href="https://app.tracetells.com/#/signup" data-trace-event="start_free" data-trace-props='{"place":"editions"}'>Start free</a><a class="btn btn-s" href="/pricing/">See plans</a></div>
+    </div>
+    <div class="card" style="padding: 28px;">
+      <h3 style="font-size: 20px;">Community</h3>
+      <p>Open source under the AGPL. Run it on your own server with no limits. Move between the two by changing one address.</p>
+      <div class="actions" style="margin-top: 20px;"><a class="btn btn-s" href="/docs/self-hosting/" data-trace-event="self_host" data-trace-props='{"place":"editions"}'>Self-host it</a></div>
+    </div>
+  </div>
+</section>
+
+<section class="rule">
+  <div class="wrap section" style="text-align: center;">
+    <h2 style="font-size: clamp(30px, 4.4vw, 40px);">Try it in two minutes.</h2>
+    <p class="sub" style="margin-left: auto; margin-right: auto; max-width: 32em;">Click around our demo shop, break a few things, and watch them show up in its dashboard. No sign-up.</p>
+    <div class="actions" style="justify-content: center;"><a class="btn btn-p" href="/try/" data-trace-event="open_demo" data-trace-props='{"place":"closing"}'>Open the demo shop</a><a class="btn btn-s" href="https://app.tracetells.com/#/signup" data-trace-event="start_free" data-trace-props='{"place":"closing"}'>Start free</a></div>
+  </div>
+</section>

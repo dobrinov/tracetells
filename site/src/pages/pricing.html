@@ -1,0 +1,69 @@
+<!--
+{"path": "/pricing/", "title": "Pricing: free hosted or self-hosted analytics | Trace", "nav": "pricing",
+ "og_title": "Trace pricing: same product, you choose who runs it", "og_image": "og-pricing.png",
+ "description": "Hosted free for 1 site and 100,000 events a month, or self-host the open-source Community edition with no limits. Same features in both.",
+ "schema": ["software"]}
+-->
+<section class="wrap page-head center">
+  <p class="eyebrow">Pricing</p>
+  <h1 style="max-width: 14em;">Same product. You choose who runs it.</h1>
+  <p class="lede" style="max-width: 34em;">Every edition has the whole of Trace. They differ only in who runs the server and how much data it keeps.</p>
+</section>
+
+<section class="wrap" style="padding-bottom: 72px;">
+  <h2 class="visually-hidden">Plans</h2>
+  <div class="plans">
+    <div class="plan">
+      <span class="k">HOSTED</span>
+      <h3>Free</h3>
+      <p class="price">€0</p>
+      <p class="for">To try it on a real website.</p>
+      <ul class="bullets"><li>1 website</li><li>100,000 events a month</li><li>30 days of data</li><li>1 person</li></ul>
+      <a class="btn btn-p" href="https://app.tracetells.com/#/signup" data-trace-event="start_free" data-trace-props='{"place":"pricing"}'>Start free</a>
+    </div>
+    <div class="plan accent">
+      <span class="k">HOSTED</span>
+      <h3>Team</h3>
+      <p class="price">Let's talk</p>
+      <p class="for">For teams and products people use every day. Price and limits set with you.</p>
+      <ul class="bullets"><li>Several websites</li><li>The events you need</li><li>Data kept as long as you need</li><li>Your whole team, two-step sign-in required</li></ul>
+      <a class="btn btn-p" href="mailto:hello@tracetells.com?subject=Trace%20Team%20plan" data-trace-event="contact">Write to me</a>
+    </div>
+    <div class="plan band">
+      <span class="k">SELF-HOSTED</span>
+      <h3>Community</h3>
+      <p class="price">Free</p>
+      <p class="for">Open source, on your own server.</p>
+      <ul class="bullets"><li>No limits of any kind</li><li>Data never leaves your servers</li><li>One binary, SQLite or Postgres</li><li>AGPL server, MIT collector</li></ul>
+      <pre class="code small mt">trace init &amp;&amp; trace serve</pre>
+      <a class="btn btn-s" href="/docs/self-hosting/" data-trace-event="self_host" data-trace-props='{"place":"pricing"}' style="margin-top: 12px;">Self-hosting guide</a>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap section-md">
+    <h2 style="font-size: 28px;">Hosted or community?</h2>
+    <div class="table-wrap"><table style="min-width: 620px;">
+      <thead><tr><th scope="col" style="width: 34%;"></th><th scope="col">Hosted</th><th scope="col">Community</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Features</th><td>All of them</td><td>All of them</td></tr>
+        <tr><th scope="row">Who runs the server</th><td>We do: updates, backups, uptime</td><td>You do</td></tr>
+        <tr><th scope="row">Where data lives</th><td>Finland, EU</td><td>Wherever you put it</td></tr>
+        <tr><th scope="row">Limits</th><td>By plan</td><td>None</td></tr>
+        <tr><th scope="row">Data processing terms</th><td>Included, <a href="/terms.html#data-processing">Article 28</a></td><td>Not needed: the data never reaches us</td></tr>
+        <tr><th scope="row">Moving between them</th><td colspan="2">Change the server address. Your tag and trace.json stay the same.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section class="wrap section-md">
+  <h2 style="font-size: 28px;">Questions</h2>
+  <div class="faq">
+    <details><summary>What counts as an event?</summary><p>A pageview, a click, a scroll mark, a form step, an error or an event you send. Every click counts, so a busy page uses more events than a quiet one.</p></details>
+    <details><summary>What happens at the limit?</summary><p>Your website is never affected. Trace stops recording until next month and tells you how much it skipped.</p></details>
+    <details><summary>Do I pay for the AI?</summary><p>Not to us. Analysis runs in your own coding agent, on the plan you already have.</p></details>
+    <details><summary>Can I move from hosted to self-hosted?</summary><p>Yes. It is the same software. Your trace.json and tag stay the same; only the server address changes.</p></details>
+  </div>
+</section>

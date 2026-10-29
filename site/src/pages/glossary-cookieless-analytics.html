@@ -1,0 +1,29 @@
+<!--
+{"path": "/glossary/cookieless-analytics/", "title": "What is cookieless analytics? Do you need a cookie banner? | Trace", "og_image": "og/privacy.png",
+ "og_title": "What is cookieless analytics?",
+ "description": "Cookieless analytics counts visits without storing anything on the visitor's device. How it works, what it costs in accuracy, and what it means for cookie banners.",
+ "crumbs": [["Glossary", "/glossary/"], ["Cookieless analytics", null]]}
+-->
+<article class="wrap page-head prose">
+  {{crumbs}}
+  <h1 class="mt">What is cookieless analytics?</h1>
+  <p class="lede">Cookieless analytics counts visits without storing anything on the visitor's device: no cookie, nothing in local storage, no fingerprint kept.</p>
+
+  <h2>How it works</h2>
+  <p>Classic analytics puts an id in a cookie and reads it back on every visit. Cookieless tools tell visits apart on the server instead. Trace, like Plausible, makes a hash of the website, the visitor's address and their browser, salted with a random value that changes every day. The address is never stored, and old salts are deleted, so yesterday's hashes can't be linked to anyone or to today's visits.</p>
+
+  <h2>What it costs</h2>
+  <ul>
+    <li>A visitor who comes back tomorrow counts as a new visitor.</li>
+    <li>Two people on one network with the same browser can look like one.</li>
+    <li>Retention across days needs signed-in users, who can be counted with a hash of their id.</li>
+  </ul>
+  <p>Sessions, funnels, conversion rates, rage and dead clicks and errors work as usual, because they happen within a visit.</p>
+
+  <h2>Do you still need a cookie banner?</h2>
+  <p>Cookie consent rules, like the EU's ePrivacy Directive, are about storing or reading information on the visitor's device. A cookieless tool does neither, so it usually doesn't need that consent. GDPR still applies to processing the address for the hash, and most sites rely on legitimate interest for it. If anything else on your site sets cookies, such as ads or Google Analytics, you still need a banner for those. Ask your own counsel for your site.</p>
+
+  <h2>Why it counts more visitors</h2>
+  <p>Where consent is required, cookie-based tools only see visitors who click accept. A cookieless tool sees everyone whose browser loads its script, so its numbers are usually higher. Ad blockers still block both.</p>
+  <p class="mt">Related: <a href="/privacy/">How Trace handles privacy</a> · <a href="/compare/google-analytics-alternative/">Google Analytics alternative</a> · <a href="/compare/plausible-vs-trace/">Plausible vs Trace</a></p>
+</article>

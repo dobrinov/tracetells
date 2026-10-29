@@ -1,0 +1,35 @@
+<!--
+{"path": "/docs/privacy-controls/", "title": "Privacy controls: mask, ignore, redact | Trace docs", "nav": "docs", "docs": true, "og_image": "og/docs.png",
+ "og_title": "Trace privacy controls",
+ "description": "What Trace never collects, how it scrubs the rest twice, and the rules you add: mask elements, ignore pages, redact patterns and drop event properties."}
+-->
+<p class="eyebrow">Docs</p>
+<h1>Privacy controls</h1>
+<p class="lede">Trace is built to never collect secrets rather than to protect them afterwards. On top of that, you add your own rules.</p>
+
+<h2>Built in</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Data</th><th scope="col">What's kept</th></tr></thead>
+<tbody>
+<tr><td>Input values, editable content, page titles</td><td>Never collected</td></tr>
+<tr><td>Element text</td><td>Only from buttons, links and labels, never containers, and nothing inside <code>data-trace-mask</code> or a form with password or payment fields. Every digit is masked: <code>Pay €1,234.56</code> → <code>Pay €#,###.##</code></td></tr>
+<tr><td>Emails, tokens, card numbers, IBANs, phone numbers</td><td>Replaced with <code>[email]</code>, <code>[token]</code>, <code>[card]</code>, <code>[iban]</code>, <code>[number]</code></td></tr>
+<tr><td>URLs</td><td>Query strings are never sent. Segments that look like emails, ids or tokens become <code>:email</code>, <code>:id</code>, <code>:token</code></td></tr>
+<tr><td>Referrer</td><td>Origin only, and only from another site</td></tr>
+<tr><td>Event properties</td><td>Keys such as <code>password</code>, <code>card</code>, <code>email</code>, <code>phone</code>, <code>address</code> are dropped; other values are scrubbed</td></tr>
+<tr><td>Visitors' addresses</td><td>Never stored. Hashed with the website, the browser and a daily salt; old salts are deleted</td></tr>
+</tbody></table></div>
+<p class="note">All of this runs twice: in the browser, then again on the server, so old or hand-written clients are held to the same rules.</p>
+
+<h2>Your own rules</h2>
+<ul>
+  <li><strong>Mask an element:</strong> add <code>data-trace-mask</code> in your HTML, or a <code>mask_selector</code> rule such as <code>.account-summary</code>.</li>
+  <li><strong>Ignore pages:</strong> an <code>ignore_path</code> rule such as <code>/admin*</code> records nothing there.</li>
+  <li><strong>Redact a pattern:</strong> a <code>redact_pattern</code> rule replaces a regular expression everywhere.</li>
+  <li><strong>Drop a property:</strong> a <code>drop_prop</code> rule never stores that custom-event property.</li>
+</ul>
+<p>Add them through your agent, for example <code>/trace:manage mask .account-summary</code>. Setup › Privacy in the dashboard lists them.</p>
+
+<h2>Your own machine</h2>
+<p>Once your website is live, visits from localhost and private addresses are left out, so testing doesn't skew your numbers.</p>
+<p><a href="/privacy/">How privacy works</a> · <a href="/privacy.html">Privacy policy</a> · <a href="/terms.html#data-processing">Data processing terms</a></p>

@@ -1,0 +1,78 @@
+<!--
+{"path": "/privacy/", "title": "Cookieless analytics without a consent banner | Trace", "nav": "privacy",
+ "og_title": "Trace: patterns, never people", "og_image": "og/privacy.png",
+ "description": "What Trace collects and never collects: no cookies, no stored IP addresses, no recordings or typed text. Scrubbed twice, hosted in the EU, open source."}
+-->
+<section class="wrap page-head">
+  <p class="eyebrow">Privacy</p>
+  <h1>Trace learns from patterns. It can't follow a person.</h1>
+  <p class="lede">Most tools collect everything and ask you to configure privacy afterwards. Trace was built the other way round: what it never collects can't leak, be subpoenaed or end up in a prompt.</p>
+</section>
+
+<section class="wrap" style="padding-bottom: 72px;">
+  <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
+    <div class="card" style="padding: 28px;">
+      <h2 style="font-size: 20px;">What Trace records</h2>
+      <ul class="bullets">
+        <li>The page path, with ids grouped (<code>/products/:id</code>)</li>
+        <li>Which element was clicked, by its selector and the label of a button or link, with every digit masked</li>
+        <li>How far people scroll and how long they stay</li>
+        <li>Whether a form was started and submitted</li>
+        <li>Error messages and failed request URLs</li>
+        <li>Screen size and browser</li>
+        <li>The site a visit came from, never the full link</li>
+        <li>Events you send yourself, with the properties you allow</li>
+      </ul>
+    </div>
+    <div class="card dark" style="padding: 28px;">
+      <h2 style="font-size: 20px;">What it never records</h2>
+      <ul class="bullets">
+        <li>Anything typed into a field</li>
+        <li>Session recordings or screenshots</li>
+        <li>Page content and page titles</li>
+        <li>Query strings and URL fragments</li>
+        <li>IP addresses: read once for the daily hash, never stored</li>
+        <li>Cookies, local storage or device fingerprints</li>
+        <li>Names or emails. Signed-in users appear only as a hash you make.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap section-md">
+    <h2>How cookieless tracking works</h2>
+    <div class="grid mt-l" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));">
+      <div class="card"><p class="step">NO COOKIES</p><h3 class="mt-s">Visits are counted, not followed</h3><p>The server tells visits apart with a hash of address and browser, salted with a value that changes every day and is then deleted. By default nothing is stored on the device, so there is no cookie to ask consent for. Plausible counts visits the same way.</p></div>
+      <div class="card"><p class="step">SCRUBBED TWICE</p><h3 class="mt-s">Secrets removed in the browser and on the server</h3><p>Emails, card numbers, IBANs, phone numbers and tokens are replaced before an event leaves the page, and again before it's stored. Patterns can't catch a name in a button label, so mask those elements.</p></div>
+      <div class="card"><p class="step">YOUR RULES</p><h3 class="mt-s">Mask, ignore and drop</h3><p>Add <code>data-trace-mask</code> to any element, ignore whole pages like <code>/admin*</code>, or drop event properties you never want stored.</p></div>
+      <div class="card"><p class="step">TOTALS ONLY</p><h3 class="mt-s">Your AI never sees a visitor</h3><p>Your coding agent reads counts and rates per page. There is no per-person data to hand it, even by accident.</p></div>
+      <div class="card"><p class="step">TESTED</p><h3 class="mt-s">Fake secrets in every build</h3><p>Tests feed the scrubbers fake card numbers, tokens, emails and passwords. The build fails if any of them gets through.</p></div>
+      <div class="card"><p class="step">OPEN SOURCE</p><h3 class="mt-s">Read every line</h3><p>The collector is MIT, the server AGPL. Check what runs on your pages instead of trusting a policy.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap section-md split">
+  <div>
+    <h2 style="font-size: 28px;">Signed-in users, without identifying them</h2>
+    <p class="sub">If your app has accounts, call <code>trace.identify()</code> with a hash of the user id. Someone who signs in on Monday and Friday then counts once, which makes retention honest. Trace never learns the real id, a name or an email. The hash is still pseudonymous data, and you stay its controller.</p>
+  </div>
+  <div>
+    <h2 style="font-size: 28px;">Where the data lives</h2>
+    <p class="sub"><strong>Hosted:</strong> in Finland, in the EU, never sold or shared. If the hosted service ever stopped, you would export your data and self-host with the same tag and trace.json. <strong>Community:</strong> on your own server, and it never leaves.</p>
+  </div>
+</section>
+
+<section class="rule">
+  <div class="wrap section-md">
+    <h2 style="font-size: 28px;">Questions legal will ask</h2>
+    <div class="faq">
+      <details><summary>Do we need a cookie banner for Trace?</summary><p>In its default mode Trace stores and reads nothing on the device, which is what cookie consent rules like the ePrivacy Directive are about. GDPR still applies to the daily hash, and most sites rely on legitimate interest for it. Your own lawyer has the final word for your site.</p></details>
+      <details><summary>Is it GDPR compliant?</summary><p>Trace processes as little as it can: no names, emails, stored IP addresses or persistent ids. For hosted accounts, Trace is your processor under Article 28, and the <a href="/terms.html#data-processing">data processing terms</a> apply automatically. Need a signed DPA? <a href="mailto:hello@tracetells.com?subject=DPA">Write to me</a>. Data is kept for your plan's retention, then deleted.</p></details>
+      <details><summary>Can we use it on a site for children?</summary><p>It is designed for it: no recordings and no typed text. Think twice about <code>trace.identify()</code> there: following someone across days is per-person tracking, even with a hash. Check with your DPO for your own case.</p></details>
+      <details><summary>What if our site already asks for consent?</summary><p>Set the tag to wait for your consent tool. After a yes, Trace may keep an id on the device to follow visits across days.</p></details>
+    </div>
+    <p class="mt muted">Compare: <a href="/compare/google-analytics-alternative/">Google Analytics alternative</a> · <a href="/compare/plausible-vs-trace/">Plausible vs Trace</a> · <a href="/glossary/cookieless-analytics/">What is cookieless analytics?</a></p>
+  </div>
+</section>

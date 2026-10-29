@@ -1,0 +1,35 @@
+<!--
+{"path": "/glossary/dead-clicks/", "title": "What are dead clicks, and how do you fix them? | Trace", "og_image": "og/docs.png",
+ "og_title": "What are dead clicks?",
+ "description": "A dead click is a click on something that looks clickable but does nothing. Why they happen, how to measure them without session replay, and how to fix them.",
+ "crumbs": [["Glossary", "/glossary/"], ["Dead clicks", null]]}
+-->
+<article class="wrap page-head prose">
+  {{crumbs}}
+  <h1 class="mt">What are dead clicks?</h1>
+  <p class="lede">A dead click is a click on something that looks clickable but does nothing: no navigation, no change on the page, no response.</p>
+
+  <h2>Why they happen</h2>
+  <ul>
+    <li><strong>Images that look like links.</strong> A product photo on a card where only the title is a link. The most common dead click on shops.</li>
+    <li><strong>Styled text.</strong> Underlined or coloured words that aren't links, or headings that look like tabs.</li>
+    <li><strong>Broken handlers.</strong> A button whose JavaScript failed to load, or that throws before doing anything.</li>
+    <li><strong>Disabled controls</strong> that don't look disabled.</li>
+  </ul>
+
+  <h2>Why they matter</h2>
+  <p>Each dead click is a visitor who wanted to go somewhere and couldn't. Some click again, some find another way, many leave. Unlike an error, a dead click often leaves no trace in your logs: the page works exactly as built, it just isn't built the way people expect.</p>
+
+  <h2>How to measure them without recording anyone</h2>
+  <p>Replay tools find dead clicks by watching sessions. Trace's collector notices them in the browser: a click after which nothing on the page changes within a second. It sends only the element's selector, its button or link label with digits masked, and the page path. On the server they become a rate: the share of visits with a dead click on that element.</p>
+  <pre class="code">{ "measure": "session_rate", "match": { "dead_click": ".product-card img" }, "breakdown": "path" }</pre>
+
+  <h2>How to fix them</h2>
+  <ol>
+    <li>Make the thing people click do what they expect. On a product card, make the whole card one link.</li>
+    <li>Or make it stop looking clickable: no pointer cursor, no hover effect.</li>
+    <li>Then check the rate after the release. If it doesn't fall, the fix didn't land.</li>
+  </ol>
+  <p>In our <a href="/try/">demo shop</a>, 436 visits in a week clicked a product photo that isn't a link. Try it yourself, then open its live dashboard.</p>
+  <p class="mt">Related: <a href="/glossary/rage-clicks/">Rage clicks</a> · <a href="/compare/hotjar-alternative/">Hotjar alternative</a> · <a href="/compare/microsoft-clarity-alternative/">Microsoft Clarity alternative</a></p>
+</article>

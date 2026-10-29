@@ -2,11 +2,10 @@
   "site": "tracetells-com",
   "product": "tracetells.com",
   "events": {
-    "start_free": "Clicked a Start free button, which opens sign-up on app.tracetells.com. Props: place (header, hero, pricing)",
+    "start_free": "Clicked a Start free button, which opens sign-up on app.tracetells.com. Props: place (header, hero, editions, compare, try, pricing, docs, closing)",
     "self_host": "Clicked through to the code on GitHub to self-host it. Props: place (header, hero, pricing, closing)",
     "contact": "Clicked Contact about a paid plan (opens an email)",
-    "read_docs": "Opened the documentation (the README on GitHub). Props: topic (privacy, performance, install, contributing, security)",
-    "open_demo": "Opened the demo shop. Props: place (hero, footer)",
+    "open_demo": "Opened the demo shop. Props: place (hero, how, try, compare, closing)",
     "view_public": "Opened a public view of what Trace recorded. Props: view (shop, site)",
     "sign_in": "Clicked Sign in in the header: already has an account"
   },
@@ -46,7 +45,7 @@
           "pageview": "/"
         },
         "to": {
-          "pageview": "/pricing.html"
+          "pageview": "/pricing*"
         }
       },
       "goal": "increase",
@@ -57,7 +56,7 @@
       "description": "Of sessions that view the pricing page, the share that then click Start free: whether the plans convince",
       "conversion": {
         "from": {
-          "pageview": "/pricing.html"
+          "pageview": "/pricing*"
         },
         "to": {
           "event": "start_free"
@@ -66,12 +65,26 @@
       "goal": "increase",
       "target": "15%"
     },
+    "compare_to_start": {
+      "name": "Comparison to sign-up",
+      "description": "Of sessions that read a comparison page, the share that click Start free",
+      "conversion": {
+        "from": {
+          "pageview": "/compare*"
+        },
+        "to": {
+          "event": "start_free"
+        }
+      },
+      "goal": "increase",
+      "target": "5%"
+    },
     "paid_interest": {
       "name": "Paid plan interest",
       "description": "Of sessions that view the pricing page, the share that click Contact about a paid plan",
       "conversion": {
         "from": {
-          "pageview": "/pricing.html"
+          "pageview": "/pricing*"
         },
         "to": {
           "event": "contact"
@@ -82,9 +95,9 @@
     },
     "docs_interest": {
       "name": "Reads the docs",
-      "description": "Share of sessions that open the documentation: people evaluating it seriously",
+      "description": "Share of sessions that open the docs: people evaluating it seriously",
       "session_rate": {
-        "event": "read_docs"
+        "pageview": "/docs*"
       },
       "goal": "increase",
       "target": "10%"
@@ -112,6 +125,30 @@
             }
           ]
         },
+        "how": {
+          "name": "How it works",
+          "match": [
+            {
+              "pageview": "/how-it-works*"
+            }
+          ]
+        },
+        "privacy": {
+          "name": "How privacy works",
+          "match": [
+            {
+              "pageview": "/privacy"
+            }
+          ]
+        },
+        "compare": {
+          "name": "Comparisons",
+          "match": [
+            {
+              "pageview": "/compare*"
+            }
+          ]
+        },
         "pricing": {
           "name": "Pricing",
           "match": [
@@ -120,19 +157,19 @@
             }
           ]
         },
-        "help": {
-          "name": "Help",
+        "docs": {
+          "name": "Docs",
           "match": [
             {
-              "pageview": "/help*"
+              "pageview": "/docs*"
             }
           ]
         },
-        "docs": {
-          "name": "Documentation",
+        "glossary": {
+          "name": "Glossary",
           "match": [
             {
-              "event": "read_docs"
+              "pageview": "/glossary*"
             }
           ]
         }
@@ -155,6 +192,14 @@
           "match": [
             {
               "event": "view_public"
+            }
+          ]
+        },
+        "try": {
+          "name": "Try it page",
+          "match": [
+            {
+              "pageview": "/try*"
             }
           ]
         }
@@ -202,7 +247,7 @@
       "name": "Privacy and terms",
       "match": [
         {
-          "pageview": "/privacy*"
+          "pageview": "/privacy.html"
         },
         {
           "pageview": "/terms*"
@@ -213,7 +258,11 @@
   "audience": {
     "marketing": [
       "/",
-      "/pricing*"
+      "/pricing*",
+      "/compare*",
+      "/how-it-works*",
+      "/privacy",
+      "/try*"
     ],
     "engaged": [
       {
@@ -239,7 +288,7 @@
           "pageview": "/"
         },
         {
-          "pageview": "/pricing.html"
+          "pageview": "/pricing*"
         },
         {
           "event": "start_free"
@@ -258,6 +307,18 @@
         },
         {
           "event": "view_public"
+        }
+      ]
+    },
+    "comparison": {
+      "name": "Comparison to sign-up",
+      "description": "A comparison page, then a Start free click",
+      "steps": [
+        {
+          "pageview": "/compare*"
+        },
+        {
+          "event": "start_free"
         }
       ]
     }

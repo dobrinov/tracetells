@@ -1,0 +1,29 @@
+<!--
+{"path": "/docs/", "title": "Trace docs: get started", "nav": "docs", "docs": true, "og_image": "og/docs.png",
+ "og_title": "Trace docs: from sign-up to your first verdict",
+ "description": "Get started with Trace: sign up, add the tag, describe your goals in trace.json, connect your coding agent, and get a verdict on your first fix."}
+-->
+<p class="eyebrow">Docs</p>
+<h1>Get started</h1>
+<p class="lede">From sign-up to your first verdict. The fastest way is to let your coding agent do it; every step also works by hand.</p>
+
+<h2>With Claude Code</h2>
+<pre class="code">/plugin marketplace add dobrinov/tracetells
+/plugin install trace@tracetells
+/trace:setup</pre>
+<p>Then run <code>/mcp</code>, choose <strong>plugin:trace:trace</strong> and <strong>Authenticate</strong>. Your browser opens Trace to approve it; there's no token to copy. <code>/trace:setup</code> adds the tag to your pages, writes <code>trace.json</code> from your code and pushes it.</p>
+
+<h2>By hand</h2>
+<ol>
+  <li><strong>Sign up</strong> at <a href="https://app.tracetells.com/#/signup" data-trace-event="start_free" data-trace-props='{"place":"docs"}'>app.tracetells.com</a>. Your account comes with its first website.</li>
+  <li><strong>Add the tag</strong> to every page, before <code>&lt;/head&gt;</code>. See <a href="/docs/install/">Install the tag</a>. The first visit ticks the step off.</li>
+  <li><strong>Say what success means</strong> in a <code>trace.json</code> in your repository: the events your app sends, your goals, funnels and product areas. See <a href="/docs/trace-json/">trace.json</a>.</li>
+  <li><strong>Analyse</strong> once Home says it's time, with <code>/trace:analyse</code> or the <code>analyse_website</code> prompt in any MCP client. Pick the insights worth doing.</li>
+  <li><strong>Fix and release.</strong> Ship one with <code>/trace:fix</code>, mark it released with <code>/trace:manage release insight 12</code>, and Trace gives a verdict on its goal 14 days later.</li>
+</ol>
+
+<h2>The dashboard shows; your agent does</h2>
+<p>The dashboard at app.tracetells.com is for looking: Home, problems, goals, funnels, audience and releases. Changes happen in your coding agent, over MCP, with the model you choose. Wherever there's something to do, the dashboard shows the command to run.</p>
+
+<h2>Still stuck?</h2>
+<p>Write to <a href="mailto:hello@tracetells.com" data-trace-event="contact">hello@tracetells.com</a>, or open an issue on <a href="https://github.com/dobrinov/tracetells/issues">GitHub</a>.</p>

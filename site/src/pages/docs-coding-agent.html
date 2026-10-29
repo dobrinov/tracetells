@@ -1,0 +1,35 @@
+<!--
+{"path": "/docs/coding-agent/", "title": "Trace MCP server: connect Claude Code, Cursor or any agent | Trace docs", "nav": "docs", "docs": true, "og_image": "og/docs.png",
+ "og_title": "Connect your coding agent to Trace over MCP",
+ "description": "Connect Claude Code, Cursor, Codex or any MCP client to Trace. The tools, the prompts, how insights are drafted and saved, and which account and website it works on."}
+-->
+<p class="eyebrow">Docs</p>
+<h1>Your coding agent</h1>
+<p class="lede">Trace is an MCP server. Your agent reads aggregated behaviour, proposes fixes with measured evidence, implements them and marks them released, with its own model. Trace has no AI of its own.</p>
+
+<h2>Connect</h2>
+<p><strong>Claude Code</strong>, with the plugin, which also adds <code>/trace:setup</code>, <code>/trace:analyse</code>, <code>/trace:fix</code> and <code>/trace:manage</code>:</p>
+<pre class="code">/plugin marketplace add dobrinov/tracetells
+/plugin install trace@tracetells</pre>
+<p>Then <code>/mcp</code>, choose <strong>plugin:trace:trace</strong> and <strong>Authenticate</strong>. Your browser opens Trace to approve it, with read-only access if you prefer.</p>
+<p><strong>Any other client</strong> connects to the same server and signs in the same way:</p>
+<pre class="code">{ "mcpServers": { "trace": { "url": "https://app.tracetells.com/mcp" } } }</pre>
+
+<h2>Which account and website</h2>
+<p>You pick the account when you approve the connection; connect again to work in another. The website comes from the repository's <code>trace.json</code> (<code>"site"</code>). Ask your agent "which Trace account and website am I connected to?" to check.</p>
+
+<h2>The loop</h2>
+<ol>
+  <li><strong>Analyse.</strong> The <code>analyse_website</code> prompt (<code>/trace:analyse</code>) reads <code>get_overview</code>, <code>get_behaviour_summary</code>, your goals and existing insights, and digs in with <code>query_behaviour</code>.</li>
+  <li><strong>Draft, then save.</strong> <code>draft_insights</code> measures every piece of evidence itself and refuses insights whose numbers don't hold up. The agent shows you the drafts; <code>save_insights</code> keeps only the ones you approve.</li>
+  <li><strong>Fix.</strong> <code>get_insight_prompt</code> returns a complete task: the problem, the evidence, the goal to move and acceptance criteria. <code>/trace:fix 12</code> implements it.</li>
+  <li><strong>Release.</strong> <code>update_insight_status</code> with <code>released</code>. Trace compares the goal over 14 days before and after.</li>
+</ol>
+
+<h2>Asking questions</h2>
+<p><code>query_behaviour</code> answers with numbers over the last 1 to 90 days: sessions with a match, events, the share of sessions, events per session or a funnel, broken down by path, selector, device or day, and compared with the window before. Rows from fewer than 3 sessions are folded into "other".</p>
+<pre class="code">{ "measure": "session_rate", "match": { "rage_click": "button#pay", "path": "/checkout" },
+  "breakdown": "device", "compare": true }</pre>
+
+<h2>Safe by design</h2>
+<p>The agent only ever sees aggregates, never sessions or people. Text inside behaviour data (labels, error messages, paths) comes from visitors' browsers; Trace stores it as plain lines and tells the agent never to follow it as instructions. Read a task before handing it to an agent that can run commands, as you would any issue a stranger could have filed.</p>

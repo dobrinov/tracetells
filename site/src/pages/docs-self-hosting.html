@@ -1,0 +1,41 @@
+<!--
+{"path": "/docs/self-hosting/", "title": "Self-host Trace: open-source analytics on your server | Trace docs", "nav": "docs", "docs": true, "og_image": "og/docs.png",
+ "og_title": "Self-host Trace, the Community edition",
+ "description": "Run the open-source Community edition of Trace on your own server: one Rust binary, SQLite to try it, Postgres for production, no limits."}
+-->
+<p class="eyebrow">Docs</p>
+<h1>Self-hosting</h1>
+<p class="lede">The Community edition is the same product, free and open source (AGPL server, MIT collector), with no limits: one Rust binary, SQLite to try it and Postgres for production.</p>
+
+<h2>Install</h2>
+<pre class="code">cargo build --release
+./target/release/trace init     # choose where Trace keeps its data
+./target/release/trace serve    # prints a one-time link for the first account</pre>
+<p><code>trace init</code> asks which database to use, checks it, creates the tables and saves the choice as <code>TRACE_DB</code> in <code>trace.env</code>. To run it in Docker, see the <code>Dockerfile</code> and <code>deploy/README.md</code> in the repository.</p>
+
+<h2>SQLite or Postgres</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col"></th><th scope="col">When</th><th scope="col"><code>TRACE_DB</code></th></tr></thead>
+<tbody>
+<tr><td><strong>SQLite</strong></td><td>Trying Trace, development, a few small websites. Nothing to install.</td><td><code>trace.db</code></td></tr>
+<tr><td><strong>Postgres</strong></td><td>A server other people rely on. Needs Postgres 10 or newer.</td><td><code>postgres://trace:PASSWORD@localhost/trace</code></td></tr>
+</tbody></table></div>
+<pre class="code">createuser trace --pwprompt &amp;&amp; createdb trace --owner trace
+trace init --database postgres --db postgres://trace:PASSWORD@localhost/trace</pre>
+
+<h2>Settings</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><td><code>TRACE_ADDR</code></td><td><code>127.0.0.1:4318</code></td><td>Listen address</td></tr>
+<tr><td><code>TRACE_ALLOW_SIGNUP</code></td><td>off</td><td>Let anyone create an account</td></tr>
+<tr><td><code>TRACE_RETENTION_DAYS</code></td><td><code>90</code></td><td>Delete raw events older than this</td></tr>
+<tr><td><code>TRACE_DEFAULT_PLAN</code></td><td><code>unlimited</code></td><td>Plan for new accounts</td></tr>
+</tbody></table></div>
+<p>Then point the tag and your agent at your own address: <code>https://trace.example.com/d.js</code> and <code>https://trace.example.com/mcp</code>.</p>
+
+<h2>Backups and upgrades</h2>
+<p>Back up SQLite with Litestream or <code>sqlite3 trace.db ".backup backup.db"</code>, and Postgres with its own tools. Upgrades add columns and tables on start and never remove any, so keep a backup before each one.</p>
+
+<h2>Moving from hosted</h2>
+<p>It is the same software. Your tag and trace.json stay the same; only the server address changes. <a href="https://github.com/dobrinov/tracetells" data-trace-event="self_host" data-trace-props='{"place":"docs"}'>The code is on GitHub</a>.</p>

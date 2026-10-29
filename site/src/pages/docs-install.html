@@ -1,0 +1,49 @@
+<!--
+{"path": "/docs/install/", "title": "Install the Trace tag | Trace docs", "nav": "docs", "docs": true, "og_image": "og/docs.png",
+ "og_title": "Install the Trace tag",
+ "description": "Add Trace's 8.3 KB collector to a website, a single-page app or a tag manager. Custom events, signed-in users, masking and consent options."}
+-->
+<p class="eyebrow">Docs</p>
+<h1>Install the tag</h1>
+<p class="lede">One script on every page, before <code>&lt;/head&gt;</code>. Your website's key is in the dashboard under Setup, filled in.</p>
+
+<h2>A website</h2>
+<p>Anything where links reload the page:</p>
+<pre class="code">&lt;script src="https://app.tracetells.com/d.js?k=YOUR_KEY" data-key="YOUR_KEY" defer&gt;&lt;/script&gt;</pre>
+
+<h2>A single-page app</h2>
+<p>React, Vue, Svelte, Angular and the rest. History API, Navigation API and hash-router navigations are followed on their own. Numeric, UUID and long-hash segments become <code>:id</code>; name other dynamic paths with <code>data-routes</code>:</p>
+<pre class="code">&lt;script src="https://app.tracetells.com/d.js?k=YOUR_KEY" data-key="YOUR_KEY"
+        data-routes="/products/:slug, /docs/*" defer&gt;&lt;/script&gt;</pre>
+
+<h2>A tag manager, a bundler or <code>type="module"</code></h2>
+<p>Where the tag can't carry attributes, configure it in code. The one-line stub queues calls made before the script loads, so <code>trace.track()</code> is safe at any time:</p>
+<pre class="code">&lt;script&gt;window.trace=window.trace||{q:[]};["track","identify","page","init"].forEach(function(m){trace[m]=trace[m]||function(){trace.q.push([m,arguments])}})&lt;/script&gt;
+&lt;script&gt;trace.init({ key: "YOUR_KEY", routes: ["/products/:slug"] });&lt;/script&gt;
+&lt;script src="https://app.tracetells.com/d.js?k=YOUR_KEY" async&gt;&lt;/script&gt;</pre>
+
+<h2>Your own events</h2>
+<pre class="code">trace.track("signed_up", { plan: "free" })</pre>
+<p>Or without JavaScript: <code>data-trace-event="signed_up"</code> on a button, link or form. Declare each event in <a href="/docs/trace-json/">trace.json</a> so Trace can tell you when one stops arriving.</p>
+
+<h2>Signed-in people</h2>
+<p>Call <code>trace.identify(id)</code> on every page while someone is signed in, with an id that isn't an email, ideally a keyed hash of your user's id. They then count once across days, which is what DAU, MAU and retention need. Following someone across days is per-person tracking even with a hash: say so in your privacy policy, and leave it out where it doesn't fit.</p>
+
+<h2>Options</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Option</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><td><code>key</code></td><td>Your website's write key (required)</td></tr>
+<tr><td><code>routes</code></td><td>Patterns that group dynamic URLs: <code>:param</code> matches one segment, a trailing <code>*</code> the rest</td></tr>
+<tr><td><code>sample</code></td><td>Share of visitors to record, e.g. <code>0.25</code></td></tr>
+<tr><td><code>pageviews</code></td><td><code>auto</code> (default), or <code>manual</code> and you call <code>trace.page()</code></td></tr>
+<tr><td><code>console</code></td><td><code>false</code> stops recording <code>console.error</code> calls</td></tr>
+<tr><td><code>consent</code></td><td>Leave it out to stay cookieless, or <code>required</code> to wait for your consent tool</td></tr>
+</tbody></table></div>
+<p>The API: <code>trace.track(name, props)</code>, <code>trace.identify(id)</code>, <code>trace.page(route?)</code>, <code>trace.flush()</code>, <code>trace.consent(true | false)</code>.</p>
+
+<h2>When your site already asks for consent</h2>
+<p>Add <code>data-consent="required"</code>. Before an answer nothing is stored, listened to or sent. Your consent tool calls <code>trace.consent(true)</code> or <code>trace.consent(false)</code>. After a yes, the collector keeps a visitor id in <code>localStorage</code> so returning visitors are recognised across days. Global Privacy Control counts as no.</p>
+
+<h2>Performance</h2>
+<p>8.3 KB on the wire, about 3 µs of work per click and no layout reads on the hot path. It takes notes while the page is busy and sends them when the browser is idle. If it ever fails, your site carries on as if it weren't there.</p>

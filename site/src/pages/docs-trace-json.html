@@ -1,0 +1,46 @@
+<!--
+{"path": "/docs/trace-json/", "title": "trace.json: goals, funnels and areas as code | Trace docs", "nav": "docs", "docs": true, "og_image": "og/docs.png",
+ "og_title": "trace.json: your goals as code",
+ "description": "Describe your events, goals, funnels, product areas and audience in trace.json next to your code, check it with trace check and apply it from CI."}
+-->
+<p class="eyebrow">Docs</p>
+<h1>trace.json</h1>
+<p class="lede">Goals live in code, next to the events that feed them. Review them in a pull request, check them with <code>trace check</code>, apply them with <code>trace push</code>, ideally from CI on every merge.</p>
+
+<h2>An example</h2>
+<pre class="code">{
+  "site": "shop-example-com",
+  "events": { "purchase": "Payment succeeded" },
+  "kpis": {
+    "checkout_conversion": {
+      "name": "Checkout conversion",
+      "conversion": { "from": { "pageview": "/checkout" }, "to": { "event": "purchase" } },
+      "goal": "increase", "target": "55%"
+    }
+  },
+  "funnels": {
+    "buying": { "steps": [{ "pageview": "/cart" }, { "pageview": "/checkout" }, { "event": "purchase" }] }
+  },
+  "areas": { "checkout": { "name": "Checkout", "match": [{ "pageview": "/checkout*" }] } },
+  "audience": { "marketing": ["/", "/pricing"], "engaged": [{ "event": "purchase" }] }
+}</pre>
+
+<h2>The keys</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Key</th><th scope="col">What it holds</th></tr></thead>
+<tbody>
+<tr><td><code>site</code></td><td>The Trace website this repository is. Your agent uses it to work on the right one, and <code>trace push</code> refuses to apply the file to another.</td></tr>
+<tr><td><code>events</code></td><td>The custom events your code sends, each with a description. Trace warns when one stops arriving.</td></tr>
+<tr><td><code>kpis</code></td><td>Your goals. A <code>conversion</code> (from → to) or a <code>session_rate</code>, a direction (<code>increase</code> or <code>decrease</code>) and an optional <code>target</code>.</td></tr>
+<tr><td><code>funnels</code></td><td>Ordered steps. Trace shows where people drop out, and names the biggest drop once someone finishes.</td></tr>
+<tr><td><code>areas</code></td><td>Parts of your product, optionally with <code>features</code> inside, each matched by pages or events. Trace shows which are used and which hurt.</td></tr>
+<tr><td><code>audience</code></td><td>Which pages are marketing (for bounce) and which actions make someone engaged.</td></tr>
+</tbody></table></div>
+
+<h2>Matchers</h2>
+<p>Steps, goals and areas match events the same way: <code>{ "pageview": "/checkout*" }</code>, <code>{ "event": "purchase" }</code>, <code>{ "click": "button#pay" }</code>, <code>{ "rage_click": "…" }</code>, <code>{ "error": "*" }</code>. A trailing <code>*</code> matches the rest of a path.</p>
+
+<h2>Check and apply</h2>
+<pre class="code">trace check
+trace push trace.json --server https://app.tracetells.com --token $TRACE_TOKEN</pre>
+<p class="note">Create the token under Account in the dashboard. Goals are matched by key, so renaming one keeps its history. Your coding agent can do the same with <code>check_config</code> and <code>push_config</code>.</p>
