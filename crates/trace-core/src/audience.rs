@@ -163,16 +163,16 @@ fn ratio(part: i64, whole: i64) -> Option<f64> {
     (whole > 0).then(|| part as f64 / whole as f64)
 }
 
-struct Session {
-    id: String,
+pub(crate) struct Session {
+    pub(crate) id: String,
     /// The visitor that day: a signed-in person, or the day's visitor hash.
-    who: String,
-    user: Option<String>,
-    day: String,
-    device: String,
+    pub(crate) who: String,
+    pub(crate) user: Option<String>,
+    pub(crate) day: String,
+    pub(crate) device: String,
 }
 
-async fn sessions(pool: &Pool, project_id: i64, from: i64, to: i64) -> Result<Vec<Session>> {
+pub(crate) async fn sessions(pool: &Pool, project_id: i64, from: i64, to: i64) -> Result<Vec<Session>> {
     let rows: Vec<(String, Option<String>, Option<String>, i64, Option<String>)> = sqlx::query_as(
         "SELECT id, visitor_id, user_id, started_at, device FROM sessions WHERE project_id = $1 AND started_at >= $2 AND started_at < $3",
     )

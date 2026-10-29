@@ -44,6 +44,34 @@
       "target": "1%"
     }
   },
+  "areas": {
+    "catalogue": {
+      "name": "Catalogue",
+      "description": "Finding shoes",
+      "features": {
+        "home": { "name": "Home page", "match": [{ "pageview": "{{BASE}}/" }] },
+        "listing": { "name": "All products", "match": [{ "pageview": "{{BASE}}/products" }] },
+        "product": { "name": "Product page", "match": [{ "pageview": "{{BASE}}/products/:id" }] }
+      }
+    },
+    "buying": {
+      "name": "Buying",
+      "description": "Cart, checkout and payment",
+      "features": {
+        "cart": { "name": "Cart", "match": [{ "pageview": "{{BASE}}/cart" }, { "event": "add_to_cart" }] },
+        "checkout": { "name": "Checkout", "match": [{ "pageview": "{{BASE}}/checkout" }] },
+        "paid": { "name": "Paid", "match": [{ "event": "purchase" }] }
+      }
+    },
+    "membership": {
+      "name": "Stride+",
+      "description": "The membership",
+      "features": {
+        "pricing": { "name": "Pricing", "match": [{ "pageview": "{{BASE}}/pricing" }] },
+        "signup": { "name": "Sign-up", "match": [{ "pageview": "{{BASE}}/signup" }, { "event": "signup_completed" }] }
+      }
+    }
+  },
   "audience": {
     "marketing": ["{{BASE}}/", "{{BASE}}/pricing"],
     "engaged": [{ "event": "add_to_cart" }, { "event": "signup_completed" }, { "event": "purchase" }]

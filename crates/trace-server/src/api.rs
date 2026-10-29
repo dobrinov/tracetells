@@ -98,6 +98,7 @@ pub fn router(state: AppStateRef) -> Router {
         .route("/kpis", get(list_kpis))
         .route("/funnels", get(list_funnels))
         .route("/audience", get(audience))
+        .route("/areas", get(areas))
         .route("/today", get(today))
         .route("/insights", get(list_insights))
         .route("/insights/{id}", get(get_insight))
@@ -512,6 +513,11 @@ pub(crate) async fn list_funnels(State(state): State<AppStateRef>, Extension(Cur
 /// Visitors, bounce on the marketing pages, engagement, DAU/MAU and retention.
 async fn audience(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<DaysQuery>) -> ApiResult<Json<Value>> {
     Ok(Json(json!(trace_core::audience::report(&state.pool, site.id, q.days.clamp(1, 90)).await?)))
+}
+
+/// Product areas and features: reach, adoption, repeat use and problems.
+async fn areas(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<DaysQuery>) -> ApiResult<Json<Value>> {
+    Ok(Json(json!(trace_core::areas::report(&state.pool, site.id, q.days.clamp(1, 90)).await?)))
 }
 
 /// Applies a trace.json pushed by `trace push` (or CI). Invalid
@@ -982,7 +988,7 @@ mod isolation_tests {
 
     /// Every endpoint about one website, as (method, path below the website).
     const SITE_ROUTES: &[(&str, &str)] = &[
-        ("GET", "project"), ("GET", "config"), ("POST", "config"), ("GET", "digest"), ("GET", "kpis"), ("GET", "funnels"), ("GET", "audience"), ("GET", "today"),
+        ("GET", "project"), ("GET", "config"), ("POST", "config"), ("GET", "digest"), ("GET", "kpis"), ("GET", "funnels"), ("GET", "audience"), ("GET", "areas"), ("GET", "today"),
         ("GET", "insights"), ("GET", "insights/1"), ("GET", "insights/1/prompt"), ("POST", "insights/1/status"), ("POST", "insights/1/kpi"), ("POST", "insights/1/refresh"), ("POST", "releases"), ("GET", "query"), ("GET", "publish"), ("POST", "publish"), ("DELETE", "publish"), ("POST", "publish/rotate"),
         ("POST", "analyze"), ("POST", "evaluate"), ("GET", "runs"), ("GET", "privacy"), ("POST", "privacy/rules"),
         ("POST", "privacy/rules/1"), ("DELETE", "privacy/rules/1"), ("POST", "privacy/test"),

@@ -2327,6 +2327,93 @@ async function renderAudience() {
   );
 }
 
+// ---------------------------------------------------------------- Features
+
+let featuresDays = Number(store("trace_features_days")) || 30;
+
+const AREA_STATUS = {
+  painful: ["Used, but it hurts", "bad", "Many people use it and many of them hit a problem: fixing it helps the most people."],
+  rare_painful: ["Little used, and it hurts", "bad", "Few use it and it goes wrong for them: fix it, or ask whether it's needed."],
+  rare: ["Little used", "warn", "Few reach it: is it hard to find, or not needed?"],
+  healthy: ["Healthy", "good", "Used, and rarely goes wrong."],
+  too_little: ["Too little data", "", "Fewer than 10 sessions in this window."],
+};
+
+const AREAS_EXAMPLE = `"areas": {
+  "battles": {
+    "name": "Battles",
+    "features": {
+      "duels": { "name": "Duels", "match": [{ "pageview": "/challenges*" }] },
+      "leagues": { "name": "Leagues", "match": [{ "pageview": "/leagues*" }] }
+    }
+  }
+}`;
+
+function areaRow(n, byKey) {
+  const [label, tone] = AREA_STATUS[n.status] || [n.status, ""];
+  const feature = Boolean(n.area);
+  const reach = n.reach == null ? 0 : Math.max(n.reach ? 1 : 0, n.reach * 100);
+  const problem = n.top_problem
+    ? `<span class="hint">${esc(n.top_problem.kind.replace("_", " "))} · <code>${esc(n.top_problem.path)}</code> ${esc(n.top_problem.what)}</span>`
+    : "";
+  return `<tr class="${feature ? "feature-row" : "area-row"}">
+    <td><div class="area-name">${feature ? `<span class="hint" aria-hidden="true">└</span>` : ""}<strong>${esc(n.name)}</strong>${n.description ? `<span class="hint">${esc(n.description)}</span>` : ""}</div></td>
+    <td class="num"><div class="reach"><span class="reach-bar"><span style="width:${reach.toFixed(1)}%"></span></span>${pct(n.reach)}</div>${n.previous_sessions >= 10 && n.sessions >= 10 ? change(n.reach, n.previous_reach, { rate: true }) : ""}<div class="hint">${num(n.sessions)} sessions</div></td>
+    <td class="num">${n.people ? `${pct(n.adoption)}<div class="hint">${num(n.people)} people</div>` : `<span class="hint">–</span>`}</td>
+    <td class="num">${n.people ? pct(n.repeat) : `<span class="hint">–</span>`}</td>
+    <td class="num"><span class="${n.problem_rate >= 0.15 && n.sessions >= 10 ? "bad-text" : ""}">${pct(n.problem_rate)}</span><div class="hint">${num(n.problem_sessions)} sessions</div></td>
+    <td class="problem-cell">${problem}</td>
+    <td><span class="badge ${tone}">${esc(label)}</span></td>
+  </tr>`;
+}
+
+// Which parts of the product people use, which they don't, and where it hurts.
+async function renderFeatures() {
+  const a = await api(`/areas?days=${featuresDays}`);
+  const groups = ["painful", "rare_painful", "rare", "healthy"].map((s) => [s, a.nodes.filter((n) => n.status === s)]);
+  const summary = groups
+    .map(([s, list]) => {
+      const [label, tone, hint] = AREA_STATUS[s];
+      return `<div class="card stat area-group tone-${tone}">
+        <div class="value">${list.length}</div><div class="label">${esc(label)}</div>
+        <div class="hint">${list.length ? list.slice(0, 4).map((n) => esc(n.name)).join(", ") + (list.length > 4 ? "…" : "") : esc(hint)}</div>
+      </div>`;
+    })
+    .join("");
+  const source =
+    a.source === "suggested"
+      ? `<div class="card"><p><strong>Suggested from your URLs.</strong> Name your product's areas and features in <code>trace.json</code>, by the pages and events that mean someone used them, and Trace measures those instead. <code>/trace:setup</code> in Claude Code can propose them from your routes.</p>${snippet(AREAS_EXAMPLE)}</div>`
+      : "";
+  const rows = a.nodes.map((n) => areaRow(n)).join("");
+  view.innerHTML = `
+    <div class="toolbar">
+      <div><h1>Features</h1><p class="sub">Which parts of ${esc(project.name)} people use, which they don't, and where using them goes wrong. Problems are rage clicks, dead clicks and errors on an area's own pages.</p></div>
+      <label class="field narrow">Window
+        <select id="features-days">${[7, 14, 30, 90].map((n) => `<option value="${n}" ${n === featuresDays ? "selected" : ""}>Last ${n} days</option>`).join("")}</select>
+      </label>
+    </div>
+    ${a.nodes.length ? `<div class="stats">${summary}</div>` : ""}
+    ${source}
+    ${
+      a.nodes.length
+        ? `<div class="table-wrap"><table class="areas">
+            <thead><tr><th>Area / feature</th><th class="num">Reach</th><th class="num" title="Share of signed-in people active in the window">Adoption</th><th class="num" title="Of those people, the share who used it on two or more days">Come back</th><th class="num">With problems</th><th>Most common problem</th><th>Status</th></tr></thead>
+            <tbody>${rows}</tbody></table></div>
+          <p class="hint">Reach counts visitors once a day, like everywhere in Trace. Adoption and come-back count signed-in people, so they need <code>trace.identify()</code>.</p>`
+        : `<div class="card"><p>No areas yet: there are no pages viewed in this window to suggest them from.</p></div>`
+    }`;
+  view.querySelector("#features-days").addEventListener("change", (ev) => {
+    featuresDays = Number(ev.target.value);
+    store("trace_features_days", featuresDays);
+    renderFeatures();
+  });
+  view.querySelectorAll("[data-copy]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (await copyText(b.dataset.copy)) toast("Copied");
+    })
+  );
+}
+
 // ---------------------------------------------------------------- operator area
 
 // Decides between the sign-in screens and the app.
@@ -2441,6 +2528,7 @@ const routes = {
   insights: renderInsights,
   kpis: renderKpis,
   audience: renderAudience,
+  features: renderFeatures,
   behaviour: renderBehaviour,
   privacy: renderPrivacy,
   setup: renderSetup,

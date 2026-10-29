@@ -191,6 +191,30 @@ The **Audience** page answers how many people come, how many leave straight away
 
 Home shows the last 7 days of it, and `get_audience` over MCP gives your agent the same numbers.
 
+### Areas and features
+
+A larger product has parts (areas) and those have features, and some get used while others don't. Name them in `trace.json` by the pages and events that mean someone used them:
+
+```json
+"areas": {
+  "battles": {
+    "name": "Battles",
+    "features": {
+      "duels": { "name": "Duels", "match": [{ "pageview": "/challenges*" }, { "event": "duel_started" }] },
+      "leagues": { "name": "Leagues", "match": [{ "pageview": "/leagues*" }] }
+    }
+  }
+}
+```
+
+The **Features** page measures each area and feature over the window:
+- **Reach:** the share of visitors who used it, with the window before.
+- **Adoption:** the share of signed-in people who used it.
+- **Come back:** how many of those people used it on two or more days.
+- **With problems:** the share of its sessions that hit a rage click, dead click or error on its own pages (the pages it declares, or where its events happen when it declares none), and the most common one.
+
+Each gets a status: **used, but it hurts** (where a fix helps the most people), **little used**, **little used and it hurts**, **healthy**, or too little data. Without declared areas, Trace suggests them from the website's URLs. Home raises the busiest area that hurts, `get_areas` gives your agent the same numbers, and the analysis prompt points it there.
+
 ## MCP: use Trace from your coding agent
 
 Trace is also an MCP server, and your coding agent can run all of it: setting a website up, and then being its analyst.

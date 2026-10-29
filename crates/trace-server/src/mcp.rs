@@ -244,6 +244,18 @@ pub fn tools() -> Vec<Value> {
             true,
         ),
         tool(
+            "get_areas",
+            "Areas and features",
+            "The product's areas (sub-products) and their features, declared in trace.json under \"areas\" or suggested from the \
+             website's URLs. For each: sessions, reach (share of visitors who used it), adoption among signed-in people, repeat use \
+             (people who used it on two or more days), the share of its sessions with a rage click, dead click or error on its pages, \
+             the most common of those, and a status: healthy, painful (used, but it hurts), rare (little used), rare_painful or \
+             too_little. Start from painful areas: fixes there help the most people. Aggregates only.",
+            json!({ "days": days }),
+            &[],
+            true,
+        ),
+        tool(
             "list_insights",
             "List insights",
             "Improvement insights, newest activity first, optionally filtered by status. Each includes the KPI it should move and, once released, the measured impact.",
@@ -589,6 +601,7 @@ async fn call(ctx: &Context<'_>, name: &str, args: &Value) -> anyhow::Result<Too
                 },
             }))
         }
+        "get_areas" => ToolOutput::Json(serde_json::to_value(trace_core::areas::report(pool, p, arg_days(args).clamp(1, 90)).await?)?),
         "get_audience" => ToolOutput::Json(serde_json::to_value(trace_core::audience::report(pool, p, arg_days(args).clamp(1, 90)).await?)?),
         "list_insights" => {
             let status = match args.get("status").and_then(Value::as_str) {
@@ -1106,7 +1119,8 @@ read the dismiss_reason of dismissed ones: they say what this team doesn't want.
 4. Call get_funnels{site_obj}. In each funnel, biggest_drop is the step where the most sessions are lost: that is where \
 more conversion is won. Compare it with the window before and across devices (a step that converts far worse on \
 mobile points at a mobile problem). Call get_audience{site_obj} too: a marketing page most people leave from \
-without doing anything, or a low share of visitors who become engaged, is a problem worth explaining.
+without doing anything, or a low share of visitors who become engaged, is a problem worth explaining. And get_areas{site_obj}: \
+an area marked painful is used a lot and hurts, so fixing it helps the most people; a rare one may be hard to find.
 5. Dig into why with query_behaviour{site_note}: on the page people leave from, look at exits, scroll, rage and dead \
 clicks, errors and forms, by device and by day, compared with the window before. Pick up to 5 problems, the ones that \
 lose the most sessions in a funnel first, then those that keep a KPI furthest from its target. For each, be specific: \

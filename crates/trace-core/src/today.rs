@@ -15,7 +15,7 @@ use crate::util::{DAY_MS, now_ms, pct};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Item {
-    /// What kind of thing this is: setup, analyse, review, verdict, measuring, kpi, funnel, errors, tracking.
+    /// What kind of thing this is: setup, analyse, review, verdict, measuring, kpi, funnel, area, errors, tracking.
     pub kind: &'static str,
     /// action (something to do), bad (something wrong), good (good news) or info.
     pub tone: &'static str,
@@ -193,6 +193,21 @@ pub async fn build(pool: &Pool, site: &Project) -> Result<Today> {
             format!("In \"{}\", {} sessions stopped there in 14 days ({} didn't continue).", f.funnel.name, d.lost, pct(d.rate)),
             "kpis",
             "See the funnel",
+        ));
+    }
+
+    // The area people use most that hurts: where a fix helps the most people.
+    let areas = crate::areas::report(pool, site.id, 14).await?;
+    if let Some(a) = areas.nodes.iter().filter(|n| n.status == "painful").max_by_key(|n| n.problem_sessions) {
+        let top = a.top_problem.as_ref().map(|p| format!(" Most often: {} on {}, {}.", p.kind.replace('_', " "), p.path, p.what)).unwrap_or_default();
+        items.push(item(
+            "area",
+            "bad",
+            650 + a.problem_sessions,
+            format!("{} is used, but it hurts", a.name),
+            format!("{} of the sessions using it hit a rage click, a dead click or an error in 14 days.{top}", pct(a.problem_rate.unwrap_or(0.0))),
+            "features",
+            "See features",
         ));
     }
 

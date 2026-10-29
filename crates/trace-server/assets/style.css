@@ -1811,3 +1811,71 @@ a.card.stat.link:hover {
     margin-left: auto;
   }
 }
+
+/* Features: areas and their features. */
+table.areas .area-row td {
+  background: var(--surface-2);
+}
+table.areas .area-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+table.areas .feature-row .area-name {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding-left: 12px;
+}
+table.areas .feature-row .area-name strong {
+  font-weight: 500;
+}
+table.areas .reach {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+table.areas .reach-bar {
+  width: 64px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+table.areas .reach-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+table.areas .problem-cell {
+  max-width: 280px;
+}
+.bad-text {
+  color: var(--bad, #b42318);
+  font-weight: 600;
+}
+.area-group.tone-bad .value {
+  color: var(--bad, #b42318);
+}
+table.areas .badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--text-2);
+  background: var(--surface-2);
+}
+table.areas .badge.bad {
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+table.areas .badge.warn {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+table.areas .badge.good {
+  color: var(--good);
+  background: var(--good-soft);
+}

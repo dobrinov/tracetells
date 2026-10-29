@@ -1,6 +1,7 @@
 //! Trace core: storage, behaviour ingestion, KPI measurement, the digest the
 //! analyst agent reads, insight lifecycle, prompt rendering and impact evaluation.
 
+pub mod areas;
 pub mod audience;
 pub mod auth;
 pub mod config;

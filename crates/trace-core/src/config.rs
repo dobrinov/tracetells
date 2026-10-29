@@ -47,6 +47,9 @@ pub struct Config {
     /// Marketing pages and engaging actions (see [`crate::audience`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audience: Option<crate::audience::AudienceSpec>,
+    /// Product areas and their features (see [`crate::areas`]).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub areas: Vec<crate::areas::AreaSpec>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -115,11 +118,11 @@ impl Parser {
     }
 
     fn root(&mut self, root: &Value) -> Config {
-        let mut config = Config { product: None, events: BTreeMap::new(), kpis: Vec::new(), funnels: Vec::new(), audience: None };
+        let mut config = Config { product: None, events: BTreeMap::new(), kpis: Vec::new(), funnels: Vec::new(), audience: None, areas: Vec::new() };
         let Some(obj) = self.object(root, "(root)") else { return config };
         for key in obj.keys() {
-            if !matches!(key.as_str(), "$schema" | "product" | "events" | "kpis" | "funnels" | "audience") {
-                self.err(key, "unknown key (expected product, events, kpis, funnels or audience)");
+            if !matches!(key.as_str(), "$schema" | "product" | "events" | "kpis" | "funnels" | "audience" | "areas") {
+                self.err(key, "unknown key (expected product, events, kpis, funnels, audience or areas)");
             }
         }
         match obj.get("product") {
@@ -162,6 +165,16 @@ impl Parser {
         if let Some(v) = obj.get("audience") {
             config.audience = self.audience(v, &config.events);
         }
+        if let Some(areas) = obj.get("areas").and_then(|v| self.object(v, "areas")) {
+            if areas.len() > crate::areas::MAX_AREAS {
+                self.err("areas", format!("at most {} areas", crate::areas::MAX_AREAS));
+            }
+            for (key, v) in areas.iter().take(crate::areas::MAX_AREAS) {
+                if let Some(spec) = self.area(&format!("areas.{key}"), key, v, &config.events, true) {
+                    config.areas.push(spec);
+                }
+            }
+        }
         if config.kpis.is_empty() && self.errors.is_empty() {
             self.warnings.push("no KPIs defined: the analyst works best when it knows what to improve".into());
         }
@@ -200,6 +213,51 @@ impl Parser {
             Some(_) => self.err("audience.engaged", "expected a list of event matchers, e.g. [{ \"event\": \"signup\" }]"),
         }
         Some(spec)
+    }
+
+    /// An area (with `features`) or a feature: a name and the pages and events that mean someone used it.
+    fn area(&mut self, at: &str, key: &str, v: &Value, events: &BTreeMap<String, String>, top: bool) -> Option<crate::areas::AreaSpec> {
+        let what = if top { "area" } else { "feature" };
+        if key.is_empty() || !key.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') {
+            self.err(at, format!("{what} keys may only use lowercase letters, digits, _ and -"));
+            return None;
+        }
+        let obj = self.object(v, at)?;
+        for k in obj.keys() {
+            let known = matches!(k.as_str(), "name" | "description" | "match") || (top && k == "features");
+            if !known {
+                self.err(&format!("{at}.{k}"), if top { "unknown key (expected name, description, match or features)" } else { "unknown key (expected name, description or match)" });
+            }
+        }
+        let text = |k: &str| obj.get(k).and_then(Value::as_str).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let mut matchers = Vec::new();
+        match obj.get("match") {
+            None => {}
+            Some(Value::Array(list)) => {
+                for (i, m) in list.iter().enumerate() {
+                    if let Some(m) = self.matcher(Some(m), &format!("{at}.match[{i}]"), events) {
+                        matchers.push(m);
+                    }
+                }
+            }
+            Some(_) => self.err(&format!("{at}.match"), "expected a list of event matchers, e.g. [{ \"pageview\": \"/leagues*\" }]"),
+        }
+        let mut features = Vec::new();
+        if let Some(fs) = obj.get("features").and_then(|v| self.object(v, &format!("{at}.features"))) {
+            if fs.len() > crate::areas::MAX_FEATURES {
+                self.err(&format!("{at}.features"), format!("at most {} features", crate::areas::MAX_FEATURES));
+            }
+            for (fkey, fv) in fs.iter().take(crate::areas::MAX_FEATURES) {
+                if let Some(f) = self.area(&format!("{at}.features.{fkey}"), fkey, fv, events, false) {
+                    features.push(f);
+                }
+            }
+        }
+        if matchers.is_empty() && features.is_empty() {
+            self.err(at, if top { "needs match, features or both" } else { "needs match: the pages or events that mean someone used it" });
+            return None;
+        }
+        Some(crate::areas::AreaSpec { key: key.to_string(), name: text("name").unwrap_or_else(|| key.replace(['_', '-'], " ")), description: text("description").unwrap_or_default(), matchers, features })
     }
 
     fn funnel(&mut self, key: &str, v: &Value, events: &BTreeMap<String, String>) -> Option<crate::funnel::FunnelSpec> {
@@ -628,6 +686,22 @@ mod tests {
         assert!(all.contains("kpis.a.conversion.to: missing event matcher"), "{all}");
         assert!(all.contains("kpis.a.goal: required"), "{all}");
         assert!(all.contains("kpis.b.target: 55 is not a rate"), "{all}");
+    }
+
+    #[test]
+    fn areas_have_features_and_need_something_to_match() {
+        let ok = parse(
+            r#"{ "kpis": { "k": { "session_rate": { "error": "*" }, "goal": "decrease" } },
+                 "areas": { "battles": { "name": "Battles", "match": [ { "pageview": "/leaderboard" } ],
+                   "features": { "duels": { "match": [ { "pageview": "/challenges*" } ] } } } } }"#,
+        )
+        .unwrap();
+        let a = &ok.config.areas[0];
+        assert_eq!((a.name.as_str(), a.features[0].name.as_str(), a.features[0].matchers[0].path.as_deref()), ("Battles", "duels", Some("/challenges*")));
+        let all = parse(r#"{ "areas": { "empty": {}, "x": { "features": { "f": { "features": {} } } }, "Bad": { "match": [] } } }"#).unwrap_err().join("\n");
+        assert!(all.contains("areas.empty: needs match, features or both"), "{all}");
+        assert!(all.contains("areas.x.features.f.features: unknown key"), "{all}");
+        assert!(all.contains("areas.Bad: area keys may only use"), "{all}");
     }
 
     #[test]
