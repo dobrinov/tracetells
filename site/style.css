@@ -396,3 +396,27 @@ pre { margin: 0; }
 .compare-4 tbody th { width: 16%; }
 .compare-4 td:nth-child(3), .compare-4 td:nth-child(4) { color: var(--muted); }
 .compare-4 td:last-child { color: var(--text); }
+
+/* Homepage: the product in the hero */
+.product-shot { margin: 0; background: var(--surface); color: var(--text); border-radius: 16px; overflow: hidden; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35); }
+.shot-bar { display: flex; gap: 6px; align-items: center; padding: 10px 14px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.shot-bar span { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); }
+.shot-bar em { font-style: normal; font-size: 12px; color: var(--muted); padding-left: 8px; }
+.shot-body { padding: 16px; display: flex; flex-direction: column; gap: 10px; background: var(--bg); }
+.shot-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.shot-tiles div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.shot-tiles span { font-size: 11px; font-weight: 600; color: var(--muted); }
+.shot-tiles strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.shot-tiles i { font-style: normal; font-size: 11px; font-weight: 600; }
+.shot-tiles i.good { color: var(--good); }
+.shot-item { display: flex; gap: 10px; align-items: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.shot-item b { flex: none; font-size: 11px; padding: 3px 8px; border-radius: 999px; }
+.shot-item.worked b { background: var(--good-soft); color: var(--good); }
+.shot-item.hurts b { background: var(--bad-soft); color: var(--bad); }
+.shot-item div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.shot-item strong { font-size: 14px; }
+.shot-item span { font-size: 12px; color: var(--muted); }
+.shot-agent { display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--muted); padding: 2px 2px 0; }
+.shot-agent code { font-size: 12px; background: var(--ink-surface); color: #e8ecf4; padding: 4px 8px; border-radius: 6px; }
+.product-shot figcaption { font-size: 12px; color: var(--muted); padding: 8px 16px 12px; background: var(--bg); }
+.switch-note { margin: 20px 0 0; font-size: 16px; color: var(--text-2); }

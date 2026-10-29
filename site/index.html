@@ -72,29 +72,28 @@
       <div class="hero-copy">
         <span class="pill">Patterns, not people</span>
         <h1 class="display">Find what's broken on your site. Let your agent fix it. Know it worked.</h1>
-        <p class="hero-lede">Trace is analytics, frustration signals and error tracking in one script, without recording anyone. Your coding agent reads it over MCP, fixes what holds your visitors back, and Trace tells you whether your numbers moved.</p>
+        <p class="hero-lede">Trace does the jobs of Mixpanel, FullStory and Sentry in one script: goals and funnels, where people get stuck, the errors they hit. It never records anyone. Your coding agent reads it over MCP and fixes what holds visitors back, and Trace tells you whether your numbers moved.</p>
         <div class="actions">
           <a data-trace="start-hero" data-trace-props='{"place":"hero"}' class="btn btn-primary" href="https://app.tracetells.com/#/signup" data-app-link data-trace-event="start_free">Start free, hosted</a>
           <a data-trace="code-hero" data-trace-props='{"place":"hero"}' class="btn btn-ink" href="https://github.com/dobrinov/tracetells" data-trace-event="self_host">Self-host the open source edition</a>
         </div>
         <p class="hero-demo">Or <a data-trace="demo-hero" data-trace-event="open_demo" data-trace-props='{"place":"hero"}' href="/demo/">try the demo shop</a>, a little store with a few planted problems, then <a data-trace="recorded-hero" data-trace-event="view_public" data-trace-props='{"view":"shop"}' href="https://app.tracetells.com/p/uDVoTzUDXjSybPZF5ANLG78-USVvW2TU#/behaviour" target="_blank" rel="noopener">see what Trace recorded</a>.</p>
       </div>
-      <div class="terminal mono">
-        <div class="terminal-bar" aria-hidden="true">
-          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-          <span class="label">terminal</span>
+      <figure class="product-shot" aria-label="Trace's Home page for the demo shop">
+        <div class="shot-bar" aria-hidden="true"><span></span><span></span><span></span><em>app.tracetells.com · Home</em></div>
+        <div class="shot-body">
+          <div class="shot-tiles">
+            <div><span>Visitors</span><strong>878</strong></div>
+            <div><span>Bounce</span><strong>33.5%</strong><i class="good">▼ 2.5 pts, better</i></div>
+            <div><span>Engaged</span><strong>27.9%</strong><i class="good">▲ 0.9 pts, better</i></div>
+          </div>
+          <div class="shot-item worked"><b>Worked</b><div><strong>"Show the shipping cost on the cart page"</strong><span>Checkout conversion 39.3% → 57.3% after the release</span></div></div>
+          <div class="shot-item hurts"><b>Hurts</b><div><strong>Product page: reviews fail to load</strong><span>GET /api/reviews/:id → 500, in 475 sessions</span></div></div>
+          <div class="shot-item hurts"><b>Losing people</b><div><strong>77% stop between /pricing and /signup</strong><span>The biggest drop in the Stride+ sign-up funnel</span></div></div>
+          <div class="shot-agent"><code>/trace:analyse</code><span>Your agent turns these into tasks</span></div>
         </div>
-        <p class="t-cmd">$ trace insights --site yourproject</p>
-        <pre class="t-out t-out-pre">#2  Fix GET /api/reviews/:id → 500 on /products/:id
-    31.6% of product views · Sessions with errors
-#6  Fix the unresponsive "Pay now" on /checkout
-    18.2% rage-click it · Checkout conversion</pre>
-        <p class="t-cmd">$ trace prompt 6 | claude</p>
-        <p class="t-dim">Implementing: show progress on Pay now, disable double submit…</p>
-        <p class="t-cmd">$ trace status 6 released</p>
-        <p class="t-out">Checkout conversion <span class="t-good">36% → 56%</span>  improved after release, p &lt; 0.01</p>
-        <p class="t-dim">Example from the Stride demo shop</p>
-      </div>
+        <figcaption>The demo shop, last 30 days</figcaption>
+      </figure>
     </div>
   </section>
 
@@ -102,17 +101,17 @@
     <h2 id="what-title" class="display section-title">One script instead of three tools</h2>
     <div class="grid-auto features" style="--min: 240px">
       <div class="card">
-        <span class="eyebrow">Like product analytics</span>
+        <span class="eyebrow">Like Mixpanel or Amplitude</span>
         <h3>Your goals, measured</h3>
         <span class="card-text">Events, funnels and KPIs with targets: sign-ups, checkout conversion, whatever your site is for.</span>
       </div>
       <div class="card">
-        <span class="eyebrow">Like session tools, without the recordings</span>
+        <span class="eyebrow">Like FullStory or Hotjar, without the recordings</span>
         <h3>Where people get stuck</h3>
         <span class="card-text">Rage clicks, dead clicks, forms people give up on, pages they leave. Counted across visitors, never replayed.</span>
       </div>
       <div class="card">
-        <span class="eyebrow">Like error tracking</span>
+        <span class="eyebrow">Like Sentry or Honeybadger, in the browser</span>
         <h3>Errors your visitors hit</h3>
         <span class="card-text">Exceptions, failed requests and missing files, with how many sessions each one reached.</span>
       </div>
@@ -122,6 +121,7 @@
         <span class="card-text">Mark a change released, and Trace compares the KPI before and after, with a significance test.</span>
       </div>
     </div>
+    <p class="switch-note">Already paying for one of them? <a href="switching.html">See what changes, what you'd keep, and how to run Trace beside it</a>.</p>
   </section>
 
   <section id="how" class="wrap section how" aria-labelledby="how-title">
