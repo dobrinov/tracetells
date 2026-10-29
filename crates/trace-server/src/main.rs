@@ -1,6 +1,7 @@
 mod analysis;
 mod api;
 mod auth_api;
+mod cache;
 mod demo;
 mod guard;
 mod mcp;
@@ -383,7 +384,16 @@ async fn run() -> Result<()> {
             state.privacy_url = privacy_url;
             state.retention_days = retention_days;
             state.dashboard_analytics = dashboard_key.zip(dashboard_secret);
-            let app = api::router(Arc::new(state));
+            let state = Arc::new(state);
+            // Keep the reports people are looking at fresh, so pages don't wait.
+            let reports = state.reports.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+                    reports.tend().await;
+                }
+            });
+            let app = api::router(state);
             // Website paths are rewritten before routing, so the rewrite wraps the whole router.
             let app = tower::Layer::layer(&tower::util::MapRequestLayer::new(api::route_site_paths), app);
             let listener = tokio::net::TcpListener::bind(addr).await?;

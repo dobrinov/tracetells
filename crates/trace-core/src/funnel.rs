@@ -191,10 +191,14 @@ pub struct Counts {
 /// Walks every session that reached the first step through the rest, in
 /// order: a step counts when it happens at or after the step before it.
 pub async fn count(pool: &Pool, project_id: i64, steps: &[EventMatch], from: i64, to: i64) -> Result<Counts> {
+    count_with(&mut Default::default(), pool, project_id, steps, from, to).await
+}
+
+async fn count_with(scan: &mut crate::kpi::Scan, pool: &Pool, project_id: i64, steps: &[EventMatch], from: i64, to: i64) -> Result<Counts> {
     let mut per_step: Vec<HashMap<String, Vec<i64>>> = Vec::new();
     for m in steps {
         let mut by_session: HashMap<String, Vec<i64>> = HashMap::new();
-        for h in crate::kpi::hits(pool, project_id, m, from, to).await? {
+        for h in scan.hits(pool, project_id, m, from, to).await? {
             by_session.entry(h.session_id).or_default().push(h.ts);
         }
         for times in by_session.values_mut() {
@@ -289,10 +293,12 @@ pub async fn report(pool: &Pool, project_id: i64, days: u32) -> Result<Vec<Funne
     let to = now_ms();
     let window = i64::from(days) * DAY_MS;
     let mut out = Vec::new();
+    // Steps of the same type (most are pageviews) read their events once.
+    let mut scan = crate::kpi::Scan::default();
     for funnel in list(pool, project_id).await? {
         let matchers: Vec<EventMatch> = funnel.steps.iter().map(|s| s.matcher.clone()).collect();
-        let now = count(pool, project_id, &matchers, to - window, to).await?;
-        let before = count(pool, project_id, &matchers, to - 2 * window, to - window).await?;
+        let now = count_with(&mut scan, pool, project_id, &matchers, to - window, to).await?;
+        let before = count_with(&mut scan, pool, project_id, &matchers, to - 2 * window, to - window).await?;
         let steps: Vec<StepReport> = funnel
             .steps
             .iter()

@@ -122,20 +122,13 @@ fn ratio(part: i64, whole: i64) -> Option<f64> {
 }
 
 /// Sessions with an event matching `m`, and the paths it matched on.
-async fn matched(pool: &Pool, project_id: i64, m: &EventMatch, from: i64, to: i64) -> Result<Vec<(String, String)>> {
-    let rows: Vec<(String, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT session_id, path, selector, name FROM events WHERE project_id = $1 AND type = $2 AND ts >= $3 AND ts < $4",
-    )
-    .bind(project_id)
-    .bind(&m.kind)
-    .bind(from)
-    .bind(to)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows
-        .into_iter()
-        .filter(|(_, path, sel, name)| m.matches(path.as_deref(), sel.as_deref(), name.as_deref()))
-        .map(|(session, path, ..)| (session, path.unwrap_or_default()))
+async fn matched(scan: &mut crate::kpi::Scan, pool: &Pool, project_id: i64, m: &EventMatch, from: i64, to: i64) -> Result<Vec<(String, String)>> {
+    Ok(scan
+        .rows(pool, project_id, &m.kind, from, to)
+        .await?
+        .iter()
+        .filter(|(_, _, path, sel, name)| m.matches(path.as_deref(), sel.as_deref(), name.as_deref()))
+        .map(|(session, _, path, ..)| (session.clone(), path.clone().unwrap_or_default()))
         .collect())
 }
 
@@ -159,7 +152,7 @@ impl Usage {
     }
 }
 
-async fn usage(pool: &Pool, project_id: i64, matchers: &[&EventMatch], from: i64, to: i64) -> Result<Usage> {
+async fn usage(scan: &mut crate::kpi::Scan, pool: &Pool, project_id: i64, matchers: &[&EventMatch], from: i64, to: i64) -> Result<Usage> {
     let mut u = Usage { sessions: HashSet::new(), patterns: Vec::new(), paths: HashSet::new() };
     for m in matchers {
         if m.kind == "pageview"
@@ -167,7 +160,7 @@ async fn usage(pool: &Pool, project_id: i64, matchers: &[&EventMatch], from: i64
         {
             u.patterns.push(p.clone());
         }
-        for (session, path) in matched(pool, project_id, m, from, to).await? {
+        for (session, path) in matched(scan, pool, project_id, m, from, to).await? {
             if m.kind != "pageview" && !path.is_empty() {
                 u.paths.insert(path);
             }
@@ -337,12 +330,14 @@ pub async fn report(pool: &Pool, project_id: i64, days: u32) -> Result<Areas> {
     let before_visitors = previous.iter().map(|s| (s.day.as_str(), s.who.as_str())).collect::<HashSet<_>>().len() as i64;
     let active_people = current.iter().filter_map(|s| s.user.as_deref()).collect::<HashSet<_>>().len() as i64;
     let probs = problems(pool, project_id, from, now).await?;
+    // Areas and their features match against the same events: read each type once per window.
+    let mut scan = crate::kpi::Scan::default();
 
     let mut nodes = Vec::new();
     for area in &specs {
         let matchers = all_matchers(area);
-        let now_use = usage(pool, project_id, &matchers, from, now).await?;
-        let before_use = usage(pool, project_id, &matchers, before, from).await?;
+        let now_use = usage(&mut scan, pool, project_id, &matchers, from, now).await?;
+        let before_use = usage(&mut scan, pool, project_id, &matchers, before, from).await?;
         let m = measure(&now_use, &current, &probs);
         let prev = measure(&before_use, &previous, &[]);
         let reach = ratio(m.visitors, all_visitors);
@@ -350,8 +345,8 @@ pub async fn report(pool: &Pool, project_id: i64, days: u32) -> Result<Areas> {
         nodes.push(node(area, None, &m, prev.sessions, reach, ratio(prev.visitors, before_visitors), active_people, reach.is_some_and(|r| r < RARE_AREA)));
         for feature in &area.features {
             let fm: Vec<&EventMatch> = feature.matchers.iter().collect();
-            let now_use = usage(pool, project_id, &fm, from, now).await?;
-            let before_use = usage(pool, project_id, &fm, before, from).await?;
+            let now_use = usage(&mut scan, pool, project_id, &fm, from, now).await?;
+            let before_use = usage(&mut scan, pool, project_id, &fm, before, from).await?;
             let f = measure(&now_use, &current, &probs);
             let fprev = measure(&before_use, &previous, &[]);
             let rare = ratio(f.sessions, area_sessions).is_some_and(|r| r < RARE_FEATURE);

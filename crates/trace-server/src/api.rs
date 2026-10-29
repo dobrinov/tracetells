@@ -52,6 +52,8 @@ pub struct AppState {
     /// Measuring this dashboard with Trace: a website's write key, and the
     /// secret that hashes people's ids (`TRACE_DASHBOARD_KEY` / `_SECRET`).
     pub dashboard_analytics: Option<(String, String)>,
+    /// Heavy reports served from memory; see [`crate::cache`].
+    pub reports: Arc<crate::cache::Reports>,
 }
 
 pub type AppStateRef = Arc<AppState>;
@@ -76,6 +78,7 @@ impl AppState {
             collectors: Default::default(),
             quotas: Default::default(),
             dashboard_analytics: None,
+            reports: Default::default(),
         }
     }
 }
@@ -140,6 +143,7 @@ pub fn router(state: AppStateRef) -> Router {
         .merge(crate::auth_api::routes())
         .merge(crate::oauth::api_routes())
         .merge(crate::operator::routes())
+        .layer(middleware::from_fn_with_state(state.clone(), forget_on_change))
         .layer(middleware::from_fn_with_state(state.clone(), crate::auth_api::authorize));
 
     Router::new()
@@ -496,18 +500,33 @@ fn default_days() -> u32 {
     14
 }
 
-async fn get_digest(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<DaysQuery>) -> ApiResult<Json<digest::Digest>> {
-    Ok(Json(digest::build(&state.pool, site.id, q.days.clamp(1, 365)).await?))
+/// A heavy report, from memory when it's recent enough (see [`crate::cache`]).
+async fn cached<F, Fut>(state: &AppStateRef, site: &trace_core::model::Project, kind: &str, days: u32, compute: F) -> ApiResult<Json<Value>>
+where
+    F: Fn(Pool, trace_core::model::Project, u32) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = anyhow::Result<Value>> + Send + 'static,
+{
+    let (pool, s) = (state.pool.clone(), site.clone());
+    let key = format!("{}:{kind}:{days}", site.id);
+    Ok(Json(state.reports.get(site.id, key, move || compute(pool.clone(), s.clone(), days)).await?))
+}
+
+async fn get_digest(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<DaysQuery>) -> ApiResult<Json<Value>> {
+    cached(&state, &site, "digest", q.days.clamp(1, 365), |pool, s, days| async move { Ok(json!(digest::build(&pool, s.id, days).await?)) }).await
 }
 
 pub(crate) async fn list_kpis(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<DaysQuery>) -> ApiResult<Json<Value>> {
+    cached(&state, &site, "kpis", q.days.clamp(1, 365), |pool, s, days| async move { kpi_values(&pool, s.id, days).await }).await
+}
+
+async fn kpi_values(pool: &Pool, site: i64, days: u32) -> anyhow::Result<Value> {
     let now = trace_core::util::now_ms();
-    let span = q.days.clamp(1, 365) as i64 * trace_core::util::DAY_MS;
+    let span = days as i64 * trace_core::util::DAY_MS;
     let mut out = Vec::new();
-    for k in kpi::list(&state.pool, site.id).await? {
-        let current = kpi::measure(&state.pool, site.id, &k.definition, now - span, now).await?;
-        let previous = kpi::measure(&state.pool, site.id, &k.definition, now - 2 * span, now - span).await?;
-        let mut v = serde_json::to_value(&k).map_err(anyhow::Error::from)?;
+    for k in kpi::list(pool, site).await? {
+        let current = kpi::measure(pool, site, &k.definition, now - span, now).await?;
+        let previous = kpi::measure(pool, site, &k.definition, now - 2 * span, now - span).await?;
+        let mut v = serde_json::to_value(&k)?;
         v["summary"] = json!(k.definition.describe());
         v["current"] = json!(current.value);
         v["previous"] = json!(previous.value);
@@ -515,27 +534,39 @@ pub(crate) async fn list_kpis(State(state): State<AppStateRef>, Extension(Curren
         v["target_met"] = json!(current.value.and_then(|c| kpi::target_met(&k, c)));
         out.push(v);
     }
-    Ok(Json(json!(out)))
+    Ok(json!(out))
 }
 
 /// The website's home: what needs attention now, most important first.
 async fn today(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>) -> ApiResult<Json<Value>> {
-    Ok(Json(json!(trace_core::today::build(&state.pool, &site).await?)))
+    cached(&state, &site, "today", 0, |pool, s, _| async move { Ok(json!(trace_core::today::build(&pool, &s).await?)) }).await
 }
 
 /// Declared and recognised funnels, measured over the window and the one before.
 pub(crate) async fn list_funnels(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<DaysQuery>) -> ApiResult<Json<Value>> {
-    Ok(Json(json!(trace_core::funnel::report(&state.pool, site.id, q.days.clamp(1, 90)).await?)))
+    cached(&state, &site, "funnels", q.days.clamp(1, 90), |pool, s, days| async move { Ok(json!(trace_core::funnel::report(&pool, s.id, days).await?)) }).await
 }
 
 /// Visitors, bounce on the marketing pages, engagement, DAU/MAU and retention.
 async fn audience(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<DaysQuery>) -> ApiResult<Json<Value>> {
-    Ok(Json(json!(trace_core::audience::report(&state.pool, site.id, q.days.clamp(1, 90)).await?)))
+    cached(&state, &site, "audience", q.days.clamp(1, 90), |pool, s, days| async move { Ok(json!(trace_core::audience::report(&pool, s.id, days).await?)) }).await
 }
 
 /// Product areas and features: reach, adoption, repeat use and problems.
 async fn areas(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<DaysQuery>) -> ApiResult<Json<Value>> {
-    Ok(Json(json!(trace_core::areas::report(&state.pool, site.id, q.days.clamp(1, 90)).await?)))
+    cached(&state, &site, "areas", q.days.clamp(1, 90), |pool, s, days| async move { Ok(json!(trace_core::areas::report(&pool, s.id, days).await?)) }).await
+}
+
+/// Any change made through the API drops the website's cached reports, so it shows at once.
+async fn forget_on_change(State(state): State<AppStateRef>, req: Request, next: middleware::Next) -> Response {
+    let site = (req.method() != Method::GET).then(|| req.extensions().get::<CurrentSite>().map(|c| c.0.id)).flatten();
+    let res = next.run(req).await;
+    if let Some(site) = site
+        && res.status().is_success()
+    {
+        state.reports.forget_site(site);
+    }
+    res
 }
 
 /// Applies a trace.json pushed by `trace push` (or CI). Invalid

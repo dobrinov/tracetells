@@ -65,6 +65,48 @@ pub(crate) struct Hit {
     pub(crate) ts: i64,
 }
 
+/// One event, as reports match it: session, time, path, selector, name.
+pub(crate) type Row = (String, i64, Option<String>, Option<String>, Option<String>);
+
+/// Events read once per type and window, for a report that matches many
+/// things (funnel steps, areas and their features) against the same events.
+#[derive(Default)]
+pub(crate) struct Scan {
+    rows: HashMap<(String, i64, i64), std::sync::Arc<Vec<Row>>>,
+}
+
+impl Scan {
+    pub(crate) async fn rows(&mut self, pool: &Pool, project_id: i64, kind: &str, from: i64, to: i64) -> Result<std::sync::Arc<Vec<Row>>> {
+        let key = (kind.to_string(), from, to);
+        if let Some(rows) = self.rows.get(&key) {
+            return Ok(rows.clone());
+        }
+        let rows: Vec<Row> = sqlx::query_as(
+            "SELECT session_id, ts, path, selector, name FROM events
+             WHERE project_id = $1 AND type = $2 AND ts >= $3 AND ts < $4",
+        )
+        .bind(project_id)
+        .bind(kind)
+        .bind(from)
+        .bind(to)
+        .fetch_all(pool)
+        .await?;
+        let rows = std::sync::Arc::new(rows);
+        self.rows.insert(key, rows.clone());
+        Ok(rows)
+    }
+
+    pub(crate) async fn hits(&mut self, pool: &Pool, project_id: i64, m: &EventMatch, from: i64, to: i64) -> Result<Vec<Hit>> {
+        Ok(self
+            .rows(pool, project_id, &m.kind, from, to)
+            .await?
+            .iter()
+            .filter(|(_, _, path, sel, name)| m.matches(path.as_deref(), sel.as_deref(), name.as_deref()))
+            .map(|(session_id, ts, ..)| Hit { session_id: session_id.clone(), ts: *ts })
+            .collect())
+    }
+}
+
 pub(crate) async fn hits(pool: &Pool, project_id: i64, m: &EventMatch, from: i64, to: i64) -> Result<Vec<Hit>> {
     let rows: Vec<(String, i64, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT session_id, ts, path, selector, name FROM events

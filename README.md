@@ -219,6 +219,10 @@ Each gets a status: **used, but it hurts** (where a fix helps the most people), 
 
 Once a website sends events from a real address, batches from localhost, loopback and private-network addresses (and `.local` / `.localhost` names) are left out, so opening a local copy of the site doesn't add to its numbers. A website that has only ever sent from local addresses, such as one you're trying Trace out on, keeps them.
 
+### How fast the dashboard is
+
+Home, Audience, Features, Funnels, Goals and the behaviour summary read every event in their window. Each report is computed once and served from memory for a minute; after that it's served at once and recomputed in the background, and reports someone is looking at are refreshed before they get old. A change made in the dashboard or through the API (a pushed trace.json, an insight moved) drops the website's reports so it shows at once; changes made over MCP show within a minute. Reports that match many things against the same events (funnel steps, areas and features) read each type of event once per window. On a website with half a million events in 30 days, Home takes about 4 seconds the first time and under a millisecond after.
+
 ## MCP: use Trace from your coding agent
 
 Trace is also an MCP server, and your coding agent can run all of it: setting a website up, and then being its analyst.
