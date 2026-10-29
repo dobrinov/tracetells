@@ -182,6 +182,9 @@ pub async fn run(pool: &Pool, project_id: i64, opts: Options) -> Result<Vec<Eval
 /// release, once the window has passed, the way the KPI is judged; with the
 /// item's goal as the direction. Settled items are left as they are.
 async fn evaluate_items(pool: &Pool, project_id: i64, insight: &Insight, released_at: i64, opts: Options) -> Result<()> {
+    if insight.kind == crate::model::InsightKind::Defect {
+        return evaluate_defect(pool, project_id, insight, released_at, opts).await;
+    }
     let window = i64::from(opts.window_days) * DAY_MS;
     let ends_at = released_at + window;
     if now_ms() < ends_at || !insight.item_verdicts.is_empty() {
@@ -230,6 +233,71 @@ async fn evaluate_items(pool: &Pool, project_id: i64, insight: &Insight, release
         insights::store_item_verdict(pool, insight.id, &crate::model::ItemVerdict { item, verdict, summary, settled_at: now }).await?;
     }
     Ok(())
+}
+
+/// A defect is judged by whether it happens again, not by a significance test:
+/// a failure that recurs after the release is still happening (settled at
+/// once), one that stays away for the whole window while its pages had visits
+/// has stopped. Something that should happen and didn't is fixed once it
+/// happens, and still missing if it hasn't by the window's end.
+async fn evaluate_defect(pool: &Pool, project_id: i64, insight: &Insight, released_at: i64, opts: Options) -> Result<()> {
+    let window = i64::from(opts.window_days) * DAY_MS;
+    let now = now_ms();
+    let ends_at = released_at + window;
+    let to = now.min(ends_at);
+    for (item, e) in insight.evidence.iter().enumerate() {
+        let crate::model::Evidence::Measured { claim, metric, goal } = e else { continue };
+        if insight.item_verdicts.iter().any(|v| v.item == item) {
+            continue;
+        }
+        let after = crate::query::measure(pool, project_id, metric, released_at, to).await?;
+        let happened = after.value.is_some_and(|v| v > 0.0);
+        let (verdict, summary) = match (goal, happened, now >= ends_at) {
+            (Direction::Decrease, true, _) => (Verdict::NoChange, format!("{claim}: still happening; it happened again after the release.")),
+            (Direction::Increase, true, _) => (Verdict::Improved, format!("{claim}: fixed; it has happened since the release.")),
+            (_, false, false) => continue,
+            (_, false, true) => {
+                if visits(pool, project_id, metric, &insight.pages, released_at, ends_at).await? == 0 {
+                    (Verdict::InsufficientData, format!("{claim}: not enough traffic to tell; nothing reached its pages in the {} days after the release.", opts.window_days))
+                } else if *goal == Direction::Decrease {
+                    (Verdict::Improved, format!("{claim}: stopped; it didn't happen in the {} days after the release.", opts.window_days))
+                } else {
+                    (Verdict::NoChange, format!("{claim}: still missing; it didn't happen in the {} days after the release.", opts.window_days))
+                }
+            }
+        };
+        let reading = crate::model::Reading {
+            item,
+            kind: "after".into(),
+            value: after.value,
+            formatted: after.value.map(|x| metric.format_value(x)),
+            sessions: after.sessions,
+            from: released_at,
+            to,
+            at: now,
+        };
+        insights::store_readings(pool, insight.id, &[reading]).await?;
+        insights::store_item_verdict(pool, insight.id, &crate::model::ItemVerdict { item, verdict, summary, settled_at: now }).await?;
+    }
+    Ok(())
+}
+
+/// Sessions after the release where the defect could have shown: those that
+/// reached the funnel step before it (a conversion), or visited its pages, or any.
+async fn visits(pool: &Pool, project_id: i64, metric: &crate::query::Metric, pages: &[String], from: i64, to: i64) -> Result<i64> {
+    if metric.from.is_some() {
+        return Ok(crate::query::measure(pool, project_id, metric, from, to).await?.sessions);
+    }
+    let mut total = 0;
+    for page in pages.iter().map(|p| p.trim()).filter(|p| !p.is_empty()) {
+        let m = crate::query::Metric::parse(&serde_json::json!({ "measure": "sessions", "match": { "pageview": page } }))?;
+        total += crate::query::measure(pool, project_id, &m, from, to).await?.sessions;
+    }
+    if pages.iter().all(|p| p.trim().is_empty()) {
+        total = sqlx::query_scalar("SELECT COUNT(*) FROM sessions WHERE project_id = $1 AND started_at >= $2 AND started_at < $3")
+            .bind(project_id).bind(from).bind(to).fetch_one(pool).await?;
+    }
+    Ok(total)
 }
 
 /// Other released insights on the same KPI whose release falls inside this
@@ -317,6 +385,59 @@ mod tests {
     }
 
     /// `n` sessions starting at `at`, one hour apart; the first `converted` reach /done.
+    #[tokio::test]
+    async fn defects_are_judged_by_whether_they_happen_again() {
+        let target = crate::db::test_target("eval_defects").await;
+        let pool = crate::db::connect(&target).await.unwrap();
+        let (_, site) = crate::db::create_account_with_site(&pool, "Kids", None).await.unwrap();
+        let s = site.id;
+        let now = now_ms();
+        let day = |d: i64| now - d * DAY_MS;
+        let event = |sid: &'static str, at: i64, kind: &'static str, path: &'static str, name: &'static str, text: &'static str| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query("INSERT INTO sessions (id, project_id, started_at, last_seen_at) VALUES ($1, $2, $3, $3) ON CONFLICT (id) DO NOTHING")
+                    .bind(sid).bind(s).bind(at).execute(&pool).await.unwrap();
+                sqlx::query("INSERT INTO events (project_id, session_id, ts, type, path, name, text) VALUES ($1, $2, $3, $4, $5, $6, $7)")
+                    .bind(s).bind(sid).bind(at).bind(kind).bind(path).bind(name).bind(text).execute(&pool).await.unwrap();
+            }
+        };
+        let defect = |title: &str, metric: serde_json::Value, goal: Direction, pages: &[&str]| crate::model::NewInsight {
+            kind: crate::model::InsightKind::Defect, title: title.into(), problem: "p".into(), proposal: "x".into(), source: "agent".into(),
+            pages: pages.iter().map(|p| p.to_string()).collect(),
+            evidence: vec![crate::model::Evidence::Measured { claim: title.into(), metric: crate::query::Metric::parse(&metric).unwrap(), goal }],
+            ..Default::default()
+        };
+        let failing = serde_json::json!({ "measure": "events", "match": { "error": "*", "text": "POST /api/cart*" } });
+        let stopped = insights::insert(&pool, s, &defect("Cart request stops failing", failing.clone(), Direction::Decrease, &["/cart"])).await.unwrap().unwrap();
+        let recurs = insights::insert(&pool, s, &defect("Checkout request stops failing", serde_json::json!({ "measure": "events", "match": { "error": "*", "text": "POST /api/pay*" } }), Direction::Decrease, &["/pay"])).await.unwrap().unwrap();
+        let signup = insights::insert(&pool, s, &defect("Send signup", serde_json::json!({ "measure": "sessions", "match": { "event": "signup" } }), Direction::Increase, &[])).await.unwrap().unwrap();
+        let quiet = insights::insert(&pool, s, &defect("Nobody came", serde_json::json!({ "measure": "events", "match": { "error": "*", "text": "GET /nothing*" } }), Direction::Decrease, &["/nothing"])).await.unwrap().unwrap();
+        sqlx::query("UPDATE insights SET created_at = $1").bind(day(40)).execute(&pool).await.unwrap();
+        for (id, at) in [(stopped, day(20)), (recurs, day(2)), (signup, day(2)), (quiet, day(20))] {
+            insights::set_status(&pool, s, id, InsightStatus::Released, None, Some(at)).await.unwrap();
+        }
+        event("c1", day(21), "error", "/cart", "network", "POST /api/cart \u{2192} 500").await;
+        event("c2", day(10), "pageview", "/cart", "", "").await;
+        event("p1", day(1), "error", "/pay", "network", "POST /api/pay \u{2192} 500").await;
+        event("s1", day(1), "custom", "/welcome", "signup", "").await;
+
+        run(&pool, s, Options::default()).await.unwrap();
+        let verdict = |id: i64| {
+            let pool = pool.clone();
+            async move { insights::get(&pool, s, id).await.unwrap().unwrap().item_verdicts.first().map(|v| (v.verdict, v.summary.clone())) }
+        };
+        let (v, why) = verdict(stopped).await.unwrap();
+        assert!(v == Verdict::Improved && why.contains("stopped"), "{why}");
+        let (v, why) = verdict(recurs).await.unwrap();
+        assert!(v == Verdict::NoChange && why.contains("still happening"), "settled as soon as it recurs: {why}");
+        let (v, why) = verdict(signup).await.unwrap();
+        assert!(v == Verdict::Improved && why.contains("fixed"), "{why}");
+        assert_eq!(verdict(quiet).await.unwrap().0, Verdict::InsufficientData, "no visits to its page after the release");
+        assert!(insights::get(&pool, s, stopped).await.unwrap().unwrap().evaluation.is_none(), "a defect has no KPI to evaluate");
+        crate::db::drop_test_target(&target).await;
+    }
+
     async fn traffic(pool: &Pool, site: i64, tag: &str, at: i64, n: usize, converted: usize) {
         for i in 0..n {
             let (sid, t) = (format!("{tag}-{i}"), at + i as i64 * 3_600_000);

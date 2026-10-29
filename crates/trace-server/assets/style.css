@@ -577,6 +577,11 @@ input[type="radio"] {
   color: var(--warn);
 }
 
+.chip.defect {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
 /* ---- insights ---- */
 .insights-layout {
   display: flex;
@@ -978,6 +983,11 @@ legend {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 12px;
+}
+
+/* A chart or card right under a row of stats keeps the row's gap. */
+.stats + .card {
+  margin-top: 12px;
 }
 
 .stat .value {
@@ -1503,7 +1513,8 @@ ul.checklist li::before {
   display: grid;
   gap: 16px;
 }
-.analysis-panel.next-analyse {
+.analysis-panel.next-analyse,
+.analysis-panel.next-sweep {
   border: 2px solid var(--accent);
   background: var(--accent-soft);
 }

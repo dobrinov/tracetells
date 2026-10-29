@@ -14,8 +14,9 @@ pub struct Project {
     pub write_key: String,
 }
 
-/// Selects events by type and, optionally, path / selector / custom-event name.
-/// String patterns match exactly, or by prefix when they end in `*`.
+/// Selects events by type and, optionally, path / selector / custom-event name
+/// / text (an error's message). String patterns match exactly, or by prefix
+/// when they end in `*`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct EventMatch {
     #[serde(rename = "type")]
@@ -26,13 +27,18 @@ pub struct EventMatch {
     pub selector: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// The event's text as stored (already scrubbed): an error's message, so
+    /// one failing request can be told from another on the same page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 impl EventMatch {
-    pub fn matches(&self, path: Option<&str>, selector: Option<&str>, name: Option<&str>) -> bool {
+    pub fn matches(&self, path: Option<&str>, selector: Option<&str>, name: Option<&str>, text: Option<&str>) -> bool {
         pattern_matches(&self.path, path)
             && pattern_matches(&self.selector, selector)
             && pattern_matches(&self.name, name)
+            && pattern_matches(&self.text, text)
     }
 
     pub fn describe(&self) -> String {
@@ -42,6 +48,9 @@ impl EventMatch {
         }
         if let Some(sel) = self.selector.as_deref().filter(|v| !v.is_empty()) {
             s.push_str(&format!(" on {sel}"));
+        }
+        if let Some(t) = self.text.as_deref().filter(|v| !v.is_empty() && *v != "*") {
+            s.push_str(&format!(" \"{t}\""));
         }
         if let Some(p) = self.path.as_deref().filter(|v| !v.is_empty()) {
             s.push_str(&format!(" at {p}"));
@@ -198,6 +207,36 @@ impl InsightStatus {
     }
 }
 
+/// What an insight is about: a pattern across sessions, judged against its
+/// KPI; or a defect, something plainly broken, judged by whether it happens again.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum InsightKind {
+    #[default]
+    Pattern,
+    Defect,
+}
+
+impl InsightKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pattern => "pattern",
+            Self::Defect => "defect",
+        }
+    }
+}
+
+impl std::str::FromStr for InsightKind {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pattern" => Ok(Self::Pattern),
+            "defect" => Ok(Self::Defect),
+            other => Err(anyhow::anyhow!("unknown insight kind {other:?} (expected pattern or defect)")),
+        }
+    }
+}
+
 impl fmt::Display for InsightStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
@@ -275,6 +314,7 @@ pub struct ItemVerdict {
 #[derive(Debug, Clone, Serialize)]
 pub struct Insight {
     pub id: i64,
+    pub kind: InsightKind,
     pub title: String,
     pub problem: String,
     pub evidence: Vec<Evidence>,
@@ -306,6 +346,8 @@ pub struct Insight {
 /// An insight produced by the analyst (LLM or heuristics) before it is stored.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NewInsight {
+    #[serde(default)]
+    pub kind: InsightKind,
     pub title: String,
     pub problem: String,
     pub evidence: Vec<Evidence>,

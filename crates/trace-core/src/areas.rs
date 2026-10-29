@@ -127,7 +127,7 @@ async fn matched(scan: &mut crate::kpi::Scan, pool: &Pool, project_id: i64, m: &
         .rows(pool, project_id, &m.kind, from, to)
         .await?
         .iter()
-        .filter(|(_, _, path, sel, name)| m.matches(path.as_deref(), sel.as_deref(), name.as_deref()))
+        .filter(|(_, _, path, sel, name, text)| m.matches(path.as_deref(), sel.as_deref(), name.as_deref(), text.as_deref()))
         .map(|(session, _, path, ..)| (session.clone(), path.clone().unwrap_or_default()))
         .collect())
 }

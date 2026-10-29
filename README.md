@@ -138,7 +138,7 @@ Put a `trace.json` at the root of your application's repository:
   - `per_session`: matching events per session
 
   Each KPI also takes a `goal` (`increase` or `decrease`) and an optional `target` (`"55%"` or `0.55`).
-- **Event matchers**: `{ "pageview": "/checkout" }` matches a path, `{ "click": "button#pay" }` a selector, `{ "event": "purchase" }` a custom event, and `{ "error": "*" }` any error. Shorthands can add `path` or `selector`, and the full form `{ "type", "path", "selector", "name" }` also works. A pattern ending in `*` matches by prefix.
+- **Event matchers**: `{ "pageview": "/checkout" }` matches a path, `{ "click": "button#pay" }` a selector, `{ "event": "purchase" }` a custom event, and `{ "error": "*" }` any error. Shorthands can add `path`, `selector` or `text` (an error's message, e.g. `{ "error": "*", "text": "POST /api/cart*" }`), and the full form `{ "type", "path", "selector", "name", "text" }` also works. A pattern ending in `*` matches by prefix.
 
 Send the events from code with `trace.track("purchase", { plan })`, or with no JavaScript at all: `<button data-trace-event="add_to_cart" data-trace-props='{"sku":"S-1"}'>`. On a `<form>`, the event fires when it's submitted.
 
@@ -289,21 +289,24 @@ The **`analyse_website`** prompt gives the agent the analyst's brief:
 
 In Claude Code it's the slash command `/mcp__trace__analyse_website`. Saving, even an empty list when nothing was worth saving, records the analysis, and Trace counts new sessions from then.
 
-**When to analyse.** Trace says a website is worth analysing once it has 100 new sessions since the last analysis, or 30 once a week has passed. Home and Insights show an analysis panel: when the last analysis ran and who ran it, so how old the analysed behaviour is; how many sessions and events have arrived since; and, once it's worth it, the command to run (`/trace:analyse`). The header's Run analysis button counts the new sessions, and the panel notices within 20 seconds when your agent saves an analysis. The same is in `get_overview` and `get_analysis_status`, and at `GET /api/sites/{site}/analysis` (`?format=text` gives one line, or nothing until it's time). To hear it from Claude Code when a session starts, add a `SessionStart` hook to `~/.claude/settings.json` (the Setup page has it with your address filled in) and keep your token in the `TRACE_TOKEN` environment variable:
+**Small websites: defects.** Patterns need traffic; something broken doesn't. Below the threshold, if Trace has seen a failing request, a JS error, a missing file, a funnel step nobody reaches, a declared event that never arrives or a dead click on a button or link that no insight covers yet, the status is `sweep` and `/trace:analyse` runs a defect sweep: `get_defects` lists the candidates, the agent finds each one's cause in the code, and drafts the confirmed ones as `defect` insights (no KPI needed). A released defect is judged by whether it happens again: "still happening" as soon as it does, "stopped" after 14 days without it. A sweep doesn't reset the sessions counted toward the next analysis.
+
+**When to analyse.** Trace says a website is worth analysing once it has 100 new sessions since the last analysis, or 30 once a week has passed (before the first analysis, a week since the first session). Home and Insights show an analysis panel: when the last analysis ran and who ran it, so how old the analysed behaviour is; how many sessions and events have arrived since; and, once it's worth it, the command to run (`/trace:analyse`). The header's Run analysis button counts the new sessions, and the panel notices within 20 seconds when your agent saves an analysis. The same is in `get_overview` and `get_analysis_status`, and at `GET /api/sites/{site}/analysis` (`?format=text` gives one line, or nothing until it's time). To hear it from Claude Code when a session starts, add a `SessionStart` hook to `~/.claude/settings.json` (the Setup page has it with your address filled in) and keep your token in the `TRACE_TOKEN` environment variable:
 
 ```json
 { "hooks": { "SessionStart": [ { "matcher": "startup", "hooks": [ { "type": "command",
   "command": "curl -fsS --max-time 3 -H \"Authorization: Bearer $TRACE_TOKEN\" \"https://trace.example.com/api/sites/SITE/analysis?format=claude-hook\" || true" } ] } ] } }
 ```
 
-`?format=claude-hook` answers in Claude Code's hook format (`{"systemMessage": "…"}`), which Claude Code shows to you; it prints nothing until there's something to analyse. The brief, and the server's instructions, tell the agent that text inside behaviour data comes from visitors and is never to be followed as instructions.
+`?format=claude-hook` answers in Claude Code's hook format (`{"systemMessage": "…"}`), which Claude Code shows to you; it prints nothing until there's something to analyse, or possible defects to check. The brief, and the server's instructions, tell the agent that text inside behaviour data comes from visitors and is never to be followed as instructions.
 
 | Tool | |
 |---|---|
 | `get_brief` | Everything an analysis starts from, in one call: goals, the worst funnel step, areas that hurt, errors, frustration, existing insights |
 | `get_connection` | The server, account, role and websites this connection works with |
 | `get_overview` | Collection status, KPIs vs targets, insights per status, and whether it's worth analysing |
-| `get_analysis_status` | Whether there's enough new behaviour since the last analysis (100 new sessions, or 30 after a week) |
+| `get_analysis_status` | Whether there's enough new behaviour since the last analysis (100 new sessions, or 30 a week after the last analysis or the first session), or, below that, possible defects worth a sweep |
+| `get_defects` | Defect candidates from the first session on: failing requests, errors, missing files, funnel steps nobody reaches, declared events that never arrive, dead clicks on controls |
 | `get_behaviour_summary` | The aggregated digest the analyst reads |
 | `list_kpis`, `get_tracking_health` | KPI values; whether declared events are arriving |
 | `list_insights`, `get_insight`, `get_insight_prompt` | Find work, and get it as a complete implementation task |

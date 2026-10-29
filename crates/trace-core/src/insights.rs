@@ -12,7 +12,7 @@ use crate::util::{DAY_MS, now_ms};
 
 const COLS: &str = "id, title, problem, evidence, proposal, acceptance_criteria, pages, kpi_id, expected_impact,
   confidence, status, dismiss_reason, source, fingerprint, created_at, updated_at, released_at,
-  created_by, measured_from, measured_to";
+  created_by, measured_from, measured_to, kind";
 
 /// How long a draft waits for the person's approval.
 pub const DRAFT_TTL_MS: i64 = 60 * 60 * 1000;
@@ -39,6 +39,7 @@ fn json_list(row: &AnyRow, col: &str) -> Result<Vec<String>> {
 fn from_row(row: &AnyRow) -> Result<Insight> {
     Ok(Insight {
         id: row.try_get("id")?,
+        kind: row.try_get::<String, _>("kind")?.parse()?,
         title: row.try_get("title")?,
         problem: row.try_get("problem")?,
         evidence: evidence_list(row)?,
@@ -345,8 +346,8 @@ pub async fn insert(pool: &Pool, project_id: i64, insight: &NewInsight) -> Resul
     let now = now_ms();
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO insights (project_id, title, problem, evidence, proposal, acceptance_criteria, pages, kpi_id,
-           expected_impact, confidence, status, source, fingerprint, created_at, updated_at, created_by, measured_from, measured_to)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new', $11, $12, $13, $14, $15, $16, $17) RETURNING id",
+           expected_impact, confidence, status, source, fingerprint, created_at, updated_at, created_by, measured_from, measured_to, kind)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new', $11, $12, $13, $14, $15, $16, $17, $18) RETURNING id",
     )
     .bind(project_id)
     .bind(insight.title.trim())
@@ -365,6 +366,7 @@ pub async fn insert(pool: &Pool, project_id: i64, insight: &NewInsight) -> Resul
     .bind(insight.created_by.as_deref())
     .bind(readings.iter().map(|r| r.from).min())
     .bind(readings.iter().map(|r| r.to).max())
+    .bind(insight.kind.as_str())
     .fetch_one(pool)
     .await?;
     store_readings(pool, id, &readings).await?;

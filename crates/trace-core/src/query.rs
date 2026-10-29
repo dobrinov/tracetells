@@ -74,7 +74,7 @@ impl Metric {
         let matcher = |key: &str| -> Result<EventMatch> {
             let m = obj.get(key).ok_or_else(|| anyhow::anyhow!("`{key}` is required for {measure:?}"))?;
             let m = crate::config::parse_matcher(m, key).map_err(|e| anyhow::anyhow!(e))?;
-            for (field, text) in [("path", &m.path), ("selector", &m.selector), ("name", &m.name)] {
+            for (field, text) in [("path", &m.path), ("selector", &m.selector), ("name", &m.name), ("text", &m.text)] {
                 if let Some(t) = text {
                     ensure!(t.chars().count() <= 200, "`{key}.{field}` is longer than 200 characters");
                     ensure!(!t.chars().any(char::is_control), "`{key}.{field}` can't contain control characters");
@@ -132,6 +132,9 @@ fn describe_match(m: &EventMatch) -> String {
     }
     if let Some(sel) = &m.selector {
         s.push_str(&format!(" on `{sel}`"));
+    }
+    if let Some(t) = m.text.as_deref().filter(|t| *t != "*") {
+        s.push_str(&format!(" \"{t}\""));
     }
     if let Some(p) = &m.path {
         s.push_str(&format!(" at {p}"));
@@ -294,7 +297,7 @@ fn escape_like(s: &str) -> String {
 fn matcher_sql(m: &EventMatch, first: usize) -> (String, Vec<String>) {
     let mut conds = vec![format!("e.type = ${first}")];
     let mut binds = vec![m.kind.clone()];
-    for (col, pattern) in [("path", &m.path), ("selector", &m.selector), ("name", &m.name)] {
+    for (col, pattern) in [("path", &m.path), ("selector", &m.selector), ("name", &m.name), ("text", &m.text)] {
         let Some(p) = pattern.as_deref().map(str::trim).filter(|p| !p.is_empty() && *p != "*") else { continue };
         let n = first + binds.len();
         match p.strip_suffix('*') {
@@ -478,6 +481,32 @@ mod tests {
 
     fn q(v: Value) -> Query {
         Query::parse(&v).unwrap()
+    }
+
+    #[tokio::test]
+    async fn errors_match_by_their_message() {
+        let target = crate::db::test_target("query_text").await;
+        let pool = crate::db::connect(&target).await.unwrap();
+        let (_, site) = crate::db::create_account_with_site(&pool, "Shop", None).await.unwrap();
+        let t = now_ms() - DAY_MS;
+        session(&pool, site.id, "a", "desktop", t, &[("pageview", "/sign-in", "", "")]).await;
+        session(&pool, site.id, "b", "desktop", t, &[("pageview", "/sign-in", "", "")]).await;
+        for (id, text) in [("a", "POST stats.example.com/api/event \u{2192} failed"), ("a", "POST stats.example.com/api/event \u{2192} failed"), ("b", "POST /sign-in \u{2192} 422")] {
+            sqlx::query("INSERT INTO events (project_id, session_id, ts, type, path, name, text) VALUES ($1, $2, $3, 'error', '/sign-in', 'network', $4)")
+                .bind(site.id).bind(id).bind(t + 5000).bind(text).execute(&pool).await.unwrap();
+        }
+        let count = |m: Value| {
+            let pool = pool.clone();
+            async move { ask(&pool, site.id, &q(json!({ "measure": "events", "match": m, "days": 7 }))).await.unwrap().value }
+        };
+        assert_eq!(count(json!({ "error": "*", "text": "POST stats.example.com/*" })).await, Some(2.0));
+        assert_eq!(count(json!({ "type": "error", "name": "network", "text": "POST /sign-in \u{2192} 422" })).await, Some(1.0));
+        assert_eq!(count(json!({ "error": "/sign-in" })).await, Some(3.0), "without text, every error counts as before");
+        // KPIs and funnels read the same events through the scan.
+        let m = crate::config::parse_matcher(&json!({ "error": "*", "text": "POST stats.example.com/*" }), "m").unwrap();
+        let hits = crate::kpi::hits(&pool, site.id, &m, t - 1, t + DAY_MS).await.unwrap();
+        assert_eq!(hits.iter().map(|h| h.session_id.as_str()).collect::<Vec<_>>(), ["a", "a"]);
+        crate::db::drop_test_target(&target).await;
     }
 
     #[tokio::test]

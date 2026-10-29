@@ -262,6 +262,7 @@ async fn migrate(pool: &Pool, path: &str) -> Result<()> {
         ("projects", "privacy_reviewed_by", "TEXT"),
         ("projects", "analysed_at", "INTEGER"),
         ("projects", "analysed_by", "TEXT"),
+        ("projects", "swept_at", "INTEGER"),
         ("projects", "public_token", "TEXT"),
         ("projects", "public_since", "INTEGER"),
         ("projects", "public_by", "TEXT"),
@@ -273,6 +274,7 @@ async fn migrate(pool: &Pool, path: &str) -> Result<()> {
         ("insights", "created_by", "TEXT"),
         ("insights", "measured_from", "INTEGER"),
         ("insights", "measured_to", "INTEGER"),
+        ("insights", "kind", "TEXT NOT NULL DEFAULT 'pattern'"),
         ("auth_sessions", "account_id", "INTEGER"),
         ("auth_sessions", "impersonator_id", "INTEGER"),
     ] {

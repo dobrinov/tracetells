@@ -61,6 +61,9 @@ CREATE TABLE IF NOT EXISTS projects (
   -- When the website was last analysed (an agent saving insights, or Trace's own analysis).
   analysed_at BIGINT,
   analysed_by TEXT,
+  -- When a defect sweep last looked at the website: candidates seen only
+  -- before it don't ask for another until they happen again.
+  swept_at BIGINT,
   -- The public, read-only link to this website's aggregated analytics, if
   -- published: its random token, when, and by whom.
   public_token TEXT UNIQUE,
@@ -167,7 +170,10 @@ CREATE TABLE IF NOT EXISTS insights (
   -- the window its evidence was first measured over.
   created_by TEXT,
   measured_from BIGINT,
-  measured_to BIGINT
+  measured_to BIGINT,
+  -- 'pattern' (behaviour across sessions, judged against its KPI) or
+  -- 'defect' (something broken, judged by whether it happens again).
+  kind TEXT NOT NULL DEFAULT 'pattern'
 );
 CREATE INDEX IF NOT EXISTS insights_project_status ON insights(project_id, status);
 

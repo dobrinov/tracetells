@@ -18,6 +18,8 @@ Use the `trace` MCP tools.
 5. **Release.** Once the change is live (not when it's merged), call `update_insight_status` with `released` and `released_at` set to the deploy's time, if it went live earlier than now.
 6. **Tell the person what happens next.** Trace compares the KPI over the 14 days before and after the release and gives its verdict once those 14 days have passed; `get_insight` shows progress. A verdict says the KPI moved after the release, not that the change caused it, and a site with fewer than 30 sessions on either side can't be judged.
 
+   A **defect** (`kind: "defect"`, something broken rather than a pattern) has no KPI and isn't judged by a comparison. Its acceptance criteria say it stops happening, or, for something that never happened (an event that never arrived, a funnel step nobody reached), that it starts. After the release, Trace says "still happening" as soon as it happens again, "stopped" once 14 days pass without it while its pages had visits, and "fixed" as soon as a missing event or step happens. So test the fix where it broke, and tell the person that a recurrence shows up right away.
+
 ## A server error
 
 When the request names a server error ("server error 7"), or the person asks to fix the worst one:

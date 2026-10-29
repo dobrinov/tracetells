@@ -26,6 +26,9 @@
   <li><strong>Release.</strong> <code>update_insight_status</code> with <code>released</code>. Trace compares the goal over 14 days before and after.</li>
 </ol>
 
+<h2>A small website</h2>
+<p>Patterns need traffic: an analysis is worth running at 100 new sessions, or 30 once a week has passed since the last one (or, before the first, since the first visit). Something that's broken doesn't need traffic, only its cause found in the code. Until there's enough for patterns, <code>/trace:analyse</code> runs a <strong>defect sweep</strong> instead: <code>get_defects</code> lists failing requests, JS errors, missing files, funnel steps nobody reaches, declared events that never arrive and dead clicks on buttons and links. The agent looks for each one in your code, drafts only the ones it confirms as defects, and shows you where it found them. A released defect is judged by whether it happens again, not by a before-and-after comparison.</p>
+
 <h2>Asking questions</h2>
 <p><code>query_behaviour</code> answers with numbers over the last 1 to 90 days: sessions with a match, events, the share of sessions, events per session or a funnel, broken down by path, selector, device or day, and compared with the window before. Rows from fewer than 3 sessions are folded into "other".</p>
 <pre class="code">{ "measure": "session_rate", "match": { "rage_click": "button#pay", "path": "/checkout" },

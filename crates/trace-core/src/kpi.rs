@@ -65,8 +65,8 @@ pub(crate) struct Hit {
     pub(crate) ts: i64,
 }
 
-/// One event, as reports match it: session, time, path, selector, name.
-pub(crate) type Row = (String, i64, Option<String>, Option<String>, Option<String>);
+/// One event, as reports match it: session, time, path, selector, name, text.
+pub(crate) type Row = (String, i64, Option<String>, Option<String>, Option<String>, Option<String>);
 
 /// Events read once per type and window, for a report that matches many
 /// things (funnel steps, areas and their features) against the same events.
@@ -82,7 +82,7 @@ impl Scan {
             return Ok(rows.clone());
         }
         let rows: Vec<Row> = sqlx::query_as(
-            "SELECT session_id, ts, path, selector, name FROM events
+            "SELECT session_id, ts, path, selector, name, text FROM events
              WHERE project_id = $1 AND type = $2 AND ts >= $3 AND ts < $4",
         )
         .bind(project_id)
@@ -101,15 +101,15 @@ impl Scan {
             .rows(pool, project_id, &m.kind, from, to)
             .await?
             .iter()
-            .filter(|(_, _, path, sel, name)| m.matches(path.as_deref(), sel.as_deref(), name.as_deref()))
+            .filter(|(_, _, path, sel, name, text)| m.matches(path.as_deref(), sel.as_deref(), name.as_deref(), text.as_deref()))
             .map(|(session_id, ts, ..)| Hit { session_id: session_id.clone(), ts: *ts })
             .collect())
     }
 }
 
 pub(crate) async fn hits(pool: &Pool, project_id: i64, m: &EventMatch, from: i64, to: i64) -> Result<Vec<Hit>> {
-    let rows: Vec<(String, i64, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT session_id, ts, path, selector, name FROM events
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT session_id, ts, path, selector, name, text FROM events
          WHERE project_id = $1 AND type = $2 AND ts >= $3 AND ts < $4",
     )
     .bind(project_id)
@@ -120,7 +120,7 @@ pub(crate) async fn hits(pool: &Pool, project_id: i64, m: &EventMatch, from: i64
     .await?;
     Ok(rows
         .into_iter()
-        .filter(|(_, _, path, sel, name)| m.matches(path.as_deref(), sel.as_deref(), name.as_deref()))
+        .filter(|(_, _, path, sel, name, text)| m.matches(path.as_deref(), sel.as_deref(), name.as_deref(), text.as_deref()))
         .map(|(session_id, ts, ..)| Hit { session_id, ts })
         .collect())
 }

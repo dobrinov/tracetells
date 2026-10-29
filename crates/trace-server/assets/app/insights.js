@@ -27,12 +27,18 @@ function insightNext(insight) {
 
 const VERDICTS = { measuring: "Measuring", improved: "Improved after release", regressed: "Worse after release", no_change: "No change", insufficient_data: "Not enough data" };
 
+// A defect's evidence is judged by whether it happens again, not by a comparison.
+const DEFECT_VERDICTS = { improved: "Fixed", no_change: "Not fixed", insufficient_data: "Not enough traffic" };
+
 // The KPI's verdict, and each measured evidence item's: did the problem itself shrink?
 function verdictBlock(insight) {
   if (insight.status !== "released") return "";
   const measured = insight.evidence.some((e) => e.metric);
+  const defect = insight.kind === "defect";
   let kpi;
-  if (!insight.kpi_id) {
+  if (defect) {
+    kpi = "";
+  } else if (!insight.kpi_id) {
     kpi = measured ? "" : `<div class="verdict"><span class="badge">Not measured</span><span>No goal is linked, so there's no verdict. Your agent sets the goal when it drafts an insight.</span></div>`;
   } else if (!insight.evaluation) {
     kpi = `<div class="verdict"><span class="badge">Pending</span><span>Not evaluated yet. Trace checks released insights every hour.</span></div>`;
@@ -40,12 +46,22 @@ function verdictBlock(insight) {
     const e = insight.evaluation;
     kpi = `<div class="verdict ${esc(e.verdict)}"><span class="badge">${esc(VERDICTS[e.verdict] || e.verdict)}</span><span>${esc(e.summary)}</span></div>`;
   }
+  const badge = (v) =>
+    defect ? DEFECT_VERDICTS[v.verdict] || v.verdict : v.verdict === "regressed" ? "Worse" : v.verdict === "improved" ? "Better" : VERDICTS[v.verdict] || v.verdict;
   const items = (insight.item_verdicts || []).map(
-    (v) => `<div class="verdict ${esc(v.verdict)} item"><span class="badge">${esc(v.verdict === "regressed" ? "Worse" : v.verdict === "improved" ? "Better" : VERDICTS[v.verdict] || v.verdict)}</span><span>${esc(v.summary)}</span></div>`
+    (v) => `<div class="verdict ${esc(v.verdict)} item"><span class="badge">${esc(badge(v))}</span><span>${esc(v.summary)}</span></div>`
   );
   if (!items.length && measured && insight.released_at) {
     const due = shortDate(insight.released_at + 14 * 86400000);
-    items.push(`<div class="verdict measuring item"><span class="badge">Measuring</span><span>The evidence is compared over the 14 days before and after the release; the result comes on ${esc(due)}.</span></div>`);
+    items.push(
+      defect
+        ? `<div class="verdict measuring item"><span class="badge">Watching</span><span>${
+            insight.evidence.some((e) => e.metric && e.goal === "increase")
+              ? `Trace says as soon as it starts happening. If it hasn't by ${esc(due)}, it's still missing.`
+              : `Trace says as soon as it happens again. If it doesn't, it counts as fixed on ${esc(due)}.`
+          }</span></div>`
+        : `<div class="verdict measuring item"><span class="badge">Measuring</span><span>The evidence is compared over the 14 days before and after the release; the result comes on ${esc(due)}.</span></div>`
+    );
   }
   return kpi + items.join("");
 }
@@ -73,6 +89,7 @@ function insightCard(insight) {
   return `
   <article class="card ${focused ? "focused" : ""}" data-id="${insight.id}">
     <div class="meta">
+      ${insight.kind === "defect" ? `<span class="chip defect" title="Something broken, found in the code: judged by whether it happens again">Defect</span>` : ""}
       <span class="chip ${esc(insight.confidence)}">${esc(insight.confidence)} confidence</span>
       <span>#${insight.id} · ${insight.created_by ? `by ${esc(insight.created_by)}` : `via ${esc(insight.source)}`} · ${shortDate(insight.created_at)}${released}</span>
       ${kpi ? `<span class="kpi-name" title="KPI this insight should move">${esc(kpi.name)}</span>` : ""}

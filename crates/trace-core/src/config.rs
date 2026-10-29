@@ -412,9 +412,9 @@ impl Parser {
         let obj = self.object(v, at)?;
         let text = |k: &str| obj.get(k).and_then(Value::as_str).map(str::to_string);
         let m = if let Some(kind) = text("type") {
-            EventMatch { kind, path: text("path"), selector: text("selector"), name: text("name") }
+            EventMatch { kind, path: text("path"), selector: text("selector"), name: text("name"), text: text("text") }
         } else {
-            let shorthand: Vec<&String> = obj.keys().filter(|k| !matches!(k.as_str(), "path" | "selector")).collect();
+            let shorthand: Vec<&String> = obj.keys().filter(|k| !matches!(k.as_str(), "path" | "selector" | "text")).collect();
             let [key] = shorthand.as_slice() else {
                 self.err(at, "expected one event type, e.g. { \"pageview\": \"/checkout\" } or { \"event\": \"purchase\" }");
                 return None;
@@ -426,11 +426,11 @@ impl Parser {
             let value = Some(value).filter(|v| v != "*");
             let kind = if key.as_str() == "event" { "custom".to_string() } else { key.to_string() };
             match kind.as_str() {
-                "custom" => EventMatch { kind, name: value, path: text("path"), selector: text("selector") },
+                "custom" => EventMatch { kind, name: value, path: text("path"), selector: text("selector"), text: text("text") },
                 "click" | "rage_click" | "dead_click" => {
-                    EventMatch { kind, selector: value.or(text("selector")), path: text("path"), name: None }
+                    EventMatch { kind, selector: value.or(text("selector")), path: text("path"), name: None, text: text("text") }
                 }
-                _ => EventMatch { kind, path: value.or(text("path")), selector: text("selector"), name: None },
+                _ => EventMatch { kind, path: value.or(text("path")), selector: text("selector"), name: None, text: text("text") },
             }
         };
         if !EVENT_TYPES.contains(&m.kind.as_str()) {

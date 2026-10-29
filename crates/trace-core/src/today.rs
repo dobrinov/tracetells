@@ -141,6 +141,8 @@ pub async fn build(pool: &Pool, site: &Project) -> Result<Today> {
     let readiness = crate::readiness::status(pool, site).await?;
     if readiness.ready {
         items.push(item("analyse", "action", 2_500, "Worth analysing now".into(), readiness.message.clone(), "insights", "Analyse"));
+    } else if readiness.next == "sweep" {
+        items.push(item("analyse", "action", 2_400, "Possible defects to check".into(), readiness.message.clone(), "insights", "Check them"));
     }
 
     // KPIs off target that also got worse than the window before.

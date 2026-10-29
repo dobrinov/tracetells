@@ -20,11 +20,13 @@ function analysisPanel(a) {
   const progress = Math.min(100, a.needed ? (a.new_sessions / a.needed) * 100 : 0);
   const title = {
     analyse: a.last_analysed_at ? "Run an analysis now" : "Run the first analysis",
+    sweep: a.defects === 1 ? "1 possible defect to check" : `${num(a.defects)} possible defects to check`,
     wait: `Worth analysing at ${num(a.needed)} new sessions`,
     nothing_new: "Analysis is up to date",
   }[a.next];
   const why = {
     analyse: `There's enough new behaviour for findings worth having. ${a.last_analysed_at ? "The last analysis didn't see any of it." : ""}`,
+    sweep: `Patterns need ${num(a.needed - a.new_sessions)} more sessions, but something that's broken doesn't: a failing request, an error, a step nobody reaches. Your agent finds each one's cause in the code before it suggests a fix.`,
     wait: `${num(a.needed - a.new_sessions)} more to go. You can analyse earlier, but findings from little data are often noise.`,
     nothing_new: "No sessions since the last analysis. Trace will say here when there's something new to read.",
   }[a.next];
@@ -69,29 +71,31 @@ function wireAnalysisPanel(a) {
   watchAnalysis(a);
 }
 
-// While a panel asks for an analysis, check every 20 s whether one arrived, so
-// running /trace:analyse in the terminal shows up here without a reload.
+// While a panel asks for an analysis or a sweep, check every 20 s whether one
+// arrived, so running /trace:analyse in the terminal shows up here without a reload.
 let analysisWatch = null;
 function watchAnalysis(a) {
   clearInterval(analysisWatch);
-  if (PUBLIC || a.next !== "analyse") return;
+  if (PUBLIC || (a.next !== "analyse" && a.next !== "sweep")) return;
   const page = location.hash;
   analysisWatch = setInterval(async () => {
     if (location.hash !== page || document.hidden) return;
     const now = await api("/analysis").catch(() => null);
-    if (!now || now.last_analysed_at === a.last_analysed_at) return;
+    if (!now) return;
+    if (now.last_analysed_at === a.last_analysed_at && !(a.next === "sweep" && now.defects < a.defects)) return;
     clearInterval(analysisWatch);
-    toast(`Analysed just now${now.analysed_by ? ` by ${now.analysed_by}` : ""}.`);
+    toast(now.last_analysed_at === a.last_analysed_at ? "Checked for defects just now." : `Analysed just now${now.analysed_by ? ` by ${now.analysed_by}` : ""}.`);
     route();
   }, 20000);
 }
 
-// The header button appears when an analysis is worth running, with the count.
+// The header button appears when an analysis (or a defect sweep) is worth running, with the count.
 function analysisBadge(a) {
   const btn = document.getElementById("run-analysis");
   if (!btn || btn.disabled) return;
-  btn.hidden = a.next !== "analyse" || !can("user") || Boolean(auth?.impersonating);
-  btn.classList.toggle("ready", a.next === "analyse");
-  btn.textContent = `Analyse · ${num(a.new_sessions)} new`;
+  const sweep = a.next === "sweep";
+  btn.hidden = (a.next !== "analyse" && !sweep) || !can("user") || Boolean(auth?.impersonating);
+  btn.classList.toggle("ready", a.next === "analyse" || sweep);
+  btn.textContent = sweep ? `Check · ${num(a.defects)} possible ${a.defects === 1 ? "defect" : "defects"}` : `Analyse · ${num(a.new_sessions)} new`;
   btn.title = a.message;
 }

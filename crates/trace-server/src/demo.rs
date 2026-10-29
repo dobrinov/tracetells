@@ -427,6 +427,7 @@ pub async fn seed(pool: &Pool, sessions: usize) -> Result<()> {
             fingerprint: Some("demo:shipping-on-cart".into()),
             created_by: Some("Trace demo".into()),
             readings: Vec::new(),
+            kind: Default::default(),
         },
     )
     .await?

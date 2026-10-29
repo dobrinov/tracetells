@@ -789,8 +789,8 @@ struct FormatQuery {
     format: Option<String>,
 }
 
-/// Whether it's worth analysing now. For hooks, which should stay quiet
-/// otherwise: `?format=text` gives the one-line message when it is and an
+/// Whether it's worth analysing now (or sweeping for defects). For hooks,
+/// which should stay quiet otherwise: `?format=text` gives the one-line message when it is and an
 /// empty body when it isn't; `?format=claude-hook` the same as Claude Code's
 /// hook output (`{"systemMessage": ...}`), which it shows to the person.
 async fn get_analysis(
@@ -801,11 +801,11 @@ async fn get_analysis(
     let status = trace_core::readiness::status(&state.pool, &site).await?;
     match q.format.as_deref() {
         Some("text") => {
-            let body = if status.ready { format!("Trace: {}\n", status.message) } else { String::new() };
+            let body = if status.worth_running() { format!("Trace: {}\n", status.message) } else { String::new() };
             return Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], body).into_response());
         }
         Some("claude-hook") => {
-            let body = if status.ready { json!({ "systemMessage": format!("Trace: {}", status.message) }).to_string() } else { String::new() };
+            let body = if status.worth_running() { json!({ "systemMessage": format!("Trace: {}", status.message) }).to_string() } else { String::new() };
             return Ok(([(header::CONTENT_TYPE, "application/json")], body).into_response());
         }
         _ => {}
@@ -1103,6 +1103,34 @@ mod isolation_tests {
             .header(header::CONTENT_TYPE, "application/json")
             .body(axum::body::Body::from(body.to_string()))
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn hooks_offer_a_defect_sweep_on_a_small_site() {
+        let (app, state, path) = app().await;
+        let (acme, shop) = db::create_account_with_site(&state.pool, "Acme", None).await.unwrap();
+        let _ = person(&state, acme.id, "a@acme.example", Role::User).await;
+        let user = auth::find_user(&state.pool, "a@acme.example").await.unwrap().unwrap();
+        let (_, token) = auth::create_api_token(&state.pool, acme.id, &user, "agent", true).await.unwrap();
+        let bearer = format!("Bearer {token}");
+        let text = |format: &'static str| {
+            let (app, bearer) = (app.clone(), bearer.clone());
+            async move {
+                let res = app.oneshot(json_req("GET", &format!("/api/sites/acme/analysis?format={format}"), ("authorization", &bearer), json!({}))).await.unwrap();
+                String::from_utf8(axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap().to_vec()).unwrap()
+            }
+        };
+        let now = trace_core::util::now_ms();
+        sqlx::query("INSERT INTO sessions (id, project_id, started_at, last_seen_at) VALUES ('s0', $1, $2, $2)").bind(shop.id).bind(now - 60_000).execute(&state.pool).await.unwrap();
+        assert_eq!(text("text").await, "", "one quiet session: nothing to say");
+        sqlx::query("INSERT INTO events (project_id, session_id, ts, type, path, name, text) VALUES ($1, 's0', $2, 'error', '/cart', 'network', 'POST /api/cart \u{2192} 500')")
+            .bind(shop.id).bind(now - 59_000).execute(&state.pool).await.unwrap();
+        assert!(text("text").await.contains("1 possible defect can be checked now"));
+        let hook: Value = serde_json::from_str(&text("claude-hook").await).unwrap();
+        assert!(hook["systemMessage"].as_str().unwrap().contains("/trace:analyse"));
+        let (_, status) = send(&app, json_req("GET", "/api/sites/acme/analysis", ("authorization", &bearer), json!({}))).await;
+        assert_eq!((status["next"].as_str(), status["defects"].as_u64(), status["ready"].as_bool()), (Some("sweep"), Some(1), Some(false)));
+        trace_core::db::drop_test_target(&path).await;
     }
 
     #[tokio::test]

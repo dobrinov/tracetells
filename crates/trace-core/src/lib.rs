@@ -6,6 +6,7 @@ pub mod audience;
 pub mod auth;
 pub mod config;
 pub mod db;
+pub mod defects;
 pub mod digest;
 pub mod errors;
 pub mod evaluate;

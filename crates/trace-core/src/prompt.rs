@@ -101,6 +101,15 @@ pub fn render(insight: &Insight, ctx: &PromptContext) -> String {
         let _ = writeln!(s, "## Expected impact\n\n{}\n", insight.expected_impact);
     }
 
+    if insight.kind == crate::model::InsightKind::Defect {
+        let _ = writeln!(
+            s,
+            "## A defect\n\nSomething is broken here, not a pattern to nudge: an agent found its cause in this codebase. Fix the cause, \
+             and test it where it broke. After the release, Trace says it's still happening as soon as it happens again (or, for \
+             something that never happened, that it's fixed as soon as it does).\n"
+        );
+    }
+
     let _ = writeln!(s, "## Proposed change\n\n{}\n", insight.proposal);
 
     if !insight.pages.is_empty() {
