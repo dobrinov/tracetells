@@ -84,6 +84,8 @@ pub struct NodeReport {
     pub description: String,
     /// The area's key for a feature; None for an area.
     pub area: Option<String>,
+    /// What counts as using it, as labels: "/checkout", "add_to_cart" (an area's include its features').
+    pub matches: Vec<String>,
     pub sessions: i64,
     pub previous_sessions: i64,
     /// Visitors (per day) who used it, and their share of all visitors.
@@ -369,6 +371,7 @@ fn node(spec: &AreaSpec, area: Option<&str>, m: &Measured, previous_sessions: i6
         name: spec.name.clone(),
         description: spec.description.clone(),
         area: area.map(str::to_string),
+        matches: all_matchers(spec).into_iter().map(crate::funnel::label).collect::<std::collections::BTreeSet<_>>().into_iter().collect(),
         sessions: m.sessions,
         previous_sessions,
         visitors: m.visitors,

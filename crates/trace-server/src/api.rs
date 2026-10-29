@@ -1669,15 +1669,15 @@ mod isolation_tests {
         };
         let (status, before) = checklist(user.clone()).await;
         assert_eq!(status, StatusCode::OK, "users can read the checklist");
-        assert_eq!(before["steps"][3]["key"], "privacy");
-        assert_eq!(before["steps"][3]["done"], false);
+        assert_eq!(before["steps"][4]["key"], "privacy");
+        assert_eq!(before["steps"][4]["done"], false);
 
         let (status, _) = send(&app, json_req("POST", "/api/sites/acme/onboarding/privacy-reviewed", ("cookie", &user), json!({}))).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
         let (status, _) = send(&app, json_req("POST", "/api/sites/acme/onboarding/privacy-reviewed", ("cookie", &admin), json!({}))).await;
         assert_eq!(status, StatusCode::NO_CONTENT);
         let (_, after) = checklist(user).await;
-        assert_eq!(after["steps"][3]["done"], true);
+        assert_eq!(after["steps"][4]["done"], true);
         let logged: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'onboarding.privacy_reviewed' AND project_id = $1")
             .bind(site.id)
             .fetch_one(&state.pool)

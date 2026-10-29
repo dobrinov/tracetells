@@ -46,7 +46,56 @@ function toast(message, isError = false) {
 // A website's public, read-only view lives at /p/{token}: no session, only
 // the aggregated pages, read from /v1/public/{token}/....
 const PUBLIC = (location.pathname.match(/^\/p\/([A-Za-z0-9_-]{20,})\/?$/) || [])[1] || null;
-const PUBLIC_PAGES = ["insights", "kpis", "behaviour"];
+// Four areas in the order of the job: see, understand, change, configure. Each
+// page has one home; the URL carries the area (#/understand/funnels), and the
+// old flat links (#/kpis, #/behaviour) still resolve.
+const SECTIONS = {
+  home: { label: "Home", pages: [["home", "Home"]] },
+  understand: { label: "Understand", pages: [["audience", "Audience"], ["features", "Features"], ["funnels", "Funnels"], ["pages", "Pages"], ["errors", "Errors"]] },
+  improve: { label: "Improve", pages: [["goals", "Goals"], ["insights", "Insights"], ["releases", "Releases"]] },
+  setup: { label: "Setup", pages: [["start", "Get started"], ["install", "Install and tracking"], ["privacy", "Privacy"], ["team", "Team"], ["plan", "Plan"]] },
+};
+const ALIASES = { kpis: "goals", behaviour: "pages", setup: "install" };
+const PUBLIC_PAGES = ["goals", "insights", "releases", "funnels", "pages", "errors"];
+const sectionOf = (page) => Object.keys(SECTIONS).find((s) => SECTIONS[s].pages.some(([p]) => p === page));
+const pageUrl = (page) => `#/${sectionOf(page) && sectionOf(page) !== "home" ? `${sectionOf(page)}/` : ""}${page}`;
+
+// The page a hash names, and anything after it (an area's key, a setup step).
+function resolve(hash) {
+  const parts = hash.replace(/^#\//, "").split("?")[0].split("/").filter(Boolean);
+  if (!parts.length) return { page: null, arg: null };
+  if (SECTIONS[parts[0]] && parts[0] !== "home") {
+    const pages = SECTIONS[parts[0]].pages.map(([p]) => p).filter((p) => !PUBLIC || PUBLIC_PAGES.includes(p));
+    const page = pages.includes(parts[1]) ? parts[1] : parts[0] === "setup" && parts[1] === "start" ? "start" : pages.find((p) => p !== "start" || !checklist?.complete) || pages[0];
+    return { page, arg: parts[1] === page ? parts[2] || null : null };
+  }
+  const page = ALIASES[parts[0]] || parts[0];
+  return { page, arg: parts[1] || null };
+}
+let routeArg = null;
+
+// The pages of the current area, under the header.
+function renderSubnav(page) {
+  const nav = document.getElementById("subnav");
+  const section = sectionOf(page);
+  document.querySelectorAll("#nav a[data-section]").forEach((a) => {
+    const on = a.dataset.section === section;
+    a.classList.toggle("active", on);
+    if (on) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
+  });
+  if (!section || section === "home") return (nav.hidden = true);
+  const pages = SECTIONS[section].pages.filter(([p]) => {
+    if (PUBLIC) return PUBLIC_PAGES.includes(p);
+    if (p === "team") return can("admin");
+    if (p === "start") return !checklist || !checklist.complete;
+    return true;
+  });
+  nav.hidden = false;
+  nav.innerHTML = `<div>${pages
+    .map(([p, label]) => `<a href="#/${section}/${p}" class="${p === page ? "active" : ""}"${p === page ? ' aria-current="page"' : ""}>${esc(label)}${p === "start" && checklist ? ` <span class="progress">${checklist.done}/${checklist.total}</span>` : ""}</a>`)
+    .join("")}</div>`;
+}
 
 // Every request is JSON: the server rejects cookie-authenticated writes that
 // aren't, which is what stops other sites from forging requests (CSRF).
@@ -96,25 +145,24 @@ function host(origin) {
   return String(origin || "").replace(/^https?:\/\//, "");
 }
 
-// Setup is onboarding: once the collector is clearly delivering data it leaves the
-// navigation, and the header pill is both the confirmation and the way back to it.
+// Whether data is arriving right now, from the time of the last event: live,
+// quiet, waiting for the first visit, or stopped. The pill links to the snippet.
 function showCollection() {
   const c = project.collection;
   const pill = document.getElementById("collect-status");
-  const setupLink = document.querySelector('#nav a[data-view="setup"]');
-  setupLink.hidden = c.active;
   pill.hidden = false;
-  document.getElementById("site-dot").classList.toggle("on", c.active);
-  if (c.active) {
-    const sites = c.sources.filter((s) => Date.now() - s.last_seen < 86400000).map((s) => host(s.origin));
-    pill.className = "collect-status ok";
-    pill.textContent = `Collecting${sites.length ? ` from ${sites[0]}${sites.length > 1 ? ` +${sites.length - 1}` : ""}` : ""}`;
-    pill.title = `Last event ${ago(c.last_event_at)}. Open the install snippet to add another site.`;
-  } else {
-    pill.className = "collect-status waiting";
-    pill.textContent = c.last_event_at ? `No data since ${ago(c.last_event_at)}` : "Not collecting yet";
-    pill.title = "Open the install snippet";
-  }
+  const since = c.last_event_at ? Date.now() - c.last_event_at : null;
+  const state = since == null ? "waiting" : since < 15 * 60000 ? "live" : since < 2 * 86400000 ? "quiet" : "stopped";
+  document.getElementById("site-dot").classList.toggle("on", state === "live" || state === "quiet");
+  const sites = c.sources.filter((s) => Date.now() - s.last_seen < 86400000).map((s) => host(s.origin));
+  pill.className = `collect-status ${state}`;
+  pill.textContent = {
+    live: `Live · last event ${ago(c.last_event_at)}`,
+    quiet: `Quiet · last event ${ago(c.last_event_at)}`,
+    waiting: "Waiting for the first visit",
+    stopped: `Stopped · nothing for ${ago(c.last_event_at).replace(" ago", "")}`,
+  }[state];
+  pill.title = sites.length ? `Collecting from ${sites.join(", ")}. Open install and tracking.` : "Open install and tracking";
 }
 
 const siteButton = document.getElementById("site-button");
@@ -408,24 +456,32 @@ async function copyPrompt(id, btn) {
   }
 }
 
+// Insights in progress, or (as Releases) the shipped ones and their verdicts.
+let insightsMode = "insights";
+
 async function renderInsights() {
-  const [insights, kpis, analysis] = await Promise.all([api("/insights"), api("/kpis"), api("/analysis").catch(() => null)]);
+  const releases = insightsMode === "releases";
+  const [insights, kpis, analysis] = await Promise.all([api("/insights"), api("/kpis"), releases || PUBLIC ? null : api("/analysis").catch(() => null)]);
   kpiCache = kpis;
+  if (!releases && insightTab === "released") insightTab = "new";
+  const tab = releases ? "released" : insightTab;
   const counts = Object.fromEntries(STATUSES.map(([s]) => [s, insights.filter((i) => i.status === s).length]));
-  const shown = insights.filter((i) => i.status === insightTab);
+  const shown = insights.filter((i) => i.status === tab).sort((a, b) => (releases ? (b.released_at || 0) - (a.released_at || 0) : 0));
   if (!shown.some((i) => i.id === focusedInsight)) focusedInsight = shown.length ? shown[0].id : null;
   view.innerHTML = `
-    <h1>Insights</h1>
+    <h1>${releases ? "Releases" : "Insights"}</h1>
     <p class="sub">${
-      PUBLIC
-        ? `What a coding agent (or Trace's built-in checks) found in how people use ${esc(project.name)}, with the change it suggests, and for released ones whether it moved its KPI. Each one is also a ready prompt for a coding agent.`
-        : "What your coding agent (or Trace's built-in checks) found in real behaviour, with the change it suggests. Copy one as a prompt, move it along as you work, and once it's released Trace measures whether it moved its KPI."
+      releases
+        ? "Shipped changes, newest first, and whether each moved its goal: Trace compares the 14 days before the release with the 14 after."
+        : PUBLIC
+        ? `What a coding agent (or Trace's built-in checks) found in how people use ${esc(project.name)}, with the change it suggests. Each one is also a ready prompt for a coding agent.`
+        : "What your coding agent (or Trace's built-in checks) found in real behaviour, with the change it suggests. Copy one as a prompt and move it along as you work. Once it's released it moves to Releases, where Trace measures whether it worked."
     }</p>
     ${analysis ? analysisPanel(analysis) : ""}
-    <div class="chips" role="tablist" aria-label="Status">
-      ${STATUSES.filter(([s]) => !(PUBLIC && s === "dismissed")).map(
+    <div class="chips" role="tablist" aria-label="Status" ${releases ? "hidden" : ""}>
+      ${STATUSES.filter(([s]) => s !== "released" && !(PUBLIC && s === "dismissed")).map(
         ([s, label]) =>
-          `<button role="tab" data-tab="${s}" class="${s === insightTab ? "active" : ""}" aria-selected="${s === insightTab}">${label}<span class="count">${counts[s]}</span></button>`
+          `<button role="tab" data-tab="${s}" class="${s === tab ? "active" : ""}" aria-selected="${s === tab}">${label}<span class="count">${counts[s]}</span></button>`
       ).join("")}
     </div>
     ${
@@ -441,7 +497,9 @@ async function renderInsights() {
         : `<div class="empty">${
             PUBLIC
               ? "Nothing here yet."
-              : insightTab === "new"
+              : releases
+              ? `Nothing released yet. When a change from an insight ships, mark it released and its verdict appears here.`
+              : tab === "new"
               ? `No new insights. The panel above says when an analysis is worth running and how.`
               : `Nothing here yet.`
           }</div>`
@@ -528,10 +586,18 @@ async function renderInsights() {
 function deltaHtml(k) {
   if (k.current == null || k.previous == null) return "";
   const d = k.current - k.previous;
-  if (Math.abs(d) < 1e-9) return `<span class="delta">no change</span>`;
+  const rate = k.kind !== "per_session";
+  if (Math.abs(d) < (rate ? 0.005 : 0.005)) return `<span class="delta">no change</span>`;
   const good = (d > 0) === (k.direction === "increase");
-  const text = k.kind === "per_session" ? `${d > 0 ? "+" : ""}${d.toFixed(2)}` : `${d > 0 ? "+" : ""}${(d * 100).toFixed(1)} pts`;
-  return `<span class="delta ${good ? "good" : "bad"}">${d > 0 ? "▲" : "▼"} ${text}</span>`;
+  const text = rate ? `${(Math.abs(d) * 100).toFixed(1)} pts` : Math.abs(d).toFixed(2);
+  return `<span class="delta ${good ? "good" : "bad"}">${d > 0 ? "▲" : "▼"} ${text}, ${good ? "better" : "worse"}</span>`;
+}
+
+// Enough, early or not enough: every number says how sure it is.
+const SAMPLE_MIN = 10;
+const SAMPLE_EARLY = 30;
+function sampleState(n) {
+  return n < SAMPLE_MIN ? "none" : n < SAMPLE_EARLY ? "early" : "enough";
 }
 
 function ago(ts) {
@@ -573,12 +639,19 @@ function kpiBar(k) {
 
 function kpiCard(k) {
   const target = k.target != null ? `Target ${k.direction === "increase" ? "≥" : "≤"} ${kpiValue(k, k.target)}${k.target_met ? " ✓" : ""}` : "No target";
+  const state = sampleState(k.sessions || 0);
+  const value =
+    state === "none"
+      ? `<span class="value muted">–</span><span class="sample none">Needs ${SAMPLE_MIN} sessions, has ${num(k.sessions || 0)}</span>`
+      : state === "early"
+      ? `<span class="value muted">${kpiValue(k, k.current)}</span><span class="sample early">Early · ${num(k.sessions)} sessions</span>`
+      : `<span class="value">${kpiValue(k, k.current)}</span>${deltaHtml(k)}`;
   return `
-    <div class="card kpi-card">
+    <div class="card kpi-card sample-${state}">
       <div class="head"><span class="name">${esc(k.name)}</span><span class="key" title="Key in trace.json">${esc(k.key || "")}</span></div>
-      <div class="value-row"><span class="value">${kpiValue(k, k.current)}</span>${deltaHtml(k)}</div>
-      ${kpiBar(k)}
-      <span class="hint">${target} · ${num(k.sessions)} sessions</span>
+      <div class="value-row">${value}</div>
+      ${state === "none" ? "" : kpiBar(k)}
+      <span class="hint">${target}${state === "enough" ? ` · ${num(k.sessions)} sessions` : ""}</span>
       <div class="def">${esc(k.description || k.summary)}</div>
     </div>`;
 }
@@ -666,10 +739,11 @@ function watchAnalysis(a) {
   }, 20000);
 }
 
-// The header button says when there's something to analyse.
+// The header button appears when an analysis is worth running, with the count.
 function analysisBadge(a) {
   const btn = document.getElementById("run-analysis");
   if (!btn || btn.disabled) return;
+  btn.hidden = a.next !== "analyse" || !can("user") || Boolean(auth?.impersonating);
   btn.classList.toggle("ready", a.next === "analyse");
   btn.textContent = a.next === "analyse" ? `Run analysis · ${num(a.new_sessions)} new` : "Run analysis";
   btn.title = a.message;
@@ -727,7 +801,7 @@ function audienceStrip(a) {
   const link = (body) => `<a class="card stat link" href="#/audience">${body}</a>`;
   const cell = (value, label, extra = "") => link(`<div class="value">${value}</div><div class="label">${label}</div>${extra ? `<div class="hint">${extra}</div>` : ""}`);
   return `<div class="stats audience-strip">
-    ${cell(num(a.visitors.visitors), "Visitors", change(a.visitors.visitors, a.visitors.previous_visitors))}
+    ${cell(num(a.visitors.visitors), "Visitors", change(a.visitors.visitors, a.visitors.previous_visitors, { neutral: true }))}
     ${a.bounce.sessions ? cell(pct(a.bounce.rate), "Bounce on marketing pages", change(a.bounce.rate, a.bounce.previous_rate, { rate: true, up: false })) : ""}
     ${a.engaged.declared ? cell(pct(a.engaged.rate), "Engaged", change(a.engaged.rate, a.engaged.previous_rate, { rate: true })) : ""}
     ${a.active.identified ? cell(num(Math.round(a.active.dau * 10) / 10), "Daily active people", `of ${num(a.active.mau)} a month · ${pct(a.active.stickiness)}`) : ""}
@@ -800,64 +874,70 @@ const FUNNEL_EXAMPLE = `"funnels": {
 }`;
 
 async function renderKpis() {
-  const [kpis, cfg, funnels] = await Promise.all([api("/kpis"), api("/config"), api("/funnels").catch(() => [])]);
+  const [kpis, cfg] = await Promise.all([api("/kpis"), api("/config")]);
   kpiCache = kpis;
   const push = `trace push trace.json --server ${location.origin} --token $TRACE_TOKEN   # create one under Account`;
   const source = cfg.synced_at
-    ? `<span class="source" title="To change a KPI, edit trace.json in your repository and push it."><code>${esc(cfg.source || "trace.json")}</code> · synced ${esc(ago(cfg.synced_at))}</span>`
+    ? `<span class="source" title="To change a goal, edit trace.json in your repository and push it."><code>${esc(cfg.source || "trace.json")}</code> · synced ${esc(ago(cfg.synced_at))}</span>`
     : "";
   const cards = kpis.length
     ? `<div class="kpi-grid">${kpis.map(kpiCard).join("")}</div>`
     : `<div class="card">
-        <p><strong>No KPIs yet.</strong> KPIs live in your application's code, next to the events that feed them. Add a <code>trace.json</code> to your repository:</p>
-        <div class="copy-row"><pre class="snippet">${esc(CONFIG_EXAMPLE)}</pre><button data-copy="${esc(CONFIG_EXAMPLE)}">Copy</button></div>
+        <p><strong>No goals yet.</strong> Goals (KPIs) live in your application's code, next to the events that feed them. Add a <code>trace.json</code> to your repository:</p>
+        ${snippet(CONFIG_EXAMPLE)}
         <p class="hint">Check it with <code>trace check</code>, then publish it, for example from CI:</p>
-        <div class="copy-row"><pre class="snippet">${esc(push)}</pre><button data-copy="${esc(push)}">Copy</button></div>
+        ${snippet(push)}
       </div>`;
+  const steps = `trace check\ntrace push --server ${location.origin} --site ${project.slug}`;
+  view.innerHTML = `
+    <div class="page-head">
+      <div><h1>Goals</h1><p class="sub">The numbers you're trying to move, over the last 14 days against the 14 before. They're defined in trace.json; released insights are judged against them.</p></div>
+      ${source}
+    </div>
+    ${cards}
+    <div class="dark-panel" ${PUBLIC ? "hidden" : ""}>
+      <strong>Change a goal in your repo</strong>
+      <span>Edit <code>trace.json</code> next to the code that sends the events, then:</span>
+      <pre>${esc(steps)}</pre>
+      <span class="hint">Run them in CI with a personal API token (<code>TRACE_TOKEN</code>), so the dashboard always matches your main branch. Whether each event arrives is under <a href="#/setup/install">Setup › Install and tracking</a>.</span>
+    </div>`;
+  wireCopy();
+}
 
-  const declared = cfg.events.map((e) => [
-    `<code>${esc(e.name)}</code>`,
-    esc(e.description),
-    num(e.count),
-    eventStatus(e, cfg.collecting_since),
-  ]);
+async function renderFunnels() {
+  const funnels = await api("/funnels");
+  view.innerHTML = funnelsSection(funnels).replace("<h2>Funnels</h2>", "<h1>Funnels</h1>");
+  wireCopy();
+}
+
+// Declared events and whether each arrives, for Setup › Install and tracking.
+async function trackingSection() {
+  const cfg = await api("/config");
+  const declared = cfg.events.map((e) => [`<code>${esc(e.name)}</code>`, esc(e.description), num(e.count), eventStatus(e, cfg.collecting_since)]);
   const undeclared = cfg.undeclared_events.map((e) => [
     `<code>${esc(e.name)}</code>`,
     `<span class="hint">Sent by your app but not declared in trace.json</span>`,
     num(e.count),
     `<span class="status-dot">● undeclared</span>`,
   ]);
+  return `<h2 id="tracking">Tracking</h2>
+    <p class="sub">The custom events trace.json declares, and whether each arrives. Send them with <code>trace.track("name")</code>, or without JavaScript with <code>data-trace-event="name"</code> on a button, link or form.</p>
+    ${table([{ label: "Event" }, { label: "What it means" }, { label: "Last 14 days", num: 1 }, { label: "Status" }], [...declared, ...undeclared], "No custom events declared or received yet.")}`;
+}
 
-  const steps = `trace check\ntrace push --server ${location.origin} --site ${project.slug}`;
-  view.innerHTML = `
-    <div class="page-head">
-      <div><h1>KPIs</h1><p class="sub">The last 14 days against the 14 before. Your team defines these in code; this page only shows how they're doing, and released insights are judged against them.</p></div>
-      ${source}
-    </div>
-    ${cards}
-    ${funnelsSection(funnels)}
-    <h2>Tracking health</h2>
-    <div class="side-by-side">
-      <div>
-        ${table(
-          [{ label: "Event" }, { label: "What it means" }, { label: "Last 14 days", num: 1 }, { label: "Status" }],
-          [...declared, ...undeclared],
-          "No custom events declared or received yet."
-        )}
-        <p class="hint">Send events with <code>trace.track("name")</code>, or without JavaScript using <code>data-trace-event="name"</code> on a button, link or form.</p>
-      </div>
-      <div class="dark-panel" ${PUBLIC ? "hidden" : ""}>
-        <strong>Change a KPI in your repo</strong>
-        <span>Edit <code>trace.json</code> next to the code that sends the events, then:</span>
-        <pre>${esc(steps)}</pre>
-        <span class="hint">Run them in CI with a personal API token (<code>TRACE_TOKEN</code>), so the dashboard always matches your main branch.</span>
-      </div>
-    </div>`;
-  view.querySelectorAll("[data-copy]").forEach((b) =>
+async function renderInstall() {
+  await renderSetup();
+  view.insertAdjacentHTML("beforeend", await trackingSection());
+}
+
+function wireCopy() {
+  view.querySelectorAll("[data-copy]").forEach((b) => {
+    if (b.dataset.wired) return;
+    b.dataset.wired = "1";
     b.addEventListener("click", async () => {
       if (await copyText(b.dataset.copy)) toast("Copied");
-    })
-  );
+    });
+  });
 }
 
 // ---------------------------------------------------------------- Behaviour
@@ -880,7 +960,7 @@ async function renderBehaviour() {
   const clickHeaders = [{ label: "Page" }, { label: "Element" }, { label: "Text" }, { label: "Count", num: 1 }, { label: "Sessions", num: 1 }];
   view.innerHTML = `
     <div class="toolbar">
-      <div><h1>Behaviour</h1><p class="sub">This is what the analyst sees: behaviour aggregated over the window, never individual recordings.</p></div>
+      <div><h1>Pages</h1><p class="sub">How each page is used, aggregated over the window, never individual recordings. Errors have their own page.</p></div>
       <label class="field narrow">Window
         <select id="days">${[1, 7, 14, 30, 90].map((n) => `<option value="${n}" ${n === digestDays ? "selected" : ""}>Last ${n} day${n > 1 ? "s" : ""}</option>`).join("")}</select>
       </label>
@@ -918,13 +998,6 @@ async function renderBehaviour() {
     <h2>Dead clicks</h2>
     ${table(clickHeaders, clickRows(d.dead_clicks), "No dead clicks.")}
 
-    <h2>Errors</h2>
-    ${table(
-      [{ label: "Kind" }, { label: "Message" }, { label: "Page" }, { label: "Source" }, { label: "Count", num: 1 }, { label: "Sessions", num: 1 }],
-      d.errors.map((e) => [`<span class="chip">${esc(e.kind)}</span>`, esc(e.message), esc(e.path), e.source ? `<code>${esc(e.source)}</code>` : "", num(e.count), num(e.sessions)]),
-      "No errors: no exceptions, console errors, failed requests or missing files."
-    )}
-
     <h2>Forms</h2>
     ${table(
       [{ label: "Page" }, { label: "Form" }, { label: "Started", num: 1 }, { label: "Submitted", num: 1 }, { label: "Completion", num: 1 }],
@@ -935,18 +1008,34 @@ async function renderBehaviour() {
     ${table(
       [{ label: "From" }, { label: "To" }, { label: "Count", num: 1 }],
       d.transitions.map((x) => [esc(x.from), esc(x.to), num(x.count)])
-    )}
-
-    <h2>Custom events</h2>
-    ${table(
-      [{ label: "Name" }, { label: "Meaning" }, { label: "Count", num: 1 }, { label: "Sessions", num: 1 }],
-      d.custom_events.map((x) => [esc(x.name), x.declared ? esc(x.description) : `<span class="hint">not declared in trace.json</span>`, num(x.count), num(x.sessions)]),
-      "No custom events. Send them with trace.track(name, props)."
     )}`;
   view.querySelector("#days").addEventListener("change", (e) => {
     digestDays = Number(e.target.value);
     store("trace_days", String(digestDays));
     renderBehaviour();
+  });
+}
+
+async function renderErrors() {
+  const d = await api(`/digest?days=${digestDays}`);
+  const total = d.errors.reduce((n, e) => n + e.sessions, 0);
+  view.innerHTML = `
+    <div class="toolbar">
+      <div><h1>Errors</h1><p class="sub">Exceptions, console errors, failed requests and missing files that visitors hit, with the page and how many sessions each one reached.</p></div>
+      <label class="field narrow">Window
+        <select id="days">${[1, 7, 14, 30, 90].map((n) => `<option value="${n}" ${n === digestDays ? "selected" : ""}>Last ${n} day${n > 1 ? "s" : ""}</option>`).join("")}</select>
+      </label>
+    </div>
+    ${d.errors.length ? `<div class="stats">${stat(num(d.errors.length), "Different errors")}${stat(num(total), "Sessions hit", `of ${num(d.totals.sessions)}`)}</div>` : ""}
+    ${table(
+      [{ label: "Kind" }, { label: "Message" }, { label: "Page" }, { label: "Source" }, { label: "Count", num: 1 }, { label: "Sessions", num: 1 }],
+      d.errors.map((e) => [`<span class="chip">${esc(e.kind)}</span>`, esc(e.message), esc(e.path), e.source ? `<code>${esc(e.source)}</code>` : "", num(e.count), num(e.sessions)]),
+      "No errors: no exceptions, console errors, failed requests or missing files."
+    )}`;
+  view.querySelector("#days").addEventListener("change", (e) => {
+    digestDays = Number(e.target.value);
+    store("trace_days", String(digestDays));
+    renderErrors();
   });
 }
 
@@ -1234,11 +1323,11 @@ setInterval(async () => {
 // ---------------------------------------------------------------- get started
 
 const START_STEPS = {
-  website: "Your website",
-  install: "Install the collector",
-  privacy: "Check what's protected",
-  kpis: "Define KPIs in code",
+  data: "See your first visit",
+  goals: "Tell Trace what success means",
+  insight: "Get your first insight",
   agent: "Connect your coding agent",
+  privacy: "Check what's protected",
   team: "Invite your team",
 };
 
@@ -1250,9 +1339,9 @@ async function loadChecklist() {
   } catch {
     checklist = null;
   }
-  const link = document.querySelector('#nav a[data-view="start"]');
-  link.hidden = !checklist || checklist.complete;
-  if (checklist) document.getElementById("start-progress").textContent = `${checklist.done}/${checklist.total}`;
+  const progress = document.getElementById("start-progress");
+  progress.hidden = !checklist || checklist.complete;
+  if (checklist) progress.textContent = `${checklist.done}/${checklist.total}`;
 }
 
 const tick = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>`;
@@ -1261,7 +1350,7 @@ async function renderStart() {
   await loadChecklist();
   if (!checklist) throw new Error("couldn't load the checklist");
   const steps = checklist.steps;
-  const asked = location.hash.split("/")[2];
+  const asked = routeArg;
   const firstOpen = steps.find((x) => !x.done && !x.optional) || steps.find((x) => !x.done) || steps[steps.length - 1];
   const current = steps.find((x) => x.key === asked) || firstOpen;
   const index = steps.indexOf(current);
@@ -1271,13 +1360,9 @@ async function renderStart() {
   if (!installs[installTab]) installTab = "site";
 
   const content = {
-    website: () => `
-      <h1>${esc(project.name)}</h1>
-      <p class="sub">Each website has its own snippet, KPIs, privacy rules and insights. Its short name is <code>${esc(project.slug)}</code>, used in commands like <code>trace insights --site ${esc(project.slug)}</code>.</p>
-      ${can("admin") ? `<p class="hint">Monitoring more than one site? Add it from the website menu next to the logo.</p>` : ""}`,
-    install: () => `
-      <h1>Add one line to your site</h1>
-      <p class="sub">Paste it into the page's &lt;head&gt;, on every page. It loads after your page, and if it ever fails your site carries on as if it weren't there.</p>
+    data: () => `
+      <h1>See your first visit</h1>
+      <p class="sub">Add one line to the page's &lt;head&gt;, on every page, then open your site. This step is done when the first visit arrives, not when the tag is saved. If the script ever fails, your site carries on as if it weren't there.</p>
       <div class="card">
         <div class="tabs" role="tablist" aria-label="Kind of site">${Object.entries(installs)
           .map(([id, i]) => `<button role="tab" data-install="${id}" class="${id === installTab ? "active" : ""}" aria-selected="${id === installTab}">${i.label}</button>`)
@@ -1293,7 +1378,7 @@ async function renderStart() {
       <div class="card" id="setup-status" style="margin-top: 16px">${setupStatus()}</div>
       <div class="pair">
         <div class="card"><strong>What it records</strong><p class="hint">Pages, clicks, scroll, form starts and submits, errors. Counted per route, never per person.</p></div>
-        <div class="card"><strong>What it never records</strong><p class="hint">Anything typed, page titles, query strings, the content of your pages.</p></div>
+        <div class="card"><strong>What it never records</strong><p class="hint">Anything typed, page titles, query strings, the content of your pages. <a href="#/setup/start/privacy">Review what's protected</a></p></div>
       </div>`,
     privacy: () => `
       <h1>Check what's protected</h1>
@@ -1306,16 +1391,24 @@ async function renderStart() {
             : `<span class="hint">An admin of your account confirms this step.</span><a class="button" href="#/privacy">See the privacy page</a>`
         }
       </div>`,
-    kpis: () => {
+    goals: () => {
       const { push } = setupSnippets();
       return `
-      <h1>Define KPIs in code</h1>
-      <p class="sub">KPIs live in <code>trace.json</code> in your repository, next to the code that sends the events. The analyst puts them first, and released insights are judged against them.</p>
+      <h1>Tell Trace what success means</h1>
+      <p class="sub">Goals (KPIs), the events behind them, funnels and your product's areas live in <code>trace.json</code> in your repository, next to the code that sends the events. The analyst puts the goals first, and released insights are judged against them. This step is done when the file is applied.</p>
+      <div class="pair">
+        <div class="card"><strong>With your coding agent</strong><p class="hint">It reads your code, proposes events, goals, funnels and areas, writes trace.json and applies it.</p>${snippet("/trace:setup")}<p class="hint">Not connected yet? <a href="#/setup/start/agent">Connect your coding agent</a>.</p></div>
+        <div class="card"><strong>By hand</strong><p class="hint">Start from this example and edit it in your repository.</p></div>
+      </div>
       <pre class="snippet">${esc(CONFIG_EXAMPLE)}</pre>
       <div class="actions"><button class="primary" data-copy="${esc(CONFIG_EXAMPLE)}">Copy example</button></div>
       <p class="hint">Check it and publish it, ideally from CI on every merge, with a personal API token from <a href="#/account">Account</a>:</p>
       <div class="copy-row"><pre class="snippet">${esc(push)}</pre><button data-copy="${esc(push)}">Copy</button></div>`;
     },
+    insight: () => `
+      <h1>Get your first insight</h1>
+      <p class="sub">Trace waits until there's enough behaviour to say something true, then it's time to analyse. This step is done after the first analysis, even one that finds nothing worth saving.</p>
+      <div id="start-analysis"><p class="hint">Loading…</p></div>`,
     agent: () => `
       <h1>Let your coding agent set it up</h1>
       <p class="sub">Connect Claude Code, Cursor or any MCP client once, and it does the rest from your codebase: it adds the snippet, writes your KPIs, keeps customer data out, and later analyses the behaviour and fixes what it finds. It sees only aggregated patterns, like this dashboard.</p>
@@ -1336,17 +1429,17 @@ async function renderStart() {
       <nav class="start-steps" aria-label="Setup steps">${steps
         .map(
           (x, i) => `<a href="#/start/${x.key}" class="${x === current ? "current" : ""} ${x.done ? "done" : ""}" ${x === current ? 'aria-current="step"' : ""}>
-            <span class="mark">${x.done ? tick : i + 1}</span><span>${esc(START_STEPS[x.key])}${x.optional ? ` <span class="hint">(optional)</span>` : ""}</span></a>`
+            <span class="mark">${x.done ? tick : i + 1}</span><span>${esc(START_STEPS[x.key] || x.key)}${x.optional ? ` <span class="hint">(optional)</span>` : ""}</span></a>`
         )
         .join("")}
-        <p class="hint">${checklist.complete ? "All set. This checklist stays here, under Setup." : `${checklist.done} of ${checklist.total} done.`} <a href="#/insights">Skip to the dashboard</a></p>
+        <p class="hint">${checklist.complete ? "All set. This checklist stays here, under Setup." : `${checklist.done} of ${checklist.total} done. The dashboard works from the first visit: stop any time.`} <a href="#/home">Go to Home</a></p>
       </nav>
       <section class="start-body">
         <span class="hint">Step ${index + 1} of ${steps.length}${current.done ? " · done" : ""}</span>
-        ${content[current.key]()}
+        ${(content[current.key] || (() => ""))()}
         <div class="start-foot">
           ${index > 0 ? `<a href="#/start/${steps[index - 1].key}">Back</a>` : "<span></span>"}
-          ${next ? `<a class="button" href="#/start/${next.key}">Next: ${esc(START_STEPS[next.key].toLowerCase())}</a>` : `<a class="button" href="#/insights">Go to insights</a>`}
+          ${next ? `<a class="button" href="#/start/${next.key}">Next: ${esc(START_STEPS[next.key].toLowerCase())}</a>` : `<a class="button" href="#/home">Go to Home</a>`}
         </div>
       </section>
     </div>`;
@@ -1366,14 +1459,22 @@ async function renderStart() {
   view.querySelector("[data-reviewed]")?.addEventListener("click", async () => {
     await post("/onboarding/privacy-reviewed");
     toast("Thanks. Privacy reviewed.");
-    location.hash = next ? `#/start/${next.key}` : "#/insights";
+    location.hash = next ? `#/start/${next.key}` : "#/home";
   });
   if (current.key === "privacy") {
     const p = await api("/privacy");
     const list = view.querySelector("#built-in");
     if (list) list.innerHTML = p.built_in.map((b) => `<li>${esc(b)}</li>`).join("") + (p.rules.length ? `<li>${p.rules.length} rule${p.rules.length === 1 ? "" : "s"} of your own</li>` : "");
   }
-  if (current.key === "install" && !project.collection.active) pollSetup();
+  if (current.key === "data" && !project.collection.active) pollSetup();
+  if (current.key === "insight") {
+    const a = await api("/analysis").catch(() => null);
+    const box = view.querySelector("#start-analysis");
+    if (a && box) {
+      box.innerHTML = analysisPanel(a);
+      wireAnalysisPanel(a);
+    }
+  }
 }
 
 // ---------------------------------------------------------------- shell
@@ -1759,10 +1860,9 @@ function impersonationBanner() {
 
 function applyRole() {
   impersonationBanner();
-  document.querySelector('#nav a[data-view="team"]').hidden = !can("admin");
   document.querySelector('#nav a[data-view="admin"]').hidden = !auth.user.is_operator;
-  // Viewing as someone is read-only: no analysis runs from inside it.
-  document.getElementById("run-analysis").hidden = !can("user") || Boolean(auth.impersonating);
+  // Shown by analysisBadge when an analysis is due; never while viewing as someone.
+  document.getElementById("run-analysis").hidden = true;
   const me = document.getElementById("me");
   me.hidden = false;
   me.textContent = auth.user.name || auth.user.email;
@@ -2203,12 +2303,16 @@ async function renderPlan() {
 let audienceDays = Number(store("trace_audience_days")) || 30;
 
 // A change against the window before: rates in points, counts in percent.
-function change(current, previous, { rate = false, up = true } = {}) {
-  if (current == null || previous == null || (!rate && !previous)) return "";
+// Colour follows the goal, not the arrow, and says so in words; numbers
+// without a goal (visitors, sessions) are neutral.
+function change(current, previous, { rate = false, up = true, neutral = false } = {}) {
+  if (current == null || previous == null) return "";
+  if (!rate && !previous) return current ? `<span class="delta">new</span>` : "";
   const d = rate ? current - previous : (current - previous) / previous;
-  if (Math.abs(d) < (rate ? 0.0005 : 0.005)) return `<span class="delta">no change</span>`;
+  if (Math.abs(d) < (rate ? 0.005 : 0.005)) return `<span class="delta">no change</span>`;
   const text = rate ? `${(Math.abs(d) * 100).toFixed(1)} pts` : `${Math.abs(d * 100).toFixed(0)}%`;
-  return `<span class="delta ${(d > 0) === up ? "good" : "bad"}">${d > 0 ? "▲" : "▼"} ${text}</span>`;
+  const better = (d > 0) === up;
+  return `<span class="delta ${neutral ? "neutral" : better ? "good" : "bad"}">${d > 0 ? "▲" : "▼"} ${text}${neutral ? "" : better ? ", better" : ", worse"}</span>`;
 }
 
 const AUDIENCE_EXAMPLE = `"audience": {
@@ -2301,9 +2405,9 @@ async function renderAudience() {
     </div>
     <h2>Visitors</h2>
     <div class="stats">
-      ${stat(num(v.visitors), "Visitors", change(v.visitors, v.previous_visitors), visitorsHint)}
+      ${stat(num(v.visitors), "Visitors", change(v.visitors, v.previous_visitors, { neutral: true }), visitorsHint)}
       ${stat(num(Math.round(v.daily_average * 10) / 10), "A day on average")}
-      ${stat(num(v.sessions), "Sessions", change(v.sessions, v.previous_sessions))}
+      ${stat(num(v.sessions), "Sessions", change(v.sessions, v.previous_sessions, { neutral: true }))}
       ${act.identified ? stat(num(v.signed_in), "Signed-in people") : ""}
     </div>
     ${visitorBars(v.days, a.days)}
@@ -2338,6 +2442,7 @@ const AREA_STATUS = {
   healthy: ["Healthy", "good", "Used, and rarely goes wrong."],
   too_little: ["Too little data", "", "Fewer than 10 sessions in this window."],
 };
+const HURTS = ["painful", "rare_painful"];
 
 const AREAS_EXAMPLE = `"areas": {
   "battles": {
@@ -2349,69 +2454,221 @@ const AREAS_EXAMPLE = `"areas": {
   }
 }`;
 
-function areaRow(n, byKey) {
-  const [label, tone] = AREA_STATUS[n.status] || [n.status, ""];
-  const feature = Boolean(n.area);
-  const reach = n.reach == null ? 0 : Math.max(n.reach ? 1 : 0, n.reach * 100);
-  const problem = n.top_problem
-    ? `<span class="hint">${esc(n.top_problem.kind.replace("_", " "))} · <code>${esc(n.top_problem.path)}</code> ${esc(n.top_problem.what)}</span>`
-    : "";
-  return `<tr class="${feature ? "feature-row" : "area-row"}">
-    <td><div class="area-name">${feature ? `<span class="hint" aria-hidden="true">└</span>` : ""}<strong>${esc(n.name)}</strong>${n.description ? `<span class="hint">${esc(n.description)}</span>` : ""}</div></td>
-    <td class="num"><div class="reach"><span class="reach-bar"><span style="width:${reach.toFixed(1)}%"></span></span>${pct(n.reach)}</div>${n.previous_sessions >= 10 && n.sessions >= 10 ? change(n.reach, n.previous_reach, { rate: true }) : ""}<div class="hint">${num(n.sessions)} sessions</div></td>
-    <td class="num">${n.people ? `${pct(n.adoption)}<div class="hint">${num(n.people)} people</div>` : `<span class="hint">–</span>`}</td>
-    <td class="num">${n.people ? pct(n.repeat) : `<span class="hint">–</span>`}</td>
-    <td class="num"><span class="${n.problem_rate >= 0.15 && n.sessions >= 10 ? "bad-text" : ""}">${pct(n.problem_rate)}</span><div class="hint">${num(n.problem_sessions)} sessions</div></td>
-    <td class="problem-cell">${problem}</td>
-    <td><span class="badge ${tone}">${esc(label)}</span></td>
-  </tr>`;
+const PROBLEM_KIND = { error: "Error", rage_click: "Rage click", dead_click: "Dead click" };
+
+function statusBadge(status) {
+  const [label, tone] = AREA_STATUS[status] || [status, ""];
+  return `<span class="badge ${tone}">${esc(label)}</span>`;
+}
+
+function problemLine(p) {
+  return `<strong>${esc(PROBLEM_KIND[p.kind] || p.kind)}</strong> on <code>${esc(p.path)}</code>: ${esc(p.what)}, in ${num(p.sessions)} session${p.sessions === 1 ? "" : "s"}`;
+}
+
+// A prompt for a coding agent about one problem, so it can be handed over as a task.
+function problemTask(p, node) {
+  return `Trace measured a problem on ${project.name}${node ? ` in "${node.name}"` : ""} over the last ${featuresDays} days: ${(PROBLEM_KIND[p.kind] || p.kind).toLowerCase()} on ${p.path}: ${p.what}, in ${p.sessions} sessions.
+
+Find the cause in this codebase and fix it. Then use the trace MCP tools to save an insight for it (draft_insights, then save_insights) with the share of sessions hitting this problem as evidence to decrease, and mark it released when the fix ships, so Trace can tell whether it worked.`;
+}
+
+function analyseButton(key, primary = false) {
+  const command = `${ANALYSE_COMMAND} ${key}`;
+  return `<button type="button" class="${primary ? "primary" : ""}" data-copy="${esc(command)}" title="Copies ${esc(command)} for Claude Code">Analyse this</button>`;
+}
+
+// Further right is used by more visitors, higher up goes wrong more often.
+function useAgainstProblems(nodes) {
+  const shown = nodes.filter((n) => n.sessions >= 10 && n.reach != null && n.problem_rate != null);
+  if (shown.length < 2) return "";
+  const maxX = Math.min(1, Math.max(...shown.map((n) => n.reach)) * 1.15);
+  const maxY = Math.max(0.35, Math.max(...shown.map((n) => n.problem_rate)) * 1.15);
+  const line = (1 - 0.15 / maxY) * 100;
+  // Labels along the floor (no problems) go above their dot, alternating heights so neighbours don't collide.
+  let floor = 0;
+  const dots = shown
+    .slice()
+    .sort((p, q) => p.reach - q.reach)
+    .map((n) => {
+      const x = (n.reach / maxX) * 100;
+      const y = (1 - n.problem_rate / maxY) * 100;
+      const hurts = HURTS.includes(n.status);
+      const place = y > 92 ? `above${floor++ % 2 ? " high" : ""}` : x > 70 ? "left" : "";
+      return `<span class="dot ${hurts ? "hurts" : ""}" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%"></span>
+        <span class="dot-label ${place}" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%">${esc(n.name)}</span>`;
+    })
+    .join("");
+  const label = shown.map((n) => `${n.name}: ${pct(n.reach)} reach, ${pct(n.problem_rate)} with problems`).join(". ");
+  return `<div class="card quadrant">
+    <div><h2>Use against problems</h2><p class="hint">Further right is used by more visitors; higher up goes wrong more often.</p></div>
+    <div class="plot" role="img" aria-label="${esc(label)}">
+      <div class="hurts-band" style="height:${line.toFixed(1)}%"><span>Hurts: 15% or more</span></div>
+      ${dots}
+      <span class="axis y-top">${pct(maxY)}</span><span class="axis y-bottom">0%</span>
+      <span class="axis x-left">0% reach</span><span class="axis x-right">${pct(maxX)}</span>
+    </div>
+  </div>`;
+}
+
+function areaCard(area, features) {
+  const rows = features
+    .map(
+      (f) => `<li><span>${esc(f.name)}${HURTS.includes(f.status) ? ` <span class="hurt-dot" title="${esc(AREA_STATUS[f.status][0])}"></span><span class="visually-hidden">(hurts)</span>` : ""}</span>
+        <span class="reach-bar"><span style="width:${((f.reach || 0) * 100).toFixed(1)}%"></span></span>
+        <span class="hint">${f.reach == null ? "–" : `${Math.round(f.reach * 100)}%`}</span></li>`
+    )
+    .join("");
+  return `<article class="card area-card">
+    <div class="area-head">
+      <div class="area-title"><a href="#/understand/features/${encodeURIComponent(area.key)}">${esc(area.name)}</a>${statusBadge(area.status)}</div>
+      ${area.description ? `<span class="hint">${esc(area.description)}</span>` : ""}
+      <div class="area-stats">
+        <div><strong>${pct(area.reach)}</strong><span>reach</span></div>
+        <div><strong>${area.people ? pct(area.adoption) : "–"}</strong><span>of people</span></div>
+        <div><strong class="${HURTS.includes(area.status) ? "bad-text" : ""}">${pct(area.problem_rate)}</strong><span>hit a problem</span></div>
+      </div>
+    </div>
+    ${rows ? `<ul class="area-features">${rows}</ul>` : ""}
+  </article>`;
 }
 
 // Which parts of the product people use, which they don't, and where it hurts.
 async function renderFeatures() {
+  if (routeArg) return renderArea(routeArg);
   const a = await api(`/areas?days=${featuresDays}`);
-  const groups = ["painful", "rare_painful", "rare", "healthy"].map((s) => [s, a.nodes.filter((n) => n.status === s)]);
-  const summary = groups
-    .map(([s, list]) => {
-      const [label, tone, hint] = AREA_STATUS[s];
-      return `<div class="card stat area-group tone-${tone}">
-        <div class="value">${list.length}</div><div class="label">${esc(label)}</div>
-        <div class="hint">${list.length ? list.slice(0, 4).map((n) => esc(n.name)).join(", ") + (list.length > 4 ? "…" : "") : esc(hint)}</div>
-      </div>`;
-    })
-    .join("");
+  const areas = a.nodes.filter((n) => !n.area);
+  const features = (key) => a.nodes.filter((n) => n.area === key);
+  const leaves = a.nodes.filter((n) => n.area || !a.nodes.some((f) => f.area === n.key));
+  const first = leaves.filter((n) => HURTS.includes(n.status)).sort((x, y) => y.problem_sessions - x.problem_sessions).slice(0, 3);
+  const counts = Object.fromEntries(Object.keys(AREA_STATUS).map((s) => [s, leaves.filter((n) => n.status === s)]));
   const source =
     a.source === "suggested"
-      ? `<div class="card"><p><strong>Suggested from your URLs.</strong> Name your product's areas and features in <code>trace.json</code>, by the pages and events that mean someone used them, and Trace measures those instead. <code>/trace:setup</code> in Claude Code can propose them from your routes.</p>${snippet(AREAS_EXAMPLE)}</div>`
+      ? `<div class="card"><p><strong>Suggested from your URLs.</strong> Name your product's areas and features in <code>trace.json</code>, by the pages and events that mean someone used them. In Claude Code, <code>/trace:setup</code> proposes them from your routes.</p>${snippet(AREAS_EXAMPLE)}</div>`
       : "";
-  const rows = a.nodes.map((n) => areaRow(n)).join("");
+  const firstCards = first
+    .map((n, i) => {
+      const parent = n.area ? a.nodes.find((x) => x.key === n.area) : null;
+      return `<article class="card look-first">
+        <div class="look-head"><strong>${esc(n.name)}</strong>${parent ? `<span class="hint">${esc(parent.name)}</span>` : ""}</div>
+        <div class="look-rate"><span class="bad-text">${pct(n.problem_rate)}</span><span class="hint">of ${num(n.sessions)} sessions hit a problem</span></div>
+        ${n.top_problem ? `<p>${problemLine(n.top_problem)}</p>` : ""}
+        <div class="actions">${analyseButton(n.key, i === 0)}<a class="button" href="#/understand/features/${encodeURIComponent(n.area || n.key)}">Open ${esc(parent ? parent.name : n.name)}</a></div>
+      </article>`;
+    })
+    .join("");
   view.innerHTML = `
     <div class="toolbar">
-      <div><h1>Features</h1><p class="sub">Which parts of ${esc(project.name)} people use, which they don't, and where using them goes wrong. Problems are rage clicks, dead clicks and errors on an area's own pages.</p></div>
+      <div><h1>${esc(project.name)}, by area</h1><p class="sub">Which parts of the product people use, and where using them goes wrong: rage clicks, dead clicks and errors on each area's own pages. ${
+        a.source === "trace.json" ? `${areas.length} area${areas.length === 1 ? "" : "s"} and ${a.nodes.length - areas.length} features, from trace.json.` : ""
+      }</p></div>
       <label class="field narrow">Window
         <select id="features-days">${[7, 14, 30, 90].map((n) => `<option value="${n}" ${n === featuresDays ? "selected" : ""}>Last ${n} days</option>`).join("")}</select>
       </label>
     </div>
-    ${a.nodes.length ? `<div class="stats">${summary}</div>` : ""}
     ${source}
+    ${first.length ? `<h2>Where to look first</h2><p class="sub">The parts people use that hurt, by sessions affected.</p><div class="look-first-grid">${firstCards}</div>` : ""}
     ${
-      a.nodes.length
-        ? `<div class="table-wrap"><table class="areas">
-            <thead><tr><th>Area / feature</th><th class="num">Reach</th><th class="num" title="Share of signed-in people active in the window">Adoption</th><th class="num" title="Of those people, the share who used it on two or more days">Come back</th><th class="num">With problems</th><th>Most common problem</th><th>Status</th></tr></thead>
-            <tbody>${rows}</tbody></table></div>
-          <p class="hint">Reach counts visitors once a day, like everywhere in Trace. Adoption and come-back count signed-in people, so they need <code>trace.identify()</code>.</p>`
+      areas.length
+        ? `<h2>The product map</h2><div class="area-grid">${areas.map((x) => areaCard(x, features(x.key))).join("")}</div>`
         : `<div class="card"><p>No areas yet: there are no pages viewed in this window to suggest them from.</p></div>`
-    }`;
+    }
+    <div class="quadrant-row">
+      ${useAgainstProblems(leaves)}
+      <div class="status-list">${["painful", "rare_painful", "rare", "healthy"]
+        .map((s) => {
+          const [label, tone, hint] = AREA_STATUS[s];
+          const list = counts[s];
+          return `<div class="card status-card tone-${tone}"><strong>${esc(label)} · ${list.length}</strong><span class="hint">${list.length ? list.map((n) => esc(n.name)).join(", ") : esc(hint)}</span></div>`;
+        })
+        .join("")}${counts.too_little.length ? `<p class="hint">Too little data yet: ${counts.too_little.map((n) => esc(n.name)).join(", ")}.</p>` : ""}</div>
+    </div>
+    <p class="hint">Reach counts visitors once a day, like everywhere in Trace. "Of people" and come-back count signed-in people, so they need <code>trace.identify()</code>. Changes against the window before show once both windows have 10 sessions.</p>`;
   view.querySelector("#features-days").addEventListener("change", (ev) => {
     featuresDays = Number(ev.target.value);
     store("trace_features_days", featuresDays);
     renderFeatures();
   });
-  view.querySelectorAll("[data-copy]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      if (await copyText(b.dataset.copy)) toast("Copied");
-    })
-  );
+  wireCopy();
+}
+
+// One area: its numbers, its features, what goes wrong on its pages, and what's been done about it.
+async function renderArea(key) {
+  const [a, funnels, insights] = await Promise.all([api(`/areas?days=${featuresDays}`), api("/funnels").catch(() => []), api("/insights").catch(() => [])]);
+  const area = a.nodes.find((n) => n.key === key && !n.area);
+  if (!area) {
+    view.innerHTML = `<div class="empty"><h1>No area called "${esc(key)}"</h1><p><a href="#/understand/features">Back to features</a></p></div>`;
+    return;
+  }
+  const features = a.nodes.filter((n) => n.area === key);
+  const seen = new Set();
+  const problems = [area, ...features]
+    .filter((n) => n.top_problem)
+    .map((n) => ({ ...n.top_problem, node: n }))
+    .filter((p) => !seen.has(`${p.kind}|${p.path}|${p.what}`) && seen.add(`${p.kind}|${p.path}|${p.what}`))
+    .sort((x, y) => y.sessions - x.sessions);
+  const patterns = area.matches.filter((m) => m.startsWith("/"));
+  const onPage = (path) => patterns.some((p) => (p.endsWith("*") ? path.startsWith(p.slice(0, -1)) : path === p));
+  const through = funnels.filter((f) => f.steps.some((s) => area.matches.includes(s.label) || onPage(s.label)));
+  const about = insights.filter((i) => i.status !== "dismissed" && (i.pages || []).some(onPage));
+  const tile = (label, value, sub, tone = "") => `<div class="card stat ${tone}"><div class="label">${label}</div><div class="value">${value}</div><div class="hint">${sub}</div></div>`;
+  view.innerHTML = `
+    <nav class="breadcrumb" aria-label="Breadcrumb"><a href="#/understand/features">Features</a> <span aria-hidden="true">›</span> <span aria-current="page">${esc(area.name)}</span></nav>
+    <div class="toolbar">
+      <div><div class="area-title"><h1>${esc(area.name)}</h1>${statusBadge(area.status)}</div>
+        <p class="sub">${area.description ? `${esc(area.description)}. ` : ""}Counted from ${area.matches.map((m) => `<code>${esc(m)}</code>`).join(", ")}${a.source === "trace.json" ? ", as declared in trace.json" : ""}. Last ${featuresDays} days.</p></div>
+      ${PUBLIC ? "" : analyseButton(area.key, true).replace("Analyse this", `Analyse ${esc(area.name)}`)}
+    </div>
+    <div class="stats">
+      ${tile("Reach", pct(area.reach), `of visitors · ${num(area.sessions)} sessions`)}
+      ${tile("Of signed-in people", area.people ? pct(area.adoption) : "–", area.people ? `${num(area.people)} of ${num(a.people)}` : "needs trace.identify()")}
+      ${tile("Come back", area.people ? pct(area.repeat) : "–", "used it on two or more days")}
+      ${tile("Hit a problem", `<span class="${HURTS.includes(area.status) ? "bad-text" : ""}">${pct(area.problem_rate)}</span>`, `${num(area.problem_sessions)} sessions`, HURTS.includes(area.status) ? "hurts" : "")}
+    </div>
+    ${
+      features.length
+        ? `<h2>Its features</h2>${table(
+            [{ label: "Feature" }, { label: "Reach", num: 1 }, { label: "Of people", num: 1 }, { label: "Come back", num: 1 }, { label: "Hit a problem", num: 1 }, { label: "Status" }],
+            features
+              .slice()
+              .sort((x, y) => y.problem_sessions - x.problem_sessions)
+              .map((f) => [
+                `<strong>${esc(f.name)}</strong>`,
+                `${pct(f.reach)}<div class="hint">${num(f.sessions)} sessions</div>`,
+                f.people ? pct(f.adoption) : "–",
+                f.people ? pct(f.repeat) : "–",
+                `<span class="${HURTS.includes(f.status) ? "bad-text" : ""}">${pct(f.problem_rate)}</span>`,
+                statusBadge(f.status),
+              ])
+          )}`
+        : ""
+    }
+    <h2>What goes wrong here</h2>
+    <p class="sub">The most common rage click, dead click or error on ${esc(area.name)}'s own pages and on each feature's.</p>
+    ${
+      problems.length
+        ? `<ol class="problem-list">${problems
+            .map(
+              (p) => `<li class="card">
+                <span class="badge ${p.kind === "error" ? "bad" : "warn"}">${esc(PROBLEM_KIND[p.kind] || p.kind)}</span>
+                <div class="problem-text"><strong>${esc(p.what)}</strong><span class="hint">On <code>${esc(p.path)}</code>${p.node !== area ? ` · ${esc(p.node.name)}` : ""}</span></div>
+                <span class="problem-count">${num(p.sessions)}</span>
+                ${PUBLIC ? "" : `<button type="button" data-copy="${esc(problemTask(p, p.node))}" title="Copies a task for your coding agent">Make it a task</button>`}
+              </li>`
+            )
+            .join("")}</ol>`
+        : `<p class="hint">No rage clicks, dead clicks or errors on its pages in this window.</p>`
+    }
+    <div class="side-by-side">
+      <div class="card"><h2>Funnels through ${esc(area.name)}</h2>${
+        through.length ? `<ul>${through.map((f) => `<li><a href="#/understand/funnels">${esc(f.name)}</a></li>`).join("")}</ul>` : `<p class="hint">No funnel has a step on its pages.</p>`
+      }</div>
+      <div class="card"><h2>Insights about ${esc(area.name)}</h2>${
+        about.length
+          ? `<ul>${about.map((i) => `<li><a href="${i.status === "released" ? "#/improve/releases" : "#/improve/insights"}">${esc(i.title)}</a> <span class="hint">${esc(i.status.replace("_", " "))}</span></li>`).join("")}</ul>`
+          : `<p class="hint">None yet. Analysing just this area gives your agent its pages, features and problems, and asks only about them.</p>`
+      }${PUBLIC ? "" : snippet(`${ANALYSE_COMMAND} ${area.key}`)}</div>
+    </div>`;
+  wireCopy();
 }
 
 // ---------------------------------------------------------------- operator area
@@ -2419,7 +2676,7 @@ async function renderFeatures() {
 // Decides between the sign-in screens and the app.
 async function bootPublic() {
   document.body.classList.add("public");
-  document.querySelectorAll("#nav a").forEach((a) => (a.hidden = !PUBLIC_PAGES.includes(a.dataset.view)));
+  document.querySelectorAll("#nav a").forEach((a) => (a.hidden = !["understand", "improve"].includes(a.dataset.section)));
   for (const id of ["run-analysis", "me", "site-menu"]) document.getElementById(id).hidden = true;
   try {
     await loadProject();
@@ -2525,13 +2782,16 @@ const routes = {
   connect: renderConnect,
   home: renderHome,
   start: renderStart,
-  insights: renderInsights,
-  kpis: renderKpis,
   audience: renderAudience,
   features: renderFeatures,
-  behaviour: renderBehaviour,
+  funnels: renderFunnels,
+  pages: renderBehaviour,
+  errors: renderErrors,
+  goals: renderKpis,
+  insights: () => ((insightsMode = "insights"), renderInsights()),
+  releases: () => ((insightsMode = "releases"), renderInsights()),
+  install: renderInstall,
   privacy: renderPrivacy,
-  setup: renderSetup,
   account: renderAccount,
   team: renderTeam,
   plan: renderPlan,
@@ -2555,12 +2815,10 @@ const ACCOUNT_PAGES = ["account", "team", "plan", "connect"];
 
 async function route() {
   if (!PUBLIC && (!auth || !auth.user || auth.step)) return boot();
-  const page = location.hash.replace(/^#\//, "");
   if (PUBLIC && !project) return;
-  if (PUBLIC && !PUBLIC_PAGES.includes(page.split(/[/?]/)[0])) {
-    history.replaceState(null, "", "#/insights");
-    return route();
-  }
+  let { page, arg } = resolve(location.hash);
+  page = page || (PUBLIC ? "insights" : "home");
+  if (PUBLIC && !PUBLIC_PAGES.includes(page)) page = "insights";
   if (!PUBLIC && !sites.length && !ACCOUNT_PAGES.includes(page)) return renderNoSites();
   if (!project && !ACCOUNT_PAGES.includes(page)) {
     try {
@@ -2570,15 +2828,15 @@ async function route() {
       return;
     }
   }
-  // Land on Setup until data is arriving, on Insights after.
-  // Every website opens on its home: what needs attention now, setup first while it's unfinished.
-  const name = page.split(/[/?]/)[0] || (PUBLIC ? "insights" : "home");
-  if (!location.hash || location.hash === "#/") history.replaceState(null, "", `#/${name}`);
-  const render = routes[name] || renderInsights;
-  if (!PUBLIC && project && !ACCOUNT_PAGES.includes(name) && name !== "start") loadChecklist();
-  document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.view === name));
+  // Every website opens on its home. Old and bare links settle on the page's own address.
+  const canonical = `${pageUrl(page)}${arg ? `/${arg}` : ""}`;
+  if (!ACCOUNT_PAGES.includes(page) && location.hash.split("?")[0] !== canonical) history.replaceState(null, "", canonical + (location.hash.includes("?") ? location.hash.slice(location.hash.indexOf("?")) : ""));
+  routeArg = arg;
+  const render = routes[page] || renderHome;
+  if (!PUBLIC && project && !ACCOUNT_PAGES.includes(page)) await loadChecklist();
+  renderSubnav(ACCOUNT_PAGES.includes(page) && page !== "team" && page !== "plan" ? null : page);
   clearInterval(analysisWatch);
-  if (!PUBLIC && project && !ACCOUNT_PAGES.includes(name) && name !== "home" && name !== "insights") api("/analysis").then(analysisBadge, () => {});
+  if (!PUBLIC && project && !ACCOUNT_PAGES.includes(page) && page !== "home" && page !== "insights") api("/analysis").then(analysisBadge, () => {});
   try {
     await render();
   } catch (e) {
@@ -2599,8 +2857,8 @@ document.getElementById("run-analysis").addEventListener("click", async (e) => {
       Boolean(r.warning && !n)
     );
     insightTab = "new";
-    if (location.hash === "#/insights" || !location.hash) route();
-    else location.hash = "#/insights";
+    if (location.hash === "#/improve/insights") route();
+    else location.hash = "#/improve/insights";
   } catch (err) {
     toast(`Analysis failed: ${err.message}`, true);
   } finally {

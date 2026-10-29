@@ -9,6 +9,8 @@ description: Analyse a website measured with Trace and find the few UX changes m
 
 Use the `trace` MCP tools. If the account has several websites, ask which one (or use the one this codebase sets up) and pass `site` to every tool.
 
+If the person names an area or feature (for example `/trace:analyse catalogue`, as the Features page suggests), analyse only that part of the product: call `get_areas` first, find the area or feature with that key, and in every step below look only at its pages and draft insights only about it. If no area has that key, say so and list the keys `get_areas` returns.
+
 0. Call `get_analysis_status`. If it isn't ready, say how many sessions it has and stop, unless the person wants to go ahead anyway.
 1. Call `get_overview` for the KPIs against their targets.
 2. Call `get_funnels`. In each funnel, `biggest_drop` is the step where the most sessions are lost (null until someone finishes the funnel): that is where more conversion is won. Compare it with the window before and across devices. Call `get_audience` too: a marketing page most people leave without doing anything, or a low share of visitors who become engaged, is worth explaining. Then `get_areas`: an area marked painful is used a lot and hurts, so a fix there helps the most people; a rare one may be hard to find.

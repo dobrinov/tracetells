@@ -43,11 +43,11 @@ fn item(kind: &'static str, tone: &'static str, weight: i64, title: String, deta
 
 fn step_name(key: &str) -> &'static str {
     match key {
-        "website" => "add the website",
+        "data" => "see your first visit",
+        "goals" => "tell Trace what success means",
+        "insight" => "get your first insight",
         "agent" => "connect your coding agent",
-        "install" => "install the collector",
         "privacy" => "check what's protected",
-        "kpis" => "define KPIs in code",
         "team" => "invite your team",
         _ => "the next setup step",
     }

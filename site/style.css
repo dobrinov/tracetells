@@ -355,3 +355,35 @@ pre { margin: 0; }
 @media (prefers-reduced-motion: no-preference) {
   html { scroll-behavior: smooth; }
 }
+
+/* Switching from replay */
+.switch-hero { display: flex; flex-wrap: wrap; gap: 48px; align-items: center; padding-top: 64px; padding-bottom: 24px; }
+.switch-copy { flex: 1 1 460px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.switch-copy h1 { margin: 0; font-size: clamp(36px, 5vw, 54px); line-height: 1.05; letter-spacing: -0.03em; }
+.switch-copy .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.switch-compare-visual { flex: 1 1 440px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.monday { padding: 18px; gap: 12px; }
+.monday.trace { border: 2px solid var(--link); }
+.monday .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.monday .tiles span { height: 48px; border-radius: 8px; background: var(--surface-2); }
+.ranked { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.ranked li { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.ranked span { font-weight: 700; color: var(--bad); font-variant-numeric: tabular-nums; }
+.switch-intro { max-width: 760px; margin: -16px 0 24px; }
+.compare-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.compare { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 15px; line-height: 1.5; }
+.compare th, .compare td { padding: 16px 20px; text-align: left; vertical-align: top; }
+.compare thead th { font-size: 13px; color: var(--muted); background: var(--surface-sunk); }
+.compare tbody tr { border-top: 1px solid var(--line-soft); }
+.compare tbody th { font-weight: 600; width: 22%; }
+.compare td:nth-child(2) { color: var(--muted); }
+.switch-card { padding: 20px; gap: 8px; }
+.switch-card h3 { margin: 0; font-size: 17px; }
+.give-up { display: flex; flex-wrap: wrap; gap: 32px; padding: 32px; border-radius: 16px; background: var(--warn-soft); border: 1px solid var(--warn-line); }
+.give-up > div { flex: 1 1 320px; min-width: 0; }
+.give-up .section-title { margin-bottom: 12px; }
+.give-up-list { flex: 2 1 480px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.give-up-list li { background: var(--surface); border-radius: 12px; padding: 16px 18px; line-height: 1.55; }
+.try-steps { margin: 0; padding: 0; }
+.proof { padding: 36px; gap: 14px; }
+.proof p { margin: 0; font-size: 17px; line-height: 1.6; max-width: 760px; }

@@ -35,24 +35,18 @@
         </button>
         <div class="site-list" id="site-list" role="listbox" aria-label="Websites" hidden></div>
       </div>
-      <nav id="nav">
-        <a href="#/start" data-view="start" hidden>Get started<span class="progress" id="start-progress"></span></a>
-        <a href="#/home" data-view="home">Home</a>
-        <a href="#/insights" data-view="insights">Insights</a>
-        <a href="#/kpis" data-view="kpis">KPIs</a>
-        <a href="#/audience" data-view="audience">Audience</a>
-        <a href="#/features" data-view="features">Features</a>
-        <a href="#/behaviour" data-view="behaviour">Behaviour</a>
-        <a href="#/privacy" data-view="privacy">Privacy</a>
-        <a href="#/setup" data-view="setup">Setup</a>
-        <a href="#/team" data-view="team" hidden>Team</a>
-        <a href="#/plan" data-view="plan">Plan</a>
+      <nav id="nav" aria-label="Areas">
+        <a href="#/home" data-section="home">Home</a>
+        <a href="#/understand" data-section="understand">Understand</a>
+        <a href="#/improve" data-section="improve">Improve</a>
+        <a href="#/setup" data-section="setup" class="nav-setup">Setup<span class="progress" id="start-progress" hidden></span></a>
         <a href="/admin" data-view="admin" hidden>Admin</a>
       </nav>
-      <a class="collect-status" id="collect-status" href="#/setup" hidden></a>
+      <a class="collect-status" id="collect-status" href="#/setup/install" hidden></a>
       <button id="run-analysis" type="button">Run analysis</button>
       <a class="me" id="me" href="#/account" data-view="account" hidden></a>
     </header>
+    <nav class="subnav" id="subnav" aria-label="Pages" hidden></nav>
     <div class="viewing-as" id="viewing-as" role="status" hidden></div>
     <div class="notice" id="notice" role="status" hidden></div>
     <main id="view" aria-live="polite"></main>

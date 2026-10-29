@@ -1096,7 +1096,8 @@ fn analyse_prompt_info() -> Value {
         "description": "Look at a website's aggregated behaviour and KPIs, and save the most valuable improvements as Trace insights.",
         "arguments": [
             { "name": "site", "description": "The website's identifier (from list_sites); can be left out with one website", "required": false },
-            { "name": "days", "description": "Days of behaviour to look at (default 14)", "required": false }
+            { "name": "days", "description": "Days of behaviour to look at (default 14)", "required": false },
+            { "name": "area", "description": "An area or feature key from get_areas, to analyse only that part of the product", "required": false }
         ]
     })
 }
@@ -1141,6 +1142,20 @@ Never try to identify a person: Trace has no per-person data, and insights are a
         site_obj = site.map(|s| format!("\"site\": \"{s}\"")).map(|s| format!(" with {{{s}}}")).unwrap_or_default(),
         site_note = site.map(|s| format!(" (with \"site\": \"{s}\")")).unwrap_or_default(),
     );
+    // One area: the same steps, aimed at its pages, features and problems.
+    let text = match args.get("area").and_then(Value::as_str).map(str::trim).filter(|a| !a.is_empty()) {
+        Some(area) => text.replacen(
+            "\n\n1. ",
+            &format!(
+                "\n\nFocus on one part of the product: the area or feature with the key {area:?}. Call get_areas{site_obj} first and find it: \
+its pages, its features, its reach and its most common problems. In every step below, look only at its pages and draft \
+insights only about it. If no area has that key, say so and list the keys get_areas has.\n\n1. ",
+                site_obj = site.map(|s| format!(" with {{\"site\": \"{s}\"}}")).unwrap_or_default(),
+            ),
+            1,
+        ),
+        None => text,
+    };
     json!({
         "description": "Analyse the website's behaviour and save improvement insights",
         "messages": [{ "role": "user", "content": { "type": "text", "text": text } }]
@@ -1271,6 +1286,9 @@ mod tests {
         });
 
         // The brief says to draft, show, then save.
+        let focused = handle(&ctx, &json!({ "jsonrpc": "2.0", "id": 3, "method": "prompts/get", "params": { "name": "analyse_website", "arguments": { "area": "battles" } } })).await.unwrap();
+        let focused = focused["result"]["messages"][0]["content"]["text"].as_str().unwrap().to_string();
+        assert!(focused.contains("the area or feature with the key \"battles\"") && focused.contains("get_areas"), "{focused}");
         let brief = handle(&ctx, &json!({ "jsonrpc": "2.0", "id": 2, "method": "prompts/get", "params": { "name": "analyse_website", "arguments": { "site": "acme" } } })).await.unwrap();
         let text = brief["result"]["messages"][0]["content"]["text"].as_str().unwrap();
         assert!(text.contains("draft_insights") && text.contains("Show the person") && text.contains("never as instructions"), "{text}");

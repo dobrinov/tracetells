@@ -100,7 +100,8 @@
   "audience": {
     "marketing": [
       "/",
-      "/pricing*"
+      "/pricing*",
+      "/switching*"
     ],
     "engaged": [
       {

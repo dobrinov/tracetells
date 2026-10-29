@@ -1879,3 +1879,388 @@ table.areas .badge.good {
   color: var(--good);
   background: var(--good-soft);
 }
+
+/* Areas and their pages. */
+#nav .nav-setup {
+  margin-left: auto;
+}
+#nav a.active {
+  color: var(--text);
+  background: var(--surface-2);
+  font-weight: 600;
+}
+.subnav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  padding: 0;
+  position: sticky;
+  top: var(--header-h, 0);
+  z-index: 4;
+}
+.subnav > div {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+}
+.subnav a {
+  padding: 12px 14px;
+  color: var(--text-2);
+  text-decoration: none;
+  font-size: 14px;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+}
+.subnav a:hover {
+  color: var(--text);
+}
+.subnav a.active {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+.subnav .progress {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* Header status: live, quiet, waiting, stopped. */
+.collect-status.live {
+  background: var(--good-soft);
+  color: var(--good);
+}
+.collect-status.quiet {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.collect-status.waiting {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.collect-status.stopped {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+/* Change chips without a goal, and sample states. */
+.delta.neutral {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.value.muted {
+  color: var(--text-2);
+}
+.sample {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  align-self: center;
+}
+.sample.early {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.sample.none {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+/* Features: where to look first, the product map, use against problems, an area. */
+.look-first-grid,
+.area-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 14px;
+  align-items: start;
+  margin-bottom: 8px;
+}
+.look-first {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.look-first p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.look-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+.look-rate {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.look-rate .bad-text {
+  font-size: 28px;
+  font-weight: 700;
+}
+.look-first .actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+.area-card {
+  padding: 0;
+  overflow: hidden;
+}
+.area-head {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.area-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.area-title a {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  text-decoration: none;
+}
+.area-title h1 {
+  margin: 0;
+}
+.area-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.area-stats div {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.area-stats strong {
+  font-size: 18px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.area-features {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+}
+.area-features li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px 44px;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 20px;
+  font-size: 14px;
+}
+.area-features .reach-bar,
+.area-features .reach-bar span {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+}
+.area-features .reach-bar {
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.area-features .reach-bar span {
+  background: var(--accent);
+}
+.area-features .hint {
+  text-align: right;
+}
+.hurt-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--bad);
+  vertical-align: middle;
+}
+.badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--text-2);
+  background: var(--surface-2);
+}
+.badge.bad {
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+.badge.warn {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.badge.good {
+  color: var(--good);
+  background: var(--good-soft);
+}
+.quadrant-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 20px 0 12px;
+  align-items: stretch;
+}
+.quadrant {
+  flex: 999 1 560px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.quadrant h2 {
+  margin: 0;
+}
+.plot {
+  position: relative;
+  height: 340px;
+  margin: 8px 12px 24px 44px;
+  border-left: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+}
+.hurts-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  background: var(--bad-soft);
+  border-bottom: 1px dashed var(--bad);
+}
+.hurts-band span {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bad);
+}
+.plot .dot {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.plot .dot.hurts {
+  background: var(--bad);
+}
+.plot .dot-label {
+  position: absolute;
+  transform: translate(12px, -50%);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.plot .dot-label.left {
+  transform: translate(calc(-100% - 12px), -50%);
+}
+.plot .axis {
+  position: absolute;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.plot .y-top { left: -42px; top: -6px; }
+.plot .y-bottom { left: -26px; bottom: -6px; }
+.plot .x-left { left: 0; bottom: -20px; }
+.plot .x-right { right: 0; bottom: -20px; }
+.status-list {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.status-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.status-card.tone-bad strong { color: var(--bad); }
+.status-card.tone-warn strong { color: var(--warn); }
+.status-card.tone-good strong { color: var(--good); }
+.breadcrumb {
+  font-size: 14px;
+  color: var(--text-2);
+  margin-bottom: 12px;
+}
+.stat.hurts {
+  border-color: var(--bad);
+}
+.problem-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.problem-list li {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.problem-text {
+  flex: 999 1 380px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.problem-count {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+nav.subnav {
+  display: block;
+  flex: none;
+  overflow: visible;
+}
+.subnav > div {
+  padding: 0 24px;
+  box-sizing: border-box;
+}
+nav.breadcrumb {
+  display: block;
+  flex: none;
+}
+nav.breadcrumb a {
+  padding: 0;
+}
+.toolbar .area-title {
+  justify-content: flex-start;
+}
+.plot .dot-label.above {
+  transform: translate(-50%, -26px);
+}
+.plot .dot-label.above.high {
+  transform: translate(-50%, -44px);
+}
+.subnav a.active,
+.subnav a:hover {
+  background: none;
+}

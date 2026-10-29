@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Switching from replay to Trace</title>
+<meta name="description" content="Already paying for FullStory, Hotjar or another replay tool? Run Trace beside it for a month: it ranks what's broken by how many people it hurts, hands the fixes to your coding agent, and tells you whether they worked.">
+<link rel="canonical" href="https://tracetells.com/switching.html">
+<meta property="og:url" content="https://tracetells.com/switching.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Trace">
+<meta property="og:title" content="You have the recordings. What you need is the fixes.">
+<meta property="og:description" content="Run Trace beside FullStory or Hotjar for a month: problems ranked by how many people they hurt, fixes handed to your coding agent, and a verdict on each.">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://tracetells.com/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Trace: find what's broken on your site, let your agent fix it, know it worked.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="You have the recordings. What you need is the fixes.">
+<meta name="twitter:description" content="Run Trace beside FullStory or Hotjar for a month: problems ranked by how many people they hurt, fixes handed to your coding agent, and a verdict on each.">
+<meta name="twitter:image" content="https://tracetells.com/og.png">
+<meta name="twitter:image:alt" content="Trace: find what's broken on your site, let your agent fix it, know it worked.">
+<meta name="theme-color" content="#10141d">
+<script>try{var t=localStorage.getItem('trace-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<!-- Trace on its own site, cookieless: nothing is stored on the visitor's device. -->
+<script src="https://app.tracetells.com/d.js?k=2ccf78ff3217411cb0027317dc5c616e" data-key="2ccf78ff3217411cb0027317dc5c616e" defer></script>
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="https://stats.aparatnata.com/js/pa-bozD2DJNoa8xOtm2eSY4T.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init()
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Inter+Tight:wght@600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-app-url="https://app.tracetells.com/#/signup">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/" aria-label="Trace, home">
+      <svg width="40" height="22" viewBox="2 15.5 60 33" aria-hidden="true"><rect x="3.5" y="25" width="14" height="14" rx="4.5" fill="#45c75b"/><rect class="sep" x="13.5" y="21" width="22" height="22" rx="6" fill="#2a9ba3" stroke-width="2.6"/><rect class="sep" x="30.5" y="17" width="30" height="30" rx="8" fill="#4a6cff" stroke-width="2.6"/></svg>
+      Trace
+    </a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="/">Product</a>
+      <a href="/#privacy">Privacy</a>
+      <a href="switching.html" aria-current="page">Switching from replay</a>
+      <a href="pricing.html">Pricing</a>
+      <a href="/#help">Help</a>
+    </nav>
+    <div class="theme-switch" role="group" aria-label="Colour theme" hidden>
+      <button type="button" data-theme-choice="light" aria-pressed="false" title="Light"><span class="visually-hidden">Light</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+      <button type="button" data-theme-choice="dark" aria-pressed="false" title="Dark"><span class="visually-hidden">Dark</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg></button>
+      <button type="button" data-theme-choice="system" aria-pressed="false" title="System"><span class="visually-hidden">System</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></button>
+    </div>
+    <a data-trace="start-header" data-trace-props='{"place":"header"}' class="btn btn-header" href="https://app.tracetells.com/#/signup" data-app-link data-trace-event="start_free">Start free</a>
+  </div>
+</header>
+
+<main id="main">
+  <section class="wrap switch-hero">
+    <div class="switch-copy">
+      <span class="eyebrow">For teams with FullStory, Hotjar or another replay tool</span>
+      <h1 class="display">You have the recordings. What you need is the fixes.</h1>
+      <p class="lede">Replay shows you one session at a time, and someone has to watch them. Trace reads every visit as a pattern, ranks what's broken by how many people it hurts, hands the worst ones to your coding agent as tasks, and tells you whether each fix moved the number.</p>
+      <div class="actions">
+        <a data-trace="start-switch" data-trace-props='{"place":"switching"}' class="btn btn-primary" href="https://app.tracetells.com/#/signup" data-app-link data-trace-event="start_free">Run it beside yours, free</a>
+        <a class="btn" data-trace-event="view_public" data-trace-props='{"view":"shop"}' href="https://app.tracetells.com/p/uDVoTzUDXjSybPZF5ANLG78-USVvW2TU" target="_blank" rel="noopener">See a live dashboard</a>
+      </div>
+      <p class="card-text">One 8.3 KB script next to your current one. No cookies, so nothing to add to your consent setup.</p>
+    </div>
+    <div class="switch-compare-visual" aria-label="Two ways to start a Monday">
+      <div class="card monday">
+        <span class="step-label">Your replay tool, Monday morning</span>
+        <div class="tiles" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        <span class="card-text">A queue of new recordings. Which ones matter?</span>
+      </div>
+      <div class="card monday trace">
+        <span class="step-label">Trace, Monday morning</span>
+        <ol class="ranked">
+          <li><strong>Product page: reviews fail to load</strong><span>475 sessions</span></li>
+          <li><strong>Pricing: the Annual option throws an error</strong><span>230 sessions</span></li>
+          <li><strong>Checkout: people hammer "Pay now"</strong><span>126 sessions</span></li>
+        </ol>
+        <span class="card-text">From the demo shop, last 30 days</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap section" aria-labelledby="changes">
+    <h2 id="changes" class="display section-title">What changes when the recordings stop being the work</h2>
+    <p class="lede switch-intro">Replay answers "what did this person do?". Most teams bought it to answer "what should we fix next, and did it help?".</p>
+    <div class="compare-wrap">
+      <table class="compare">
+        <thead><tr><th scope="col"><span class="visually-hidden">Job</span></th><th scope="col">With a replay tool</th><th scope="col">With Trace</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Finding problems</th><td>Filter recordings, watch, take notes</td><td>A ranked list: each problem, its element and page, and how many sessions it hit</td></tr>
+          <tr><th scope="row">Turning it into work</th><td>Someone writes a ticket from what they saw</td><td>An insight with measured evidence and acceptance criteria, ready for your coding agent or a developer</td></tr>
+          <tr><th scope="row">Knowing it worked</th><td>Usually nobody goes back to check</td><td>A verdict on the goal: the 14 days before the release against the 14 after, with the sample size</td></tr>
+          <tr><th scope="row">Who's counted</th><td>Often only visitors who accept your consent banner</td><td>Every visitor. Nothing is stored on their device, so there's nothing to consent to.</td></tr>
+          <tr><th scope="row">What's recorded</th><td>The screen, and anything you forgot to mask</td><td>Events and counts. No screens, no typed text.</td></tr>
+          <tr><th scope="row">Where it lives</th><td>In a dashboard someone has to open</td><td>In the dashboard, and in your coding agent over MCP: <code>/trace:analyse</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="wrap section" aria-labelledby="habits">
+    <h2 id="habits" class="display section-title">Your habits, in Trace</h2>
+    <div class="grid-auto" style="--min: 240px">
+      <div class="card switch-card"><span class="card-text">You use</span><h3>Rage and dead clicks</h3><span class="card-text">The same signals, per element and page, counted across every visit instead of found one replay at a time.</span></div>
+      <div class="card switch-card"><span class="card-text">You use</span><h3>Funnels</h3><span class="card-text">Declared next to your code, with the step that loses the most people named, and analysis starting there.</span></div>
+      <div class="card switch-card"><span class="card-text">You use</span><h3>Errors beside sessions</h3><span class="card-text">Exceptions and failed requests, with the page and how many sessions each one hit.</span></div>
+      <div class="card switch-card"><span class="card-text">You use</span><h3>Segments and feature use</h3><span class="card-text">By device, signed-in or not, and by product area and feature: which are used, which hurt.</span></div>
+    </div>
+  </section>
+
+  <section class="wrap section" aria-labelledby="give-up">
+    <div class="give-up">
+      <div>
+        <h2 id="give-up" class="display section-title">What you'd give up</h2>
+        <p class="lede">Trace never records a screen, by design. If that's how you work today, here's what it means.</p>
+      </div>
+      <ul class="bare-list give-up-list">
+        <li><strong>Watching one customer's session.</strong> If support replays a specific customer's visit to answer a ticket, keep a replay tool for that. Trace is for the patterns.</li>
+        <li><strong>Heatmap images.</strong> Clicks are counted per element and shown as tables, not painted over a screenshot.</li>
+        <li><strong>Surveys and feedback widgets.</strong> Trace doesn't ask visitors anything.</li>
+        <li><strong>Your history.</strong> Trace starts counting from its first visit; there's no import. That's why you'd run both for a few weeks.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="wrap section" aria-labelledby="try">
+    <h2 id="try" class="display section-title">Try it without switching anything</h2>
+    <ol class="bare-list grid-auto try-steps" style="--min: 240px">
+      <li class="card switch-card"><span class="step-label">Day 1</span><h3>Add one tag</h3><span class="card-text">Next to your current script. 8.3 KB, does its work when the browser is idle, no cookies.</span></li>
+      <li class="card switch-card"><span class="step-label">Day 1</span><h3>Say what success means</h3><span class="card-text"><code>/trace:setup</code> reads your code and writes the events, goals, funnels and product areas into trace.json.</span></li>
+      <li class="card switch-card"><span class="step-label">Week 1</span><h3>Compare the lists</h3><span class="card-text">Trace's ranked problems against your replay backlog. Ship the top one with your agent.</span></li>
+      <li class="card switch-card"><span class="step-label">Week 4</span><h3>Read the verdict</h3><span class="card-text">Trace says whether the fix moved its goal. Keep both, or keep the one that got things fixed.</span></li>
+    </ol>
+  </section>
+
+  <section class="wrap section" aria-labelledby="proof">
+    <div class="card proof">
+      <span class="eyebrow">Proof, not a recording</span>
+      <h2 id="proof" class="display section-title-lg">"Show the shipping cost on the cart page"</h2>
+      <p>Trace found people leaving at checkout, the change shipped, and Trace measured it: checkout conversion went from 39.3% to 57.3%, 326 sessions before and 316 after.</p>
+      <span class="card-text">The demo shop: simulated traffic, the real product.</span>
+      <a class="more" data-trace-event="open_demo" data-trace-props='{"place":"switching"}' href="/demo/">Try the demo shop</a>
+    </div>
+  </section>
+
+  <section class="wrap faq-section" aria-labelledby="faq-title">
+    <h2 id="faq-title" class="display">Questions replay customers ask</h2>
+    <div class="grid-auto faq" style="--min: 320px">
+      <div class="card"><h3>Will two scripts slow the site down?</h3><span class="card-text">Trace's collector is 8.3 KB, only takes notes while the page is busy, and does its work when the browser is idle. A test fails our build if it grows past that.</span></div>
+      <div class="card"><h3>Do we need a coding agent?</h3><span class="card-text">No. The dashboard finds and ranks problems on its own, and every insight is a task you can hand to a developer. An agent makes the setup and the fix faster.</span></div>
+      <div class="card"><h3>We already have a consent tool. Does Trace need it?</h3><span class="card-text">By default Trace stores nothing on the device. If your policy is to load nothing before consent anyway, switch it to wait for your consent tool.</span></div>
+      <div class="card"><h3>What does it cost?</h3><span class="card-text">Hosted starts free, and paid plans are set with you. Or self-host the open-source edition with no limits. <a href="pricing.html">See pricing</a></span></div>
+    </div>
+  </section>
+
+  <section class="wrap cta-section">
+    <div class="cta">
+      <div class="cta-copy">
+        <h2 class="display section-title-lg">Run it beside yours for a month.</h2>
+        <p class="lede">Then keep the one that got things fixed.</p>
+      </div>
+      <a data-trace="start-switch-end" data-trace-props='{"place":"switching"}' class="btn btn-primary" href="https://app.tracetells.com/#/signup" data-app-link data-trace-event="start_free">Start free</a>
+    </div>
+  </section>
+</main>
+
+<footer id="help" class="site-footer">
+  <div class="wrap footer-inner">
+    <span>Trace · tracetells.com</span>
+    <nav aria-label="Help">
+      <a data-trace-event="read_docs" data-trace-props='{"topic":"privacy"}' href="https://github.com/dobrinov/tracetells#privacy-and-sensitive-data">Help: privacy</a>
+      <a data-trace-event="read_docs" data-trace-props='{"topic":"performance"}' href="https://github.com/dobrinov/tracetells#performance">Help: performance</a>
+      <a data-trace-event="read_docs" data-trace-props='{"topic":"install"}' href="https://github.com/dobrinov/tracetells#install-the-collector">Install the collector</a>
+      <a data-trace-event="read_docs" data-trace-props='{"topic":"contributing"}' href="https://github.com/dobrinov/tracetells#contributing">Contributing</a>
+      <a data-trace-event="read_docs" data-trace-props='{"topic":"security"}' href="https://github.com/dobrinov/tracetells/blob/main/SECURITY.md">Security</a>
+      <a data-trace-event="open_demo" data-trace-props='{"place":"footer"}' href="/demo/">Demo shop</a>
+      <a data-trace-event="view_public" data-trace-props='{"view":"site"}' href="https://app.tracetells.com/p/JeAQW-f1JsGQF5FA8_ILQc2NaXEZ220n" target="_blank" rel="noopener">This site's analytics</a>
+      <a href="privacy.html">Privacy policy</a>
+      <a href="terms.html">Terms</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var root = document.documentElement, key = 'trace-theme';
+  var app = document.body.getAttribute('data-app-url');
+  if (app) document.querySelectorAll('a[data-app-link]').forEach(function (a) { a.href = app; });
+  var group = document.querySelector('.theme-switch');
+  if (!group) return;
+  var buttons = group.querySelectorAll('button[data-theme-choice]');
+  function sync() {
+    var current = root.getAttribute('data-theme') || 'system';
+    buttons.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.themeChoice === current)); });
+  }
+  buttons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var choice = b.dataset.themeChoice;
+      if (choice === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', choice);
+      try { if (choice === 'system') localStorage.removeItem(key); else localStorage.setItem(key, choice); } catch (e) {}
+      sync();
+    });
+  });
+  group.hidden = false;
+  sync();
+})();
+</script>
+</body>
+</html>
