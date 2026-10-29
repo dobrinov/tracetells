@@ -112,6 +112,7 @@ Put a `trace.json` at the root of your application's repository:
 
 ```json
 {
+  "site": "stride",
   "product": "Stride",
   "events": {
     "add_to_cart": "A shopper added a pair of shoes to the cart",
@@ -147,6 +148,8 @@ Then validate and publish:
 trace check                     # validate; non-zero exit on errors, so it can gate CI
 trace push --server https://trace.example.com --token "$TRACE_ADMIN_TOKEN"
 ```
+
+**Which website.** `"site"` names the Trace website this repository is (its identifier, as `list_sites` shows it), and `"server"` the Trace server when it isn't the hosted one. Your agent reads them first, so any session in this repository works on the right website; `trace push` uses them when `--site` and `--server` aren't given; and applying the file to a different website is refused. Which account is chosen when you connect your agent: ask it "which Trace account am I connected to?" (`get_connection`), and connect again to work in another.
 
 `check` reports every problem with its location, e.g. `kpis.checkout.conversion.from: unknown event type "pagview"`. `push` records the git commit it came from. KPIs are matched by key, so editing one keeps its history and the insights linked to it. A KPI removed from the file is archived; released insights that targeted it are still evaluated. When self-hosting, `trace serve --config trace.json` applies the file at startup and again whenever it changes.
 

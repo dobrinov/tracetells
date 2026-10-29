@@ -20,7 +20,8 @@ Trace is privacy-first web analytics for improving a website's UX. It studies ag
 patterns (never individual people) and turns them into improvement insights tied to the team's KPIs.
 
 Setting up (new account or website), all of it can be done here:
-a. add_site if the account has no website for this codebase yet (list_sites shows them).
+a. add_site if the account has no website for this codebase yet (list_sites shows them), and put its identifier in \
+trace.json as \"site\".
 b. get_install_snippet, and add the script tag to the app's HTML in this codebase: every page, before </head>.
 c. Write trace.json in the repository (KPIs and the custom events the code sends with trace.track), check_config it, \
 then push_config to apply it.
@@ -28,8 +29,13 @@ d. Look for screens that show customer data (account pages, admin tools, order d
 data-trace-mask, or add privacy rules with add_privacy_rule. Show the person what you changed.
 e. Deploy, then get_setup_status until events arrive.
 
+Which website: a repository's trace.json names its Trace website under \"site\" (and its server under \"server\"). Read it \
+first and pass it as `site` to every tool. Without one, list_sites, ask the person which website this codebase is (or \
+add_site), and write \"site\" into trace.json so the next session knows. get_connection says which account and server this \
+connection is for: a website in another account needs a new connection.
+
 A typical loop:
-0. If the account has several websites, list_sites and pass `site` to the other tools.
+0. Find the website as above, and pass `site` to the other tools.
 1. get_overview to see KPIs against their targets and how many insights are waiting.
 2. To find new improvements yourself, use the analyse_website prompt (or follow it by hand): read \
 get_behaviour_summary, list_kpis and list_insights, dig in with query_behaviour, then draft_insights, show the drafts \
@@ -72,7 +78,13 @@ async fn site_for(ctx: &Context<'_>, args: &Value) -> anyhow::Result<Project> {
             .iter()
             .find(|s| s.slug == slug)
             .cloned()
-            .ok_or_else(|| anyhow::anyhow!("no website {slug:?} in this account; websites: {}", names())),
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no website {slug:?} in this account, the one this connection was approved for; websites here: {}. If {slug:?} is in another \
+                     of your accounts, reconnect (in Claude Code: /mcp, trace, Authenticate) and choose that account",
+                    names()
+                )
+            }),
         None => match sites.as_slice() {
             [only] => Ok(only.clone()),
             [] => anyhow::bail!("this account has no websites yet; add one with add_site"),
@@ -149,7 +161,7 @@ pub async fn handle(ctx: &Context<'_>, msg: &Value) -> Option<Value> {
 }
 
 fn tool(name: &str, title: &str, description: &str, mut properties: Value, required: &[&str], read_only: bool) -> Value {
-    if !matches!(name, "list_sites" | "check_config" | "add_site") {
+    if !matches!(name, "list_sites" | "check_config" | "add_site" | "get_connection") {
         properties["site"] = json!({
             "type": "string",
             "description": "The website's identifier (from list_sites); can be left out when the account has one website",
@@ -169,6 +181,16 @@ pub fn tools() -> Vec<Value> {
     let id = json!({ "type": "integer", "description": "Insight id, e.g. 12" });
     let statuses = json!(["new", "selected", "in_progress", "released", "dismissed"]);
     vec![
+        tool(
+            "get_connection",
+            "Where you're connected",
+            "Who this connection acts as and where: the Trace server, the account (the one chosen when the connection was approved), \
+             your role, whether it's read-only, and the account's websites. Each repository's trace.json names its website under \"site\": \
+             use that as `site`. If it isn't in this account, the person needs to reconnect and choose the right account.",
+            json!({}),
+            &[],
+            true,
+        ),
         tool(
             "list_sites",
             "Websites",
@@ -513,6 +535,20 @@ async fn kpi_values(ctx: &Context<'_>, p: i64, days: u32) -> anyhow::Result<Vec<
 
 async fn call(ctx: &Context<'_>, name: &str, args: &Value) -> anyhow::Result<ToolOutput> {
     let pool = ctx.pool;
+    if name == "get_connection" {
+        let account = db::account(pool, ctx.account_id).await?;
+        let sites = db::sites(pool, ctx.account_id).await?;
+        return Ok(ToolOutput::Json(json!({
+            "server": ctx.origin,
+            "account": { "id": account.id, "name": account.name },
+            "acting_as": ctx.actor,
+            "role": ctx.role,
+            "read_only": ctx.read_only,
+            "websites": sites.iter().map(|s| json!({ "site": s.slug, "name": s.name })).collect::<Vec<_>>(),
+            "note": "A repository's trace.json names its website under \"site\"; pass it as `site` to every tool. Another account needs a new connection: \
+                     in Claude Code, /mcp, choose trace, Authenticate, and pick that account.",
+        })));
+    }
     if name == "list_sites" {
         let mut out = Vec::new();
         for s in db::sites(pool, ctx.account_id).await? {
@@ -812,6 +848,7 @@ async fn call(ctx: &Context<'_>, name: &str, args: &Value) -> anyhow::Result<Too
                 _ => anyhow::bail!("`config` is required: the contents of trace.json"),
             };
             let parsed = config::parse(&text).map_err(|errors| anyhow::anyhow!("trace.json has problems:\n{}", errors.join("\n")))?;
+            config::check_target(&parsed.config, &site.as_ref().expect("a website tool").slug).map_err(anyhow::Error::msg)?;
             let report = config::apply(pool, p, &parsed, "mcp").await?;
             let detail = format!("mcp: {} created, {} updated, {} archived", report.created.len(), report.updated.len(), report.archived.len());
             trace_core::auth::audit_site(pool, ctx.account_id, Some(p), &ctx.actor, "config.pushed", &detail).await?;
@@ -1115,6 +1152,18 @@ Never try to identify a person: Trace has no per-person data, and insights are a
         site_obj = site.map(|s| format!("\"site\": \"{s}\"")).map(|s| format!(" with {{{s}}}")).unwrap_or_default(),
         site_note = site.map(|s| format!(" (with \"site\": \"{s}\")")).unwrap_or_default(),
     );
+    // Without a website named, the repository's trace.json says which one it is.
+    let text = if site.is_none() {
+        text.replacen(
+            "\n\n1. ",
+            "\n\nWhich website: read trace.json at the repository root; its \"site\" is this repository's Trace website, so pass it as \
+`site` to every tool below. Without one, call list_sites and, if there are several, ask the person which one, then add \
+\"site\" to trace.json. If it isn't in the list, get_connection shows which account this connection is for.\n\n1. ",
+            1,
+        )
+    } else {
+        text
+    };
     // One area: the same steps, aimed at its pages, features and problems.
     let text = match args.get("area").and_then(Value::as_str).map(str::trim).filter(|a| !a.is_empty()) {
         Some(area) => text.replacen(
@@ -1175,6 +1224,11 @@ mod tests {
         assert_eq!(names, ["acme", "docs"]);
         let other = handle(&ctx, &call("list_insights", json!({ "site": "bolt" }))).await.unwrap();
         assert_eq!(other["result"]["isError"], true, "account {} can't see {}", acme.id, bolt.id);
+        let whoami = handle(&ctx, &call("get_connection", json!({}))).await.unwrap();
+        let w = &whoami["result"]["structuredContent"];
+        assert_eq!((w["account"]["name"].as_str(), w["websites"].as_array().unwrap().len()), (Some("Acme"), 2));
+        let missing = handle(&ctx, &call("list_insights", json!({ "site": "bolt" }))).await.unwrap();
+        assert!(missing["result"]["content"][0]["text"].as_str().unwrap().contains("reconnect"), "{missing}");
 
         let denied = handle(&ctx, &call("update_insight_status", json!({ "site": "acme", "id": 1, "status": "selected" }))).await.unwrap();
         assert!(denied["result"]["content"][0]["text"].as_str().unwrap().contains("read-only"));

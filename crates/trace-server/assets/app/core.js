@@ -42,7 +42,14 @@ function html(strings, ...values) {
 
 // The dashboard shows; your coding agent changes things, over MCP. Wherever
 // there's something to do, the page says exactly what to ask it.
-function askAgent(command, label = "Ask your agent") {
+// In an account with several websites, a command says which one it's about;
+// the plugin's commands read "… on <site>" (and otherwise the repository's trace.json).
+function onSite(command) {
+  return project && sites.length > 1 ? `${command} on ${project.slug}` : command;
+}
+
+function askAgent(command, label = "Ask your agent", { site = true } = {}) {
+  if (site) command = onSite(command);
   return html`<div class="ask-agent"><span class="ask-label">${label}</span><code>${command}</code><button type="button" data-ask="${command}">Copy</button></div>`;
 }
 document.addEventListener("click", async (e) => {

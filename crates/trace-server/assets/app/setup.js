@@ -151,13 +151,17 @@ async function renderSetup() {
     <div class="copy-row"><pre class="snippet">${esc(mcpCommand)}</pre><button data-copy="${esc(mcpCommand)}">Copy</button></div>
     <p class="hint">Other MCP clients sign in the same way with:</p>
     <div class="copy-row"><pre class="snippet">${esc(mcpJson)}</pre><button data-copy="${esc(mcpJson)}">Copy</button></div>
-    <p class="hint">Connected apps appear under <a href="#/account">Account</a>, where you can disconnect them. Your agent sees only aggregated patterns, like this dashboard.</p>
+    <p class="hint">Each connection works in the account you choose when you approve it (you can belong to several). Its website comes from the repository's <code>trace.json</code> (below), so your agent always works on the right one; ask it "which Trace account and website am I connected to?" to check. Connected apps appear under <a href="#/account">Account</a>, where you can disconnect them. Your agent sees only aggregated patterns, like this dashboard.</p>
 
     <h2>2. What to ask it</h2>
     <p class="hint">With the plugin, these are commands; any MCP client understands the same requests in plain words.</p>
     ${table(
       [{ label: "To" }, { label: "Ask your agent" }, { label: "" }],
-      AGENT_JOBS.map(([what, command]) => [esc(what), `<code>${esc(command)}</code>`, html`<button type="button" class="quiet" data-ask="${command}">Copy</button>`])
+      AGENT_JOBS.map(([what, command]) => {
+        // Setting up and adding a website aren't about the website on screen.
+        const c = /^\/trace:setup$|add a website/.test(command) ? command : onSite(command);
+        return [esc(what), `<code>${esc(c)}</code>`, html`<button type="button" class="quiet" data-ask="${c}">Copy</button>`];
+      })
     )}
 
     <h2>3. The tag</h2>
@@ -172,7 +176,7 @@ async function renderSetup() {
     <div class="copy-row"><pre class="snippet">${esc(installs[installTab].code)}</pre><button data-copy="${esc(installs[installTab].code)}">Copy</button></div>
 
     <h2>4. Goals, events, funnels and areas</h2>
-    <p class="hint">They live in <code>trace.json</code> in your repository. <code>/trace:setup</code> writes it from your code; after editing, <code>/trace:manage push trace.json</code> applies it, or <code>trace push</code> from CI. Custom events are sent like this:</p>
+    <p class="hint">They live in <code>trace.json</code> in your repository, which starts with <code>"site": "${esc(project.slug)}"</code>: that's how your agent, in any session, knows the repository is ${esc(project.name)}. <code>/trace:setup</code> writes it from your code; after editing, <code>/trace:manage push trace.json</code> applies it, or <code>trace push</code> from CI. Custom events are sent like this:</p>
     <div class="copy-row"><pre class="snippet">${esc(custom)}</pre><button data-copy="${esc(custom)}">Copy</button></div>
 
     <h2>5. Hear when it's time to analyse</h2>

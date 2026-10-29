@@ -1,4 +1,5 @@
 {
+  "site": "app-tracetells-com",
   "product": "app.tracetells.com",
   "events": {
     "signed_up": "Created an account from the sign-up page",

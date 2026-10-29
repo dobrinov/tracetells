@@ -110,8 +110,9 @@
 
       <section id="config">
         <h2>trace.json</h2>
-        <p>Goals live in code, next to the events that feed them, and the dashboard only shows results. Validate with <code>trace check</code>, apply with <code>trace push</code>, ideally from CI on every merge.</p>
+        <p>Goals live in code, next to the events that feed them, and the dashboard only shows results. <code>"site"</code> names the Trace website this repository is, so your agent always works on the right one, in any session. Validate with <code>trace check</code>, apply with <code>trace push</code>, ideally from CI on every merge.</p>
         <pre class="snippet" tabindex="0">{
+  "site": "shop-example-com",
   "events": { "purchase": "Payment succeeded" },
   "kpis": {
     "checkout_conversion": {
@@ -138,6 +139,7 @@ trace push trace.json --server https://app.tracetells.com --token $TRACE_TOKEN</
           <li><code>/trace:setup</code> adds the tag and writes trace.json from your code. <code>/trace:analyse</code> finds what to fix (add an area's key to look at one part of the product). <code>/trace:fix 12</code> implements an insight.</li>
           <li><code>/trace:manage</code> does everything else: <code>release insight 12</code>, <code>dismiss insight 4: …</code>, <code>mask .account-summary</code>, <code>publish the public link</code>, <code>add a website called docs</code>, <code>push trace.json</code>. The dashboard is for looking, and shows the command wherever there's something to do.</li>
           <li>Other MCP clients connect to <code>https://app.tracetells.com/mcp</code> and sign in the same way.</li>
+          <li><strong>Which account and website:</strong> you pick the account when you approve the connection; connect again to work in another. The website comes from the repository's trace.json (<code>"site"</code>). Ask your agent "which Trace account and website am I connected to?" to check.</li>
           <li>Your agent sees the same aggregated summaries as the dashboard, never sessions or people, and analyses with its own model.</li>
         </ul>
       </section>

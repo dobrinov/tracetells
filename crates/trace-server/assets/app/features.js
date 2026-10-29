@@ -39,13 +39,13 @@ function problemLine(p) {
 
 // A prompt for a coding agent about one problem, so it can be handed over as a task.
 function problemTask(p, node) {
-  return `Trace measured a problem on ${project.name}${node ? ` in "${node.name}"` : ""} over the last ${featuresDays} days: ${(PROBLEM_KIND[p.kind] || p.kind).toLowerCase()} on ${p.path}: ${p.what}, in ${p.sessions} sessions.
+  return `Trace measured a problem on ${project.name} (Trace website "${project.slug}")${node ? ` in "${node.name}"` : ""} over the last ${featuresDays} days: ${(PROBLEM_KIND[p.kind] || p.kind).toLowerCase()} on ${p.path}: ${p.what}, in ${p.sessions} sessions.
 
 Find the cause in this codebase and fix it. Then use the trace MCP tools to save an insight for it (draft_insights, then save_insights) with the share of sessions hitting this problem as evidence to decrease, and mark it released when the fix ships, so Trace can tell whether it worked.`;
 }
 
 function analyseButton(key, primary = false, label = "Analyse this") {
-  const command = `${ANALYSE_COMMAND} ${key}`;
+  const command = onSite(`${ANALYSE_COMMAND} ${key}`);
   return html`<button type="button" class="${primary ? "primary" : ""}" data-copy="${command}" title="Copies ${command} for Claude Code">${label}</button>`;
 }
 
@@ -228,7 +228,7 @@ async function renderArea(key) {
         about.length
           ? html`<ul>${about.map((i) => html`<li><a href="${i.status === "released" ? "#/improve/releases" : "#/improve/insights"}">${i.title}</a> <span class="hint">${i.status.replace("_", " ")}</span></li>`)}</ul>`
           : html`<p class="hint">None yet. Analysing just this area gives your agent its pages, features and problems, and asks only about them.</p>`
-      }${PUBLIC ? "" : snippet(`${ANALYSE_COMMAND} ${area.key}`)}</div>
+      }${PUBLIC ? "" : snippet(onSite(`${ANALYSE_COMMAND} ${area.key}`))}</div>
     </div>`;
   wireCopy();
 }

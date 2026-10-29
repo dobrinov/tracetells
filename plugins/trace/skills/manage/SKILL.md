@@ -5,7 +5,11 @@ description: Do the day-to-day Trace work the dashboard only shows - pick, dismi
 
 # Manage Trace
 
-The Trace dashboard is for looking; changes happen here, through the `trace` MCP tools. Pass `site` when the account has several websites (`list_sites` shows them), and say what you changed when you're done.
+## Which website
+
+Read `trace.json` at the repository root: its `"site"` is this repository's Trace website, so pass it as `site` to every tool. If the request names one ("… on wunderkind-bg"), that wins. If neither does, call `list_sites`: with one website, use it; with several, ask the person which one this codebase is, then add `"site"` to trace.json so the next session knows. If the website isn't in the list, call `get_connection`: this connection is for another account, and the person needs to reconnect (`/mcp`, choose trace, Authenticate) and pick the right one.
+
+The Trace dashboard is for looking; changes happen here, through the `trace` MCP tools. Say what you changed when you're done.
 
 Do what the person asks, and nothing they didn't: never dismiss, release, publish, withdraw or remove on your own judgement.
 

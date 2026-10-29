@@ -33,8 +33,8 @@ function analysisPanel(a) {
     : a.agent_connected
       ? `<div class="analysis-how">
           <span>In Claude Code, run</span>
-          <code class="command">${ANALYSE_COMMAND}</code>
-          <button type="button" data-copy="${ANALYSE_COMMAND}">Copy</button>
+          <code class="command">${esc(onSite(ANALYSE_COMMAND))}</code>
+          <button type="button" data-copy="${esc(onSite(ANALYSE_COMMAND))}">Copy</button>
           <span class="hint">It shows you what it found; the insights you keep are saved here and this panel resets.</span>
         </div>`
       : `<div class="analysis-how">

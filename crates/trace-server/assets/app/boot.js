@@ -179,8 +179,8 @@ async function route() {
 
 // The header's "Analyse · N new": analysis runs in your agent, so this copies the command.
 document.getElementById("run-analysis").addEventListener("click", async () => {
-  if (await copyText(ANALYSE_COMMAND)) {
-    toast(`Copied ${ANALYSE_COMMAND}. Paste it into Claude Code; the insights it saves show up here.`);
+  if (await copyText(onSite(ANALYSE_COMMAND))) {
+    toast(`Copied ${onSite(ANALYSE_COMMAND)}. Paste it into Claude Code; the insights it saves show up here.`);
     measure("copied", { what: "analyse" });
   }
 });

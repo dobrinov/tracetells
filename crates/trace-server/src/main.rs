@@ -422,6 +422,9 @@ async fn run() -> Result<()> {
                 c.events.len(),
                 c.product.as_deref().map(|p| format!(", product \"{p}\"")).unwrap_or_default()
             );
+            if let Some(s) = &c.site {
+                println!("  website {s}{}", c.server.as_deref().map(|v| format!(" on {v}")).unwrap_or_default());
+            }
             for k in &c.kpis {
                 println!("  {:<24} {} ({})", k.key, k.name, k.definition.describe());
             }
@@ -442,14 +445,20 @@ async fn run() -> Result<()> {
                 println!("warning: {w}");
             }
         }
-        Command::Push { file, server, token } => match server {
-            Some(server) => push_remote(&file, &server, token.as_deref(), site).await?,
-            None => {
-                let target = db::resolve_site(&pool, site).await?;
-                let report = apply_file(&pool, target.id, &file).await?;
-                print_report(&report);
+        Command::Push { file, server, token } => {
+            // The file names its website and server; flags and the environment win.
+            let named = read_config(&file)?.config;
+            let site = site.or(named.site.as_deref());
+            match server.or(named.server.clone()) {
+                Some(server) => push_remote(&file, &server, token.as_deref(), site).await?,
+                None => {
+                    let target = db::resolve_site(&pool, site).await?;
+                    config::check_target(&named, &target.slug).map_err(anyhow::Error::msg)?;
+                    let report = apply_file(&pool, target.id, &file).await?;
+                    print_report(&report);
+                }
             }
-        },
+        }
         Command::Mcp { account } => {
             let account = resolve_account(&pool, account.as_deref()).await?;
             let ctx = mcp::Context {

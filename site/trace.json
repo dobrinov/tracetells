@@ -1,4 +1,5 @@
 {
+  "site": "tracetells-com",
   "product": "tracetells.com",
   "events": {
     "start_free": "Clicked a Start free button, which opens sign-up on app.tracetells.com. Props: place (header, hero, pricing)",

@@ -38,6 +38,13 @@ pub const DEFAULT_FILE: &str = "trace.json";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Config {
+    /// The Trace website this repository is, by its identifier (e.g. "wunderkind-bg"):
+    /// agents and `trace push` use it, and applying the file to another website is refused.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub site: Option<String>,
+    /// The Trace server it lives on, for self-hosted servers and `trace push`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
     pub product: Option<String>,
     /// Custom event name → what it means.
     pub events: BTreeMap<String, String>,
@@ -89,6 +96,16 @@ struct Parser {
     warnings: Vec<String>,
 }
 
+/// Refuses to apply a trace.json that names another website: a repository is one website.
+pub fn check_target(config: &Config, site_slug: &str) -> Result<(), String> {
+    match &config.site {
+        Some(s) if s != site_slug => Err(format!(
+            "this trace.json is for the website \"{s}\", not \"{site_slug}\": apply it to \"{s}\", or change \"site\" in the file if this repository really is \"{site_slug}\""
+        )),
+        _ => Ok(()),
+    }
+}
+
 /// One event matcher, in trace.json's shorthand (`{ "pageview": "/checkout" }`)
 /// or full form (`{ "type": "click", "selector": "button#pay" }`), for queries
 /// and insight evidence. Errors are prefixed with `at`.
@@ -118,12 +135,22 @@ impl Parser {
     }
 
     fn root(&mut self, root: &Value) -> Config {
-        let mut config = Config { product: None, events: BTreeMap::new(), kpis: Vec::new(), funnels: Vec::new(), audience: None, areas: Vec::new() };
+        let mut config = Config { site: None, server: None, product: None, events: BTreeMap::new(), kpis: Vec::new(), funnels: Vec::new(), audience: None, areas: Vec::new() };
         let Some(obj) = self.object(root, "(root)") else { return config };
         for key in obj.keys() {
-            if !matches!(key.as_str(), "$schema" | "product" | "events" | "kpis" | "funnels" | "audience" | "areas") {
-                self.err(key, "unknown key (expected product, events, kpis, funnels, audience or areas)");
+            if !matches!(key.as_str(), "$schema" | "site" | "server" | "product" | "events" | "kpis" | "funnels" | "audience" | "areas") {
+                self.err(key, "unknown key (expected site, server, product, events, kpis, funnels, audience or areas)");
             }
+        }
+        match obj.get("site") {
+            None => {}
+            Some(Value::String(s)) if valid_name(s.trim(), 64) && !s.trim().contains(['.', ':', '_']) => config.site = Some(s.trim().to_string()),
+            Some(_) => self.err("site", "expected the website's identifier, e.g. \"shop-example-com\" (list_sites shows it)"),
+        }
+        match obj.get("server") {
+            None => {}
+            Some(Value::String(s)) if s.starts_with("https://") || s.starts_with("http://") => config.server = Some(s.trim().trim_end_matches('/').to_string()),
+            Some(_) => self.err("server", "expected the Trace server's address, e.g. \"https://app.tracetells.com\""),
         }
         match obj.get("product") {
             None => {}
@@ -686,6 +713,16 @@ mod tests {
         assert!(all.contains("kpis.a.conversion.to: missing event matcher"), "{all}");
         assert!(all.contains("kpis.a.goal: required"), "{all}");
         assert!(all.contains("kpis.b.target: 55 is not a rate"), "{all}");
+    }
+
+    #[test]
+    fn names_its_website_and_refuses_another() {
+        let ok = parse(r#"{ "site": "shop-example-com", "server": "https://trace.example.com/", "kpis": { "k": { "session_rate": { "error": "*" }, "goal": "decrease" } } }"#).unwrap();
+        assert_eq!((ok.config.site.as_deref(), ok.config.server.as_deref()), (Some("shop-example-com"), Some("https://trace.example.com")));
+        assert!(check_target(&ok.config, "shop-example-com").is_ok());
+        assert!(check_target(&ok.config, "docs").unwrap_err().contains("for the website \"shop-example-com\""));
+        let all = parse(r#"{ "site": "Shop Example", "server": "trace.example.com" }"#).unwrap_err().join("\n");
+        assert!(all.contains("site: expected the website's identifier") && all.contains("server: expected"), "{all}");
     }
 
     #[test]

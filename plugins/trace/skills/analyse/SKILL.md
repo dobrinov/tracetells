@@ -5,9 +5,13 @@ description: Analyse a website measured with Trace and find the few UX changes m
 
 # Analyse a website with Trace
 
+## Which website
+
+Read `trace.json` at the repository root: its `"site"` is this repository's Trace website, so pass it as `site` to every tool. If the request names one ("… on wunderkind-bg"), that wins. If neither does, call `list_sites`: with one website, use it; with several, ask the person which one this codebase is, then add `"site"` to trace.json so the next session knows. If the website isn't in the list, call `get_connection`: this connection is for another account, and the person needs to reconnect (`/mcp`, choose trace, Authenticate) and pick the right one.
+
 <!-- Keep in step with the analyse_website prompt in crates/trace-server/src/mcp.rs. -->
 
-Use the `trace` MCP tools. If the account has several websites, ask which one (or use the one this codebase sets up) and pass `site` to every tool.
+Use the `trace` MCP tools.
 
 If the person names an area or feature (for example `/trace:analyse catalogue`, as the Features page suggests), analyse only that part of the product: call `get_areas` first, find the area or feature with that key, and in every step below look only at its pages and draft insights only about it. If no area has that key, say so and list the keys `get_areas` returns.
 

@@ -595,6 +595,7 @@ async fn push_config(
     body: String,
 ) -> ApiResult<Json<Value>> {
     let parsed = config::parse(&body).map_err(|errors| ApiError(StatusCode::UNPROCESSABLE_ENTITY, errors.join("\n")))?;
+    config::check_target(&parsed.config, &site.slug).map_err(|e| ApiError(StatusCode::UNPROCESSABLE_ENTITY, e))?;
     let source = headers
         .get("x-trace-source")
         .and_then(|v| v.to_str().ok())
