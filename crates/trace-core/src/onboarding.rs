@@ -48,6 +48,7 @@ pub async fn checklist(pool: &Pool, site: &Project) -> Result<Checklist> {
             .await?;
 
     let insights: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM insights WHERE project_id = $1").bind(site.id).fetch_one(pool).await?;
+    let server_errors: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM error_groups WHERE project_id = $1").bind(site.id).fetch_one(pool).await?;
 
     // The agent first: it does everything after (the tag, trace.json, analysis).
     // Then three outcomes, each checked against what Trace sees: data arrives,
@@ -60,6 +61,7 @@ pub async fn checklist(pool: &Pool, site: &Project) -> Result<Checklist> {
         step("insight", analysed_at.is_some() || insights > 0, false),
         step("privacy", reviewed_at.is_some() || rules > 0, true),
         step("team", people > 1 || invites > 0, true),
+        step("server_errors", server_errors > 0, true),
     ];
     let required: Vec<&Step> = steps.iter().filter(|s| !s.optional).collect();
     let done = required.iter().filter(|s| s.done).count();
@@ -121,7 +123,10 @@ mod tests {
         crate::readiness::mark_analysed(&pool, site.id, "Claude Code").await.unwrap();
         let solo = checklist(&pool, &site).await.unwrap();
         assert!(solo.complete, "the privacy and team steps are optional");
-        assert!(!done(&solo, "team") && !done(&solo, "privacy"));
+        assert!(!done(&solo, "team") && !done(&solo, "privacy") && !done(&solo, "server_errors"));
+        let e = crate::errors::clean(serde_json::json!({ "class": "Boom" }), &Default::default(), now_ms()).unwrap();
+        crate::errors::store(&pool, site.id, &[e]).await.unwrap();
+        assert!(done(&checklist(&pool, &site).await.unwrap(), "server_errors"), "ticks on the first server error");
 
         confirm_privacy_review(&pool, site.id, "a@acme.example").await.unwrap();
         assert!(done(&checklist(&pool, &site).await.unwrap(), "privacy"));

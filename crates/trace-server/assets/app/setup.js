@@ -274,6 +274,7 @@ const START_STEPS = {
   insight: "Get your first insight",
   privacy: "Check what's protected",
   team: "Invite your team",
+  server_errors: "Track server errors",
 };
 
 let checklist = null;
@@ -363,6 +364,11 @@ async function renderStart() {
         <li>Ask it to set things up:<div class="copy-row" style="margin-top: 8px"><pre class="snippet wrap">${esc(setupPrompt)}</pre><button data-copy="${esc(setupPrompt)}">Copy</button></div></li>
       </ol>
       <p class="hint">This step ticks off once your agent connects. Then, in your website's repository, run <code>/trace:setup</code>: it adds the tag, writes trace.json (naming this website, <code>${esc(project.slug)}</code>) and applies it. Other MCP clients sign in the same way with <code>${esc(location.origin)}/mcp</code> and understand the same request in plain words. Rather add the tag by hand? The next step shows it.</p>`,
+    server_errors: () => html`
+      <h1>Track server errors</h1>
+      <p class="sub">Optional. With the tracetells client on your server (Rust, Node.js or Ruby), Trace also shows what fails there: the exception, where in your code, on which routes, since which release, and how many visits it broke in the browser. It sends error facts only, never request bodies, parameters, headers, cookies or who was signed in.</p>
+      ${askAgent("/trace:setup server errors", "Ask your agent")}
+      <p class="hint">It installs the client for your stack, creates the website's server key and tells you where to put it. This step ticks off when the first error arrives. <a href="${pageUrl("errors")}/server">Server errors</a></p>`,
     team: () => `
       <h1>Invite your team</h1>
       <p class="sub">Optional. Users work with insights and analysis; admins also manage the team, websites, security and privacy rules. You can require two-step verification for everyone.</p>

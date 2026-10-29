@@ -265,7 +265,10 @@ pub fn redact_frame(file: &str) -> String {
     } else {
         f.rsplit('/').next().unwrap_or("").to_string()
     };
-    truncate(&crate::privacy::redact_text(&rel, false), 200)
+    // Paths are code locations: long version strings look like tokens to
+    // the text scrubber, so only segments that hold an email are replaced.
+    let rel: Vec<&str> = rel.split('/').map(|seg| if seg.contains('@') { ":email" } else { seg }).collect();
+    truncate(&rel.join("/"), 200)
 }
 
 /// The class and the first frame of the application's own code, without line

@@ -96,6 +96,7 @@ const APP_SCRIPTS: &[(&str, &str)] = &[
     ("analysis", include_str!("../assets/app/analysis.js")),
     ("home", include_str!("../assets/app/home.js")),
     ("pages", include_str!("../assets/app/pages.js")),
+    ("errors", include_str!("../assets/app/errors.js")),
     ("setup", include_str!("../assets/app/setup.js")),
     ("accounts", include_str!("../assets/app/accounts.js")),
     ("settings", include_str!("../assets/app/settings.js")),
@@ -1013,6 +1014,8 @@ mod isolation_tests {
         ("POST", "evaluate"), ("GET", "privacy"), ("POST", "privacy/rules"),
         ("POST", "privacy/rules/1"), ("DELETE", "privacy/rules/1"), ("POST", "privacy/test"),
         ("GET", "onboarding"), ("POST", "onboarding/privacy-reviewed"), ("GET", "analysis"),
+        ("GET", "errors"), ("GET", "errors/1"), ("GET", "errors/1/prompt"), ("POST", "errors/1/status"),
+        ("GET", "server-key"), ("POST", "server-key"), ("DELETE", "server-key"),
     ];
 
     async fn app() -> (tower::util::MapRequest<Router, fn(Request) -> Request>, AppStateRef, String) {
@@ -1243,6 +1246,59 @@ mod isolation_tests {
         assert_eq!(stored, 5);
         let u = trace_core::usage::get(&state.pool, acme.id, &trace_core::usage::this_month()).await.unwrap();
         assert_eq!((u.events, u.events_dropped), (5, 4));
+        trace_core::db::drop_test_target(&path).await;
+    }
+
+    #[tokio::test]
+    async fn server_errors_need_the_server_key_and_an_admin() {
+        let (app, state, path) = app().await;
+        let (acme, shop) = db::create_account_with_site(&state.pool, "Shop", None).await.unwrap();
+        let owner = person(&state, acme.id, "owner@acme.example", Role::Owner).await;
+        let user = person(&state, acme.id, "user@acme.example", Role::User).await;
+        // Three occurrences a month, for the last part (quotas are read once a minute).
+        trace_core::plans::set_overrides(&state.pool, acme.id, &[("monthly_events".to_string(), Some(3))].into_iter().collect()).await.unwrap();
+        let send = |req: Request| {
+            let app = app.clone();
+            async move {
+                let res = app.oneshot(req).await.unwrap();
+                let status = res.status();
+                let body = axum::body::to_bytes(res.into_body(), 1 << 22).await.unwrap();
+                (status, serde_json::from_slice::<Value>(&body).unwrap_or(Value::Null))
+            }
+        };
+        let key_url = format!("/api/sites/{}/server-key", shop.slug);
+        let (status, _) = send(json_req("POST", &key_url, ("cookie", &user), json!({}))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "users can't create the key");
+        let (status, created) = send(json_req("POST", &key_url, ("cookie", &owner), json!({}))).await;
+        assert_eq!(status, StatusCode::OK, "{created}");
+        let secret = created["secret"].as_str().unwrap().to_string();
+        let (_, seen) = send(json_req("GET", &key_url, ("cookie", &user), json!({}))).await;
+        assert!(seen["key"]["prefix"].is_string() && !seen.to_string().contains(&secret), "the key is shown once");
+
+        let report = |key: &str, body: Value| {
+            Request::builder().method("POST").uri("/v1/errors").header("authorization", format!("Bearer {key}")).body(axum::body::Body::from(body.to_string())).unwrap()
+        };
+        let one = json!({ "errors": [{ "class": "Boom", "message": "for anna@example.com", "route": "/orders/123", "status": 500, "headers": { "cookie": "s=1" } }] });
+        assert_eq!(send(report(&shop.write_key, one.clone())).await.0, StatusCode::UNAUTHORIZED, "the public write key");
+        let (status, answer) = send(report(&secret, one)).await;
+        assert_eq!((status, answer["accepted"].as_i64()), (StatusCode::ACCEPTED, Some(1)));
+        let (_, list) = send(json_req("GET", &format!("/api/sites/{}/errors", shop.slug), ("cookie", &user), json!({}))).await;
+        let group = &list["groups"][0];
+        assert_eq!((group["message"].as_str(), group["routes"][0]["route"].as_str()), (Some("for [email]"), Some("/orders/:id")));
+        assert!(!list.to_string().contains("cookie"));
+        let status_url = format!("/api/sites/{}/errors/{}/status", shop.slug, group["id"]);
+        assert_eq!(send(json_req("POST", &status_url, ("cookie", &user), json!({ "status": "resolved" }))).await.0, StatusCode::FORBIDDEN);
+        assert_eq!(send(json_req("POST", &status_url, ("cookie", &owner), json!({ "status": "resolved", "release": "v2" }))).await.0, StatusCode::NO_CONTENT);
+
+        // Over the monthly limit: answered, counted, not stored.
+        let many = json!({ "errors": [{ "class": "Storm", "count": 10 }] });
+        let (status, answer) = send(report(&secret, many)).await;
+        assert_eq!((status, answer["over_limit"].as_i64()), (StatusCode::ACCEPTED, Some(8)), "{answer}");
+        let stored: i64 = sqlx::query_scalar("SELECT CAST(SUM(count) AS BIGINT) FROM error_counts").fetch_one(&state.pool).await.unwrap();
+        assert_eq!(stored, 3, "one Boom, then two of ten");
+
+        assert_eq!(send(json_req("DELETE", &key_url, ("cookie", &owner), json!({}))).await.0, StatusCode::NO_CONTENT);
+        assert_eq!(send(report(&secret, json!({ "errors": [] }))).await.0, StatusCode::UNAUTHORIZED, "a revoked key");
         trace_core::db::drop_test_target(&path).await;
     }
 

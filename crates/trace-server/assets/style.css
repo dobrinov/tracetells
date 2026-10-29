@@ -498,7 +498,9 @@ input[type="radio"] {
   overflow-x: auto;
 }
 
-.tabs button {
+.tabs button,
+.tabs a {
+  text-decoration: none;
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 0;
@@ -507,7 +509,8 @@ input[type="radio"] {
   padding: 8px 12px;
 }
 
-.tabs button.active {
+.tabs button.active,
+.tabs a.active {
   color: var(--text);
   border-bottom-color: var(--text);
   font-weight: 600;
@@ -2291,4 +2294,35 @@ nav.breadcrumb a {
 }
 .card .actions .ask-agent {
   margin: 0;
+}
+
+/* ---- errors ---- */
+.toolbar-fields {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.daybars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 52px;
+  margin-bottom: 8px;
+}
+.daybars span {
+  flex: 1;
+  min-width: 4px;
+  background: var(--accent, var(--text));
+  border-radius: 2px 2px 0 0;
+  opacity: 0.8;
+}
+pre.backtrace {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.6;
+}
+pre.backtrace .muted {
+  color: var(--muted);
 }

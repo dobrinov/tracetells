@@ -49,6 +49,7 @@ fn step_name(key: &str) -> &'static str {
         "agent" => "connect your coding agent",
         "privacy" => "check what's protected",
         "team" => "invite your team",
+        "server_errors" => "track server errors",
         _ => "the next setup step",
     }
 }

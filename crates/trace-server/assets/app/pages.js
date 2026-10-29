@@ -1,6 +1,6 @@
 "use strict";
 
-// Pages and Errors: the behaviour summary.
+// Pages: the behaviour summary. Errors have their own script (errors.js).
 // The dashboard is plain scripts loaded in order (see index.html); they share one scope.
 
 // ---------------------------------------------------------------- Behaviour
@@ -76,28 +76,5 @@ async function renderBehaviour() {
     digestDays = Number(e.target.value);
     store("trace_days", String(digestDays));
     renderBehaviour();
-  });
-}
-
-async function renderErrors() {
-  const d = await api(`/digest?days=${digestDays}`);
-  const total = d.errors.reduce((n, e) => n + e.sessions, 0);
-  view.innerHTML = `
-    <div class="toolbar">
-      <div><h1>Errors</h1><p class="sub">Exceptions, console errors, failed requests and missing files that visitors hit, with the page and how many sessions each one reached.</p></div>
-      <label class="field narrow">Window
-        <select id="days">${[1, 7, 14, 30, 90].map((n) => `<option value="${n}" ${n === digestDays ? "selected" : ""}>Last ${n} day${n > 1 ? "s" : ""}</option>`).join("")}</select>
-      </label>
-    </div>
-    ${d.errors.length ? `<div class="stats">${stat(num(d.errors.length), "Different errors")}${stat(num(total), "Sessions hit", `of ${num(d.totals.sessions)}`)}</div>` : ""}
-    ${table(
-      [{ label: "Kind" }, { label: "Message" }, { label: "Page" }, { label: "Source" }, { label: "Count", num: 1 }, { label: "Sessions", num: 1 }],
-      d.errors.map((e) => [`<span class="chip">${esc(e.kind)}</span>`, esc(e.message), esc(e.path), e.source ? `<code>${esc(e.source)}</code>` : "", num(e.count), num(e.sessions)]),
-      "No errors: no exceptions, console errors, failed requests or missing files."
-    )}`;
-  view.querySelector("#days").addEventListener("change", (e) => {
-    digestDays = Number(e.target.value);
-    store("trace_days", String(digestDays));
-    renderErrors();
   });
 }
