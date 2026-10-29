@@ -48,10 +48,10 @@
 
 ## 7. Ruby client (`clients/ruby`, gem `tracetells`)
 
-- [ ] 7.1 Config and `TRACE_*` env, no-op, background sender with `Thread::Queue`, at_exit flush
-- [ ] 7.2 `Tracetells::Rack` middleware; Rails Railtie subscribing to `Rails.error` with route patterns; `Tracetells.report(e)`
-- [ ] 7.3 Scrubbing from the shared test vectors; tests with a Rack app that params, headers, cookies and sessions are never sent
-- [ ] 7.4 README
+- [x] 7.1 Config and `TRACE_*` env, no-op, background sender with `Thread::Queue`, at_exit flush
+- [x] 7.2 `Tracetells::Rack` middleware; Rails Railtie subscribing to `Rails.error` with route patterns; `Tracetells.report(e)`
+- [x] 7.3 Scrubbing from the shared test vectors; tests with a Rack app that params, headers, cookies and sessions are never sent
+- [x] 7.4 README
 
 ## 8. Agent, docs and release
 

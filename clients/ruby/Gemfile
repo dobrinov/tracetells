@@ -1,0 +1,10 @@
+source "https://rubygems.org"
+gemspec
+
+group :test do
+  gem "minitest"
+  gem "rack"
+  gem "rake"
+  gem "railties"
+  gem "actionpack"
+end
