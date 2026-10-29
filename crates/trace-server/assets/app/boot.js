@@ -19,7 +19,7 @@ async function bootPublic() {
   document.getElementById("collect-status").removeAttribute("href");
   const notice = document.getElementById("notice");
   notice.hidden = false;
-  notice.innerHTML = `<div><span><strong>A public, read-only view of ${esc(project.name)}.</strong> Trace studies patterns, not people: everything here is aggregated, and rows from fewer than ${project.suppressed_below} sessions are left out.</span> <a href="https://tracetells.com/">What is Trace?</a></div>`;
+  notice.innerHTML = `<div><span><strong>A public, read-only view of ${esc(project.name)}.</strong> Trace studies patterns, not people: everything here is aggregated, and rows from fewer than ${project.suppressed_below} sessions are left out.${project.simulated ? " Most visits here are simulated shoppers, so the numbers look like a busy shop's; your own clicks in the shop add to them within a minute." : ""}</span> <a href="https://tracetells.com/">What is Trace?</a></div>`;
   route();
 }
 

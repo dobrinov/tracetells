@@ -366,3 +366,52 @@ CREATE TABLE IF NOT EXISTS privacy_rules (
   created_by TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+
+-- Secret keys a website's servers send errors with (POST /v1/errors), separate
+-- from the public write key. Stored hashed; at most one active per website.
+CREATE TABLE IF NOT EXISTS server_keys (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  prefix TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_used_at INTEGER,
+  revoked_at INTEGER
+);
+
+-- Server errors, grouped by fingerprint. Only the latest sample backtrace is
+-- kept; individual occurrences never are. status: open | resolved | ignored.
+CREATE TABLE IF NOT EXISTS error_groups (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL,
+  fingerprint TEXT NOT NULL,
+  class TEXT NOT NULL,
+  message TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  first_seen INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  first_release TEXT,
+  last_release TEXT,
+  resolved_at INTEGER,
+  resolved_in_release TEXT,
+  resolved_by TEXT,
+  regressed_in_release TEXT,
+  sample TEXT NOT NULL,
+  sampled_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS error_groups_project_fingerprint ON error_groups(project_id, fingerprint);
+
+-- How often each group happened, per hour, route, method, status, environment
+-- and release. Empty strings stand for "not sent", so the key stays unique.
+CREATE TABLE IF NOT EXISTS error_counts (
+  group_id INTEGER NOT NULL,
+  hour INTEGER NOT NULL,
+  route TEXT NOT NULL DEFAULT '',
+  method TEXT NOT NULL DEFAULT '',
+  status INTEGER NOT NULL DEFAULT 0,
+  environment TEXT NOT NULL DEFAULT '',
+  release_name TEXT NOT NULL DEFAULT '',
+  count INTEGER NOT NULL,
+  PRIMARY KEY (group_id, hour, route, method, status, environment, release_name)
+);

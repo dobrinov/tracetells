@@ -50,6 +50,8 @@ pub struct AppState {
     /// Measuring this dashboard with Trace: a website's write key, and the
     /// secret that hashes people's ids (`TRACE_DASHBOARD_KEY` / `_SECRET`).
     pub dashboard_analytics: Option<(String, String)>,
+    /// The website that gets simulated shoppers (`TRACE_DEMO_SITE`); its public view says so.
+    pub demo_site: Option<i64>,
     /// Heavy reports served from memory; see [`crate::cache`].
     pub reports: Arc<crate::cache::Reports>,
 }
@@ -75,6 +77,7 @@ impl AppState {
             collectors: Default::default(),
             quotas: Default::default(),
             dashboard_analytics: None,
+            demo_site: None,
             reports: Default::default(),
         }
     }
@@ -142,6 +145,7 @@ pub fn router(state: AppStateRef) -> Router {
         .route("/releases", post(record_release))
         .route("/query", get(query_get).post(query_post))
         .merge(crate::public::admin_routes())
+        .merge(crate::errors_api::site_routes())
         .route("/evaluate", post(run_evaluate))
         .route("/analysis", get(get_analysis))
         .route("/privacy", get(get_privacy))
@@ -165,6 +169,7 @@ pub fn router(state: AppStateRef) -> Router {
         .nest("/api", api)
         .route("/mcp", post(mcp_http).get(|| async { (StatusCode::METHOD_NOT_ALLOWED, "this MCP endpoint takes POST requests") }))
         .merge(collector)
+        .merge(crate::errors_api::ingest_routes())
         .merge(crate::oauth::routes())
         .merge(crate::public::routes())
         .with_state(state)
@@ -406,7 +411,7 @@ pub struct Quota {
 }
 
 /// How many of `n` events an account may still record this month.
-async fn take_events(state: &AppState, account: i64, n: i64) -> anyhow::Result<i64> {
+pub(crate) async fn take_events(state: &AppState, account: i64, n: i64) -> anyhow::Result<i64> {
     let now = trace_core::util::now_ms();
     let month = trace_core::usage::month_of(now);
     let cached = state.quotas.lock().unwrap().get(&account).cloned();
@@ -491,7 +496,7 @@ async fn collect(
 }
 
 /// Returns events taken by [`take_events`] that weren't stored after all.
-fn give_back_events(state: &AppState, account: i64, n: i64) {
+pub(crate) fn give_back_events(state: &AppState, account: i64, n: i64) {
     if let Some(q) = state.quotas.lock().unwrap().get_mut(&account) {
         q.used = (q.used - n).max(0);
     }

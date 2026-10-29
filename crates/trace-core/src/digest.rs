@@ -20,6 +20,9 @@ pub struct Digest {
     pub rage_clicks: Vec<ClickStat>,
     pub dead_clicks: Vec<ClickStat>,
     pub errors: Vec<ErrorStat>,
+    /// Open errors from the website's servers (see [`crate::errors`]), most harmful first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub server_errors: Vec<ServerErrorStat>,
     pub forms: Vec<FormStat>,
     /// Custom events seen in the window, plus declared events that never arrived.
     pub custom_events: Vec<EventStat>,
@@ -100,6 +103,22 @@ pub struct ErrorStat {
     pub path: String,
     pub count: i64,
     pub sessions: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ServerErrorStat {
+    pub id: i64,
+    pub class: String,
+    pub message: String,
+    /// `GET /api/reviews/:id → 500`, the busiest first.
+    pub routes: Vec<String>,
+    pub occurrences: i64,
+    /// Browser visits where the same request failed, and their pages.
+    pub visits_broken: i64,
+    pub pages: Vec<String>,
+    pub new: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub regressed_in_release: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -350,6 +369,24 @@ pub async fn build(pool: &Pool, project_id: i64, days: u32) -> Result<Digest> {
         rage_clicks,
         dead_clicks,
         errors,
+        server_errors: crate::errors::report(pool, p, days.min(90), None, false)
+            .await?
+            .groups
+            .into_iter()
+            .filter(|g| g.status == "open")
+            .take(15)
+            .map(|g| ServerErrorStat {
+                routes: g.routes.iter().map(|r| format!("{} {} \u{2192} {}", r.method, r.route, r.status).trim().to_string()).collect(),
+                pages: g.impact.pages.into_iter().map(|(p, _)| p).collect(),
+                id: g.id,
+                class: g.class,
+                message: g.message,
+                occurrences: g.occurrences,
+                visits_broken: g.impact.visits,
+                new: g.new,
+                regressed_in_release: g.regressed_in_release,
+            })
+            .collect(),
         forms,
         custom_events,
         kpis,

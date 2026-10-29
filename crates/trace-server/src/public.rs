@@ -60,6 +60,7 @@ async fn overview(State(state): State<AppStateRef>, connect: Connect, headers: H
         // Not where it collects from: that's the owner's business.
         "collection": { "active": c.active, "last_event_at": c.last_event_at, "sources": [] },
         "suppressed_below": public::MIN_SESSIONS,
+        "simulated": state.demo_site == Some(s.id),
     })))
 }
 

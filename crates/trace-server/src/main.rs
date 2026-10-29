@@ -2,6 +2,7 @@ mod api;
 mod auth_api;
 mod cache;
 mod demo;
+mod errors_api;
 mod guard;
 mod mcp;
 mod oauth;
@@ -34,6 +35,8 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+// Parsed once at start; boxing the big variant would buy nothing.
+#[allow(clippy::large_enum_variant)]
 enum Command {
     /// Set up this server: choose SQLite (for trying Trace and development) or
     /// Postgres (recommended for production), create the tables and save the
@@ -86,6 +89,15 @@ enum Command {
         /// The key that hashes each person's id before it's sent, so the website sees a stable id, never who it is.
         #[arg(long, env = "TRACE_DASHBOARD_SECRET", hide_env_values = true)]
         dashboard_secret: Option<String>,
+        /// A website running the Stride demo shop live (its short name): it gets simulated shoppers around the clock.
+        #[arg(long, env = "TRACE_DEMO_SITE")]
+        demo_simulate: Option<String>,
+        /// Where that shop's pages start, e.g. /demo on tracetells.com.
+        #[arg(long, env = "TRACE_DEMO_BASE", default_value = "/demo")]
+        demo_base: String,
+        /// Simulated visits a day.
+        #[arg(long, env = "TRACE_DEMO_PER_DAY", default_value_t = 125)]
+        demo_per_day: i64,
     },
     /// Validate a trace.json without applying it. Exits non-zero on errors, for CI.
     Check {
@@ -278,6 +290,9 @@ async fn run() -> Result<()> {
             config: config_file,
             dashboard_key,
             dashboard_secret,
+            demo_simulate,
+            demo_base,
+            demo_per_day,
         } => {
             if let Some(path) = config_file {
                 let target = db::resolve_site(&pool, site).await.context("--config needs a website (--site)")?;
@@ -336,6 +351,25 @@ async fn run() -> Result<()> {
                     }
                 });
             }
+            let demo_site = match demo_simulate.as_deref() {
+                Some(slug) => {
+                    let shop = db::resolve_site(&pool, Some(slug)).await.with_context(|| format!("TRACE_DEMO_SITE: no website {slug:?}"))?;
+                    let (pool, base) = (pool.clone(), demo_base.clone());
+                    tokio::spawn(async move {
+                        let mut tick = tokio::time::interval(Duration::from_secs(15 * 60));
+                        loop {
+                            tick.tick().await;
+                            match demo::simulate(&pool, shop.id, &base, demo_per_day).await {
+                                Ok(n) if n > 0 => tracing::info!("demo: {n} simulated visit(s) to {}", shop.name),
+                                Ok(_) => {}
+                                Err(e) => tracing::error!(error = %format!("{e:#}"), "simulating demo visits failed"),
+                            }
+                        }
+                    });
+                    Some(shop.id)
+                }
+                None => None,
+            };
             let setup_code = if trace_core::auth::total_users(&pool).await? == 0 {
                 let code = trace_core::auth::random_token(12);
                 tracing::warn!("No accounts yet. Create the first account here (this link works once): {public_url}/#/welcome/{code}");
@@ -354,6 +388,7 @@ async fn run() -> Result<()> {
             state.privacy_url = privacy_url;
             state.retention_days = retention_days;
             state.dashboard_analytics = dashboard_key.zip(dashboard_secret);
+            state.demo_site = demo_site;
             let state = Arc::new(state);
             // Keep the reports people are looking at fresh, so pages don't wait.
             let reports = state.reports.clone();

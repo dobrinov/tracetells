@@ -140,7 +140,7 @@ pub(crate) fn set_cookie(res: &mut Response, token: Option<&str>, secure: bool) 
 
 /// Paths about one website; everything else is about the account.
 fn is_site_path(path: &str) -> bool {
-    ["/project", "/config", "/digest", "/kpis", "/funnels", "/audience", "/areas", "/today", "/insights", "/analysis", "/releases", "/publish", "/query", "/evaluate", "/privacy", "/onboarding"]
+    ["/project", "/config", "/digest", "/kpis", "/funnels", "/audience", "/areas", "/today", "/insights", "/analysis", "/releases", "/publish", "/query", "/evaluate", "/privacy", "/onboarding", "/errors", "/server-key"]
         .iter()
         .any(|p| path == *p || path.starts_with(&format!("{p}/")))
 }

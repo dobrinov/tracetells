@@ -181,6 +181,191 @@ impl Session {
     }
 }
 
+/// One simulated shopper's visit to Stride, starting at `start`, with the
+/// planted problems at their usual rates. Returns the entry page, the
+/// viewport width and the events. `after_fix` lifts checkout completion, as
+/// the seeded history's released insight did.
+fn shop_visit(rng: &mut Rng, start: i64, after_fix: bool) -> (&'static str, i64, Session) {
+    let mut s = Session { t: start, path: String::new(), events: Vec::new() };
+    let vw = match rng.next_f64() {
+        x if x < 0.55 => 390,
+        x if x < 0.6 => 820,
+        _ => 1440,
+    };
+
+    let entry = match rng.next_f64() {
+        x if x < 0.6 => "/",
+        x if x < 0.85 => "/products",
+        _ => "/pricing",
+    };
+    s.visit(rng, entry);
+    if entry == "/" {
+        match rng.next_f64() {
+            x if x < 0.5 => s.visit(rng, "/products"),
+            x if x < 0.65 => s.visit(rng, "/pricing"),
+            x if x < 0.75 => s.visit(rng, "/signup"),
+            _ => {}
+        }
+    }
+    if s.path == "/pricing" {
+        if rng.chance(0.25) {
+            s.events.push((
+                s.t + 800,
+                Ev {
+                    kind: "error",
+                    path: "/pricing".into(),
+                    selector: Some(format!("/shop.js:{}", annual_error_line())),
+                    text: Some("Uncaught TypeError: Cannot read properties of undefined (reading 'annual')".into()),
+                    name: Some("exception".into()),
+                    ..Default::default()
+                },
+            ));
+        }
+        if rng.chance(0.2) {
+            s.visit(rng, "/signup");
+        }
+    }
+    if s.path == "/signup" && rng.chance(0.8) {
+        s.emit("form_start", Some("form#signup-form"), None);
+        if rng.chance(0.35) {
+            s.emit("submit", Some("form#signup-form"), None);
+            s.custom("signup_completed");
+        }
+    }
+    if s.path == "/products" {
+        if rng.chance(0.2) {
+            s.emit("click", Some("div.product-card > img"), None);
+            s.emit("dead_click", Some("div.product-card > img"), None);
+        }
+        if rng.chance(0.7) {
+            s.visit(rng, "/products/:id");
+            if rng.chance(0.3) {
+                // The flaky reviews API: a failed request, and the app's own console.error about it.
+                for (kind, text) in [("network", "GET /api/reviews/:id → 500"), ("console", "Reviews failed to load: HTTP 500")] {
+                    s.events.push((
+                        s.t + 600,
+                        Ev { kind: "error", path: s.path.clone(), text: Some(text.into()), name: Some(kind.into()), ..Default::default() },
+                    ));
+                }
+            }
+            if rng.chance(0.6) {
+                s.emit("click", Some("button#add-to-cart"), Some("Add to cart"));
+                s.custom("add_to_cart");
+                s.visit(rng, "/cart");
+                if rng.chance(0.75) {
+                    s.emit("click", Some("button#checkout"), Some("Checkout"));
+                    s.visit(rng, "/checkout");
+                }
+            }
+        }
+    }
+    if s.path == "/checkout" {
+        if rng.chance(0.18) {
+            for _ in 0..4 {
+                s.emit("click", Some("button#pay"), Some("Pay now"));
+            }
+            s.emit("rage_click", Some("button#pay"), Some("Pay now"));
+        }
+        // The released fix (shipping cost shown on the cart page) lifts checkout completion.
+        if rng.chance(if after_fix { 0.56 } else { 0.36 }) {
+            s.emit("click", Some("button#pay"), Some("Pay now"));
+            s.visit(rng, "/checkout/success");
+            s.custom("purchase");
+        }
+    }
+    s.leave(rng);
+    (entry, vw, s)
+}
+
+/// Writes a simulated visit, with every path below `base` ("" or "/demo") as the live shop reports them.
+#[allow(clippy::too_many_arguments)]
+async fn write_visit(
+    conn: &mut sqlx::AnyConnection,
+    project_id: i64,
+    sid: &str,
+    visitor: &str,
+    member: Option<String>,
+    entry: &str,
+    vw: i64,
+    s: Session,
+    base: &str,
+) -> Result<usize> {
+    let at = |p: &str| if base.is_empty() { p.to_string() } else if p == "/" { base.to_string() } else { format!("{base}{p}") };
+    let start = s.events.first().map(|(t, _)| *t).unwrap_or(s.t);
+    let last = s.events.last().map(|(t, _)| *t).unwrap_or(start);
+    let device = match vw {
+        0..768 => "mobile",
+        768..1024 => "tablet",
+        _ => "desktop",
+    };
+    sqlx::query(
+        "INSERT INTO sessions (id, project_id, visitor_id, user_id, started_at, last_seen_at, device, entry_path)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+    )
+    .bind(sid)
+    .bind(project_id)
+    .bind(visitor)
+    .bind(member)
+    .bind(start)
+    .bind(last)
+    .bind(device)
+    .bind(at(entry))
+    .execute(&mut *conn)
+    .await?;
+    let n = s.events.len();
+    for (ts, e) in s.events {
+        // Error sources are script locations: /shop.js:335 is /demo/shop.js:335 below /demo.
+        let selector = match (&e.selector, e.kind) {
+            (Some(sel), "error") if sel.starts_with('/') => Some(at(sel)),
+            _ => e.selector.clone(),
+        };
+        sqlx::query(
+            "INSERT INTO events (project_id, session_id, ts, type, path, selector, text, name, value)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        )
+        .bind(project_id)
+        .bind(sid)
+        .bind(ts)
+        .bind(e.kind)
+        .bind(at(&e.path))
+        .bind(&selector)
+        .bind(&e.text)
+        .bind(&e.name)
+        .bind(trace_core::db::Real(e.value))
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(n)
+}
+
+/// Simulated shoppers for a live demo website (`TRACE_DEMO_SITE`): about
+/// `per_day` visits a day, written for the time since the last simulated one
+/// (up to 14 days back on the first run), so the public demo looks like a shop
+/// with customers and a visitor's own clicks land in rows that are shown.
+/// Simulated sessions' ids start with `sim-`. Returns how many it wrote.
+pub async fn simulate(pool: &Pool, project_id: i64, base: &str, per_day: i64) -> Result<usize> {
+    let now = now_ms();
+    let last: Option<i64> = sqlx::query_scalar("SELECT MAX(started_at) FROM sessions WHERE project_id = $1 AND id LIKE 'sim-%'")
+        .bind(project_id)
+        .fetch_one(pool)
+        .await?;
+    let from = last.unwrap_or(0).max(now - 14 * DAY_MS);
+    let n = ((now - from) * per_day / DAY_MS).clamp(0, 14 * per_day);
+    if n == 0 {
+        return Ok(0);
+    }
+    let mut rng = Rng(now as u64 | 1);
+    let mut conn = pool.acquire().await?;
+    for i in 0..n {
+        let start = from + (i + 1) * (now - from) / n - rng.range(0, 60_000);
+        let (entry, vw, s) = shop_visit(&mut rng, start, false);
+        let sid = format!("sim-{start}-{i}");
+        let visitor = format!("sim-visitor-{}", rng.range(0, per_day * 3));
+        write_visit(&mut conn, project_id, &sid, &visitor, None, entry, vw, s, base).await?;
+    }
+    Ok(n as usize)
+}
+
 pub async fn seed(pool: &Pool, sessions: usize) -> Result<()> {
     let existing: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
         .fetch_one(pool)
@@ -201,138 +386,14 @@ pub async fn seed(pool: &Pool, sessions: usize) -> Result<()> {
     for i in 0..sessions {
         let start = now - 30 * DAY_MS + (i as i64 * 30 * DAY_MS / sessions as i64) + rng.range(0, 3_600_000);
         let after_fix = start >= released_at;
-        let mut s = Session { t: start, path: String::new(), events: Vec::new() };
         let sid = format!("demo-{i:05}");
-        let vw = match rng.next_f64() {
-            x if x < 0.55 => 390,
-            x if x < 0.6 => 820,
-            _ => 1440,
-        };
-
-        let entry = match rng.next_f64() {
-            x if x < 0.6 => "/",
-            x if x < 0.85 => "/products",
-            _ => "/pricing",
-        };
-        s.visit(&mut rng, entry);
-        if entry == "/" {
-            match rng.next_f64() {
-                x if x < 0.5 => s.visit(&mut rng, "/products"),
-                x if x < 0.65 => s.visit(&mut rng, "/pricing"),
-                x if x < 0.75 => s.visit(&mut rng, "/signup"),
-                _ => {}
-            }
-        }
-        if s.path == "/pricing" {
-            if rng.chance(0.25) {
-                s.events.push((
-                    s.t + 800,
-                    Ev {
-                        kind: "error",
-                        path: "/pricing".into(),
-                        selector: Some(format!("/shop.js:{}", annual_error_line())),
-                        text: Some("Uncaught TypeError: Cannot read properties of undefined (reading 'annual')".into()),
-                        name: Some("exception".into()),
-                        ..Default::default()
-                    },
-                ));
-            }
-            if rng.chance(0.2) {
-                s.visit(&mut rng, "/signup");
-            }
-        }
-        if s.path == "/signup" && rng.chance(0.8) {
-            s.emit("form_start", Some("form#signup-form"), None);
-            if rng.chance(0.35) {
-                s.emit("submit", Some("form#signup-form"), None);
-                s.custom("signup_completed");
-            }
-        }
-        if s.path == "/products" {
-            if rng.chance(0.2) {
-                s.emit("click", Some("div.product-card > img"), None);
-                s.emit("dead_click", Some("div.product-card > img"), None);
-            }
-            if rng.chance(0.7) {
-                s.visit(&mut rng, "/products/:id");
-                if rng.chance(0.3) {
-                    // The flaky reviews API: a failed request, and the app's own console.error about it.
-                    for (kind, text) in [("network", "GET /api/reviews/:id → 500"), ("console", "Reviews failed to load: HTTP 500")] {
-                        s.events.push((
-                            s.t + 600,
-                            Ev { kind: "error", path: s.path.clone(), text: Some(text.into()), name: Some(kind.into()), ..Default::default() },
-                        ));
-                    }
-                }
-                if rng.chance(0.6) {
-                    s.emit("click", Some("button#add-to-cart"), Some("Add to cart"));
-                    s.custom("add_to_cart");
-                    s.visit(&mut rng, "/cart");
-                    if rng.chance(0.75) {
-                        s.emit("click", Some("button#checkout"), Some("Checkout"));
-                        s.visit(&mut rng, "/checkout");
-                    }
-                }
-            }
-        }
-        if s.path == "/checkout" {
-            if rng.chance(0.18) {
-                for _ in 0..4 {
-                    s.emit("click", Some("button#pay"), Some("Pay now"));
-                }
-                s.emit("rage_click", Some("button#pay"), Some("Pay now"));
-            }
-            // The released fix (shipping cost shown on the cart page) lifts checkout completion.
-            if rng.chance(if after_fix { 0.56 } else { 0.36 }) {
-                s.emit("click", Some("button#pay"), Some("Pay now"));
-                s.visit(&mut rng, "/checkout/success");
-                s.custom("purchase");
-            }
-        }
-        s.leave(&mut rng);
-
-        let last = s.events.last().map(|(t, _)| *t).unwrap_or(start);
-        let device = match vw {
-            0..768 => "mobile",
-            768..1024 => "tablet",
-            _ => "desktop",
-        };
+        let (entry, vw, s) = shop_visit(&mut rng, start, after_fix);
         // Stride+ members the shop signs in with trace.identify(): five join a day,
         // and the newer ones come back more often, so retention fades with time.
         let joined = 1 + (start - (now - 30 * DAY_MS)) * 5 / DAY_MS;
         let member = rng.chance(0.25).then(|| format!("member-{}", rng.range((joined - 90).max(0), joined)));
-        sqlx::query(
-            "INSERT INTO sessions (id, project_id, visitor_id, user_id, started_at, last_seen_at, device, entry_path)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-        )
-        .bind(&sid)
-        .bind(project_id)
-        .bind(format!("visitor-{}", rng.range(0, sessions as i64 * 2 / 3)))
-        .bind(member)
-        .bind(start)
-        .bind(last)
-        .bind(device)
-        .bind(entry)
-        .execute(&mut *tx)
-        .await?;
-        for (ts, e) in s.events {
-            sqlx::query(
-                "INSERT INTO events (project_id, session_id, ts, type, path, selector, text, name, value)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-            )
-            .bind(project_id)
-            .bind(&sid)
-            .bind(ts)
-            .bind(e.kind)
-            .bind(&e.path)
-            .bind(&e.selector)
-            .bind(&e.text)
-            .bind(&e.name)
-            .bind(trace_core::db::Real(e.value))
-            .execute(&mut *tx)
-            .await?;
-            n_events += 1;
-        }
+        let visitor = format!("visitor-{}", rng.range(0, sessions as i64 * 2 / 3));
+        n_events += write_visit(&mut tx, project_id, &sid, &visitor, member, entry, vw, s, "").await?;
     }
     tx.commit().await?;
     let parsed = config::parse(&shop_config("")).map_err(|e| anyhow::anyhow!(e.join("; ")))?;
@@ -398,5 +459,21 @@ mod tests {
         assert!(html.contains(r#"data-key="k123" data-routes="/products/:id" defer"#) && html.contains(r#"src="/shop.js""#));
         // The simulated Annual error points at the line that really throws.
         assert!(SHOP_JS.lines().nth(annual_error_line() - 1).unwrap().contains("pricing.yearly"));
+    }
+
+    #[tokio::test]
+    async fn simulated_shoppers_fill_the_live_demo_below_its_base() {
+        let path = db::test_target("demo_sim").await;
+        let pool = trace_core::db::connect(&path).await.unwrap();
+        let (_, shop) = db::create_account_with_site(&pool, "Stride", None).await.unwrap();
+        let first = simulate(&pool, shop.id, "/demo", 100).await.unwrap();
+        assert_eq!(first, 1400, "14 days of history on the first run");
+        assert_eq!(simulate(&pool, shop.id, "/demo", 100).await.unwrap(), 0, "then only what's due since the last one");
+        let outside: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events WHERE project_id = $1 AND path NOT LIKE '/demo%'").bind(shop.id).fetch_one(&pool).await.unwrap();
+        assert_eq!(outside, 0, "every path is below /demo");
+        let d = trace_core::public::suppress(trace_core::digest::build(&pool, shop.id, 7).await.unwrap());
+        assert!(d.errors.iter().any(|e| e.source.as_deref().is_some_and(|s| s.starts_with("/demo/shop.js:"))), "the Annual error shows publicly");
+        assert!(d.dead_clicks.iter().any(|c| c.path == "/demo/products") && !d.rage_clicks.is_empty());
+        db::drop_test_target(&path).await;
     }
 }

@@ -7,6 +7,7 @@ pub mod auth;
 pub mod config;
 pub mod db;
 pub mod digest;
+pub mod errors;
 pub mod evaluate;
 pub mod funnel;
 pub mod insights;

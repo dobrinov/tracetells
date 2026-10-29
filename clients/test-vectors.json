@@ -1,0 +1,32 @@
+{
+  "about": "Scrubbing every Trace error client must do before sending, and the server does again. Each pair is [input, expected]. The server's tests (crates/trace-core/src/errors.rs) and every client's tests read this file.",
+  "message": [
+    ["No user with email anna@example.com (id 48213907)", "No user with email [email] (id [number])"],
+    ["Authorization failed: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.c2lnbmF0dXJl", "Authorization failed: Bearer [token]"],
+    ["Card 4111 1111 1111 1111 declined", "Card [card] declined"],
+    ["Transfer to DE89 3704 0044 0532 0130 00 failed", "Transfer to [iban] failed"],
+    ["Call +44 20 7946 0958 back", "Call [number] back"],
+    ["GET https://api.example.com/v1/users?api_key=abc123 failed", "GET https://api.example.com/v1/users?[redacted] failed"],
+    ["Reset token sk_live_51HkT9a2eZvKYlo2C0jw8Ln invalid", "Reset token [token] invalid"],
+    ["undefined method 'name' for nil", "undefined method 'name' for nil"],
+    ["Order 42 not found", "Order 42 not found"]
+  ],
+  "route": [
+    ["/orders/8817/receipt?token=abc", "/orders/:id/receipt"],
+    ["/users/:id/settings", "/users/:id/settings"],
+    ["/invite/anna@example.com", "/invite/:email"],
+    ["/files/9f86d081884c7d659a2feaa0c55ad015", "/files/:id"],
+    ["orders", ""]
+  ],
+  "file": [
+    ["/Users/anna/code/shop/app/controllers/orders_controller.rb", "app/controllers/orders_controller.rb"],
+    ["/home/deploy/shop/node_modules/express/lib/router/index.js", "node_modules/express/lib/router/index.js"],
+    ["/usr/local/bundle/gems/rack-3.0.8/lib/rack/builder.rb", "gems/rack-3.0.8/lib/rack/builder.rb"],
+    ["/root/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tokio-1.40.0/src/runtime/park.rs", "tokio-1.40.0/src/runtime/park.rs"],
+    ["/srv/app/src/handlers/checkout.rs", "src/handlers/checkout.rs"],
+    ["src/main.rs", "src/main.rs"],
+    ["file:///opt/app/dist/server.js", "app/dist/server.js"],
+    ["/opt/build/server.js", "server.js"],
+    ["C:\\Users\\anna\\shop\\src\\index.ts", "src/index.ts"]
+  ]
+}
