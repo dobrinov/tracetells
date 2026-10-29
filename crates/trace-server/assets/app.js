@@ -660,6 +660,15 @@ function funnelCard(f) {
   </div>`;
 }
 
+// Whether a declared event arrives: missing only once the website has
+// collected for the whole window, so a new website reads "not seen yet".
+function eventStatus(e, since) {
+  if (e.status === "receiving") return `<span class="status-dot good">● receiving</span> <span class="hint">${esc(ago(e.last_seen))}</span>`;
+  if (e.status === "stopped") return `<span class="status-dot bad">● stopped</span> <span class="hint">last seen ${esc(ago(e.last_seen))}</span>`;
+  if (e.status === "missing") return `<span class="status-dot bad">● never arrived</span> <span class="hint">in 14 days</span>`;
+  return `<span class="status-dot">● not seen yet</span>${since ? ` <span class="hint">first visit ${esc(ago(since))}</span>` : ""}`;
+}
+
 function funnelsSection(funnels) {
   const intro = `<p class="sub">Steps people take in order within one visit, over the last 14 days. Each step counts the sessions that reached it after the step before; once someone finishes, the biggest drop is where more conversion is won, and where analysis looks first.</p>`;
   if (!funnels.length)
@@ -699,7 +708,7 @@ async function renderKpis() {
     `<code>${esc(e.name)}</code>`,
     esc(e.description),
     num(e.count),
-    e.count ? `<span class="status-dot good">● receiving</span> <span class="hint">${esc(ago(e.last_seen))}</span>` : `<span class="status-dot bad">● not seen in 14 days</span>`,
+    eventStatus(e, cfg.collecting_since),
   ]);
   const undeclared = cfg.undeclared_events.map((e) => [
     `<code>${esc(e.name)}</code>`,

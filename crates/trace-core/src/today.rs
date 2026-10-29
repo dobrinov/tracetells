@@ -213,17 +213,28 @@ pub async fn build(pool: &Pool, site: &Project) -> Result<Today> {
         ));
     }
 
-    // Declared events that stopped arriving: a KPI built on them reads zero.
+    // Declared events that stopped arriving, or never came in a whole window:
+    // a KPI built on them reads zero. On a newer website, not yet is normal.
     if collecting {
         let health = crate::config::tracking_health(pool, site.id, 14).await?;
-        let silent: Vec<&str> = health.events.iter().filter(|e| e.count == 0).map(|e| e.name.as_str()).collect();
-        if !silent.is_empty() {
+        let names = |status: &str| health.events.iter().filter(|e| e.status == status).map(|e| e.name.as_str()).collect::<Vec<_>>();
+        let (stopped, missing) = (names("stopped"), names("missing"));
+        let n = stopped.len() + missing.len();
+        if n > 0 {
+            let mut detail = Vec::new();
+            if !stopped.is_empty() {
+                detail.push(format!("Arrived before, but not in the last 14 days: {}.", stopped.join(", ")));
+            }
+            if !missing.is_empty() {
+                detail.push(format!("Never arrived since collecting started: {}.", missing.join(", ")));
+            }
+            detail.push("KPIs and funnels that use them read zero.".into());
             items.push(item(
                 "tracking",
                 "bad",
                 600,
-                format!("{} declared event{} not arriving", silent.len(), if silent.len() == 1 { " is" } else { "s are" }),
-                format!("Not seen in 14 days: {}. KPIs and funnels that use them read zero.", silent.join(", ")),
+                format!("{n} declared event{} not arriving", if n == 1 { " is" } else { "s are" }),
+                detail.join(" "),
                 "kpis",
                 "Check tracking",
             ));
@@ -256,10 +267,16 @@ mod tests {
             .unwrap();
         let t = build(&pool, &site).await.unwrap();
         let kinds: Vec<&str> = t.items.iter().map(|i| i.kind).collect();
-        assert!(kinds.contains(&"review") && kinds.contains(&"tracking"), "{kinds:?}");
+        // A website collecting for less than the window isn't told its events are missing.
+        assert!(kinds.contains(&"review") && !kinds.contains(&"tracking"), "{kinds:?}");
         let review = t.items.iter().find(|i| i.kind == "review").unwrap();
         assert_eq!((review.title.as_str(), review.page), ("1 new insight to review", "insights"));
+
+        let old = now_ms() - 20 * DAY_MS;
+        sqlx::query("INSERT INTO sessions (id, project_id, started_at, last_seen_at) VALUES ('s', $1, $2, $2)").bind(site.id).bind(old).execute(&pool).await.unwrap();
+        let t = build(&pool, &site).await.unwrap();
         let tracking = t.items.iter().find(|i| i.kind == "tracking").unwrap();
+        assert!(tracking.detail.contains("Never arrived"), "{}", tracking.detail);
         assert!(tracking.detail.contains("purchase"), "{}", tracking.detail);
         let _ = id;
         crate::db::drop_test_target(&path).await;

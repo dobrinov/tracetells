@@ -465,11 +465,18 @@ pub struct EventHealth {
     pub description: Option<String>,
     pub count: i64,
     pub sessions: i64,
+    /// The last time it arrived, even before the window.
     pub last_seen: Option<i64>,
+    /// receiving; stopped (arrived before, not in the window); missing (never
+    /// arrived though the website has collected for the whole window); or
+    /// waiting (never arrived, and the website is newer than the window).
+    pub status: &'static str,
 }
 
 #[derive(Debug, Serialize)]
 pub struct TrackingHealth {
+    /// When the first visit arrived: an event can't be missing before then.
+    pub collecting_since: Option<i64>,
     pub synced_at: Option<i64>,
     pub source: Option<String>,
     /// Declared events, including ones not seen in the window.
@@ -481,6 +488,8 @@ pub struct TrackingHealth {
 /// events that arrive without being declared.
 pub async fn tracking_health(pool: &Pool, project_id: i64, days: i64) -> Result<TrackingHealth> {
     let since = now_ms() - days * crate::util::DAY_MS;
+    let collecting_since: Option<i64> =
+        sqlx::query_scalar("SELECT MIN(started_at) FROM sessions WHERE project_id = $1").bind(project_id).fetch_one(pool).await?;
     let seen: Vec<(String, i64, i64, i64)> = sqlx::query_as(
         "SELECT name, COUNT(*), COUNT(DISTINCT session_id), MAX(ts) FROM events
          WHERE project_id = $1 AND type = 'custom' AND name IS NOT NULL AND ts >= $2 GROUP BY name ORDER BY 2 DESC",
@@ -494,13 +503,26 @@ pub async fn tracking_health(pool: &Pool, project_id: i64, days: i64) -> Result<
     let mut undeclared = Vec::new();
     for (name, count, sessions, last_seen) in seen {
         match declared.remove(&name) {
-            Some(d) => health.push(EventHealth { name, description: Some(d), count, sessions, last_seen: Some(last_seen) }),
-            None => undeclared.push(EventHealth { name, description: None, count, sessions, last_seen: Some(last_seen) }),
+            Some(d) => health.push(EventHealth { name, description: Some(d), count, sessions, last_seen: Some(last_seen), status: "receiving" }),
+            None => undeclared.push(EventHealth { name, description: None, count, sessions, last_seen: Some(last_seen), status: "receiving" }),
         }
     }
-    health.extend(declared.into_iter().map(|(name, d)| EventHealth { name, description: Some(d), count: 0, sessions: 0, last_seen: None }));
+    for (name, d) in declared {
+        let last_seen: Option<i64> = sqlx::query_scalar("SELECT MAX(ts) FROM events WHERE project_id = $1 AND type = 'custom' AND name = $2")
+            .bind(project_id)
+            .bind(&name)
+            .fetch_one(pool)
+            .await?;
+        let status = match (last_seen, collecting_since) {
+            (Some(_), _) => "stopped",
+            (None, Some(first)) if first < since => "missing",
+            _ => "waiting",
+        };
+        health.push(EventHealth { name, description: Some(d), count: 0, sessions: 0, last_seen, status });
+    }
     let sync = last_sync(pool, project_id).await?;
     Ok(TrackingHealth {
+        collecting_since,
         synced_at: sync.as_ref().map(|s| s.0),
         source: sync.map(|s| s.1),
         events: health,

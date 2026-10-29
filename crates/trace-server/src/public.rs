@@ -95,9 +95,10 @@ async fn tracking(State(state): State<AppStateRef>, connect: Connect, headers: H
     let s = site(&state, &token, &connect, &headers).await?;
     let h = config::tracking_health(&state.pool, s.id, 14).await?;
     Ok(Json(json!({
+        "collecting_since": h.collecting_since,
         "synced_at": h.synced_at,
         "source": null,
-        "events": h.events.iter().map(|e| json!({ "name": e.name, "description": e.description, "count": e.count, "sessions": e.sessions, "last_seen": e.last_seen })).collect::<Vec<_>>(),
+        "events": h.events.iter().map(|e| json!({ "name": e.name, "description": e.description, "count": e.count, "sessions": e.sessions, "last_seen": e.last_seen, "status": e.status })).collect::<Vec<_>>(),
         "undeclared_events": [],
     })))
 }
