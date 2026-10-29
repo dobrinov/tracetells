@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Switching from replay to Trace</title>
-<meta name="description" content="Already paying for FullStory, Hotjar or another replay tool? Run Trace beside it for a month: it ranks what's broken by how many people it hurts, hands the fixes to your coding agent, and tells you whether they worked.">
+<title>Switching to Trace</title>
+<meta name="description" content="Already paying for replay, product analytics or error tracking? Run Trace beside them for a month: it ranks what's broken by how many people it hurts, hands the fixes to your coding agent, and tells you whether they worked.">
 <link rel="canonical" href="https://tracetells.com/switching.html">
 <meta property="og:url" content="https://tracetells.com/switching.html">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Trace">
-<meta property="og:title" content="You have the recordings. What you need is the fixes.">
-<meta property="og:description" content="Run Trace beside FullStory or Hotjar for a month: problems ranked by how many people they hurt, fixes handed to your coding agent, and a verdict on each.">
+<meta property="og:title" content="You have the data. What you need is the fixes.">
+<meta property="og:description" content="Run Trace beside FullStory, Mixpanel or Sentry for a month: problems ranked by how many people they hurt, fixes handed to your coding agent, and a verdict on each.">
 <meta property="og:locale" content="en_US">
 <meta property="og:image" content="https://tracetells.com/og.png">
 <meta property="og:image:type" content="image/png">
@@ -18,8 +18,8 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Trace: find what's broken on your site, let your agent fix it, know it worked.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="You have the recordings. What you need is the fixes.">
-<meta name="twitter:description" content="Run Trace beside FullStory or Hotjar for a month: problems ranked by how many people they hurt, fixes handed to your coding agent, and a verdict on each.">
+<meta name="twitter:title" content="You have the data. What you need is the fixes.">
+<meta name="twitter:description" content="Run Trace beside FullStory, Mixpanel or Sentry for a month: problems ranked by how many people they hurt, fixes handed to your coding agent, and a verdict on each.">
 <meta name="twitter:image" content="https://tracetells.com/og.png">
 <meta name="twitter:image:alt" content="Trace: find what's broken on your site, let your agent fix it, know it worked.">
 <meta name="theme-color" content="#10141d">
@@ -51,7 +51,7 @@
     <nav class="site-nav" aria-label="Main">
       <a href="/">Product</a>
       <a href="/#privacy">Privacy</a>
-      <a href="switching.html" aria-current="page">Switching from replay</a>
+      <a href="switching.html" aria-current="page">Switching to Trace</a>
       <a href="pricing.html">Pricing</a>
       <a href="/#help">Help</a>
     </nav>
@@ -67,20 +67,24 @@
 <main id="main">
   <section class="wrap switch-hero">
     <div class="switch-copy">
-      <span class="eyebrow">For teams with FullStory, Hotjar or another replay tool</span>
-      <h1 class="display">You have the recordings. What you need is the fixes.</h1>
-      <p class="lede">Replay shows you one session at a time, and someone has to watch them. Trace reads every visit as a pattern, ranks what's broken by how many people it hurts, hands the worst ones to your coding agent as tasks, and tells you whether each fix moved the number.</p>
+      <span class="eyebrow">For teams with replay, analytics or error tracking tools</span>
+      <h1 class="display">You have the data. What you need is the fixes.</h1>
+      <p class="lede">Replay shows one session at a time. Analytics shows charts someone has to read. Error tracking shows a stack trace, not who it stopped. Trace puts the three together, ranks what's broken by how many people it hurts, hands the worst to your coding agent as tasks, and tells you whether each fix moved the number.</p>
       <div class="actions">
-        <a data-trace="start-switch" data-trace-props='{"place":"switching"}' class="btn btn-primary" href="https://app.tracetells.com/#/signup" data-app-link data-trace-event="start_free">Run it beside yours, free</a>
+        <a data-trace="start-switch" data-trace-props='{"place":"switching"}' class="btn btn-primary" href="https://app.tracetells.com/#/signup" data-app-link data-trace-event="start_free">Run it beside your tools, free</a>
         <a class="btn" data-trace-event="view_public" data-trace-props='{"view":"shop"}' href="https://app.tracetells.com/p/uDVoTzUDXjSybPZF5ANLG78-USVvW2TU" target="_blank" rel="noopener">See a live dashboard</a>
       </div>
-      <p class="card-text">One 8.3 KB script next to your current one. No cookies, so nothing to add to your consent setup.</p>
+      <p class="card-text">One 8.3 KB script next to your current ones. No cookies, so nothing to add to your consent setup.</p>
     </div>
     <div class="switch-compare-visual" aria-label="Two ways to start a Monday">
       <div class="card monday">
-        <span class="step-label">Your replay tool, Monday morning</span>
-        <div class="tiles" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
-        <span class="card-text">A queue of new recordings. Which ones matter?</span>
+        <span class="step-label">Your tools, Monday morning</span>
+        <ul class="bare-list tools">
+          <li><strong>Replay</strong><span>new recordings to watch</span></li>
+          <li><strong>Analytics</strong><span>a dashboard to read</span></li>
+          <li><strong>Errors</strong><span>new issues to triage</span></li>
+        </ul>
+        <span class="card-text">Three tabs. Which problem matters most?</span>
       </div>
       <div class="card monday trace">
         <span class="step-label">Trace, Monday morning</span>
@@ -95,18 +99,17 @@
   </section>
 
   <section class="wrap section" aria-labelledby="changes">
-    <h2 id="changes" class="display section-title">What changes when the recordings stop being the work</h2>
-    <p class="lede switch-intro">Replay answers "what did this person do?". Most teams bought it to answer "what should we fix next, and did it help?".</p>
+    <h2 id="changes" class="display section-title">What changes when the tools stop being the work</h2>
+    <p class="lede switch-intro">Replay answers "what did this person do?", analytics "how many did it?" and error tracking "what broke?". Most teams bought them to answer "what should we fix next, and did it help?".</p>
     <div class="compare-wrap">
-      <table class="compare">
-        <thead><tr><th scope="col"><span class="visually-hidden">Job</span></th><th scope="col">With a replay tool</th><th scope="col">With Trace</th></tr></thead>
+      <table class="compare compare-4">
+        <thead><tr><th scope="col"><span class="visually-hidden">Job</span></th><th scope="col">Replay<br><span>FullStory, Hotjar</span></th><th scope="col">Product analytics<br><span>Mixpanel, Amplitude</span></th><th scope="col">Error tracking<br><span>Sentry, Honeybadger</span></th><th scope="col">Trace</th></tr></thead>
         <tbody>
-          <tr><th scope="row">Finding problems</th><td>Filter recordings, watch, take notes</td><td>A ranked list: each problem, its element and page, and how many sessions it hit</td></tr>
-          <tr><th scope="row">Turning it into work</th><td>Someone writes a ticket from what they saw</td><td>An insight with measured evidence and acceptance criteria, ready for your coding agent or a developer</td></tr>
-          <tr><th scope="row">Knowing it worked</th><td>Usually nobody goes back to check</td><td>A verdict on the goal: the 14 days before the release against the 14 after, with the sample size</td></tr>
-          <tr><th scope="row">Who's counted</th><td>Often only visitors who accept your consent banner</td><td>Every visitor. Nothing is stored on their device, so there's nothing to consent to.</td></tr>
-          <tr><th scope="row">What's recorded</th><td>The screen, and anything you forgot to mask</td><td>Events and counts. No screens, no typed text.</td></tr>
-          <tr><th scope="row">Where it lives</th><td>In a dashboard someone has to open</td><td>In the dashboard, and in your coding agent over MCP: <code>/trace:analyse</code></td></tr>
+          <tr><th scope="row">Finding problems</th><td>Filter recordings and watch</td><td>Build reports and look for dips</td><td>Triage the issue list</td><td>One list across clicks, funnels and errors, ranked by sessions hurt</td></tr>
+          <tr><th scope="row">Turning it into work</th><td>A ticket from what someone saw</td><td>Someone asks why the line moved</td><td>A stack trace without the visit around it</td><td>An insight with measured evidence and acceptance criteria, ready for your coding agent</td></tr>
+          <tr><th scope="row">Knowing it worked</th><td>Usually nobody checks</td><td>A before-and-after chart, if someone builds it</td><td>The error stops</td><td>A verdict on the goal: 14 days before the release against 14 after, with the sample size</td></tr>
+          <tr><th scope="row">Who's counted</th><td>Often only visitors who accept your consent banner</td><td>Often only visitors who accept your consent banner</td><td>Visitors who hit an error</td><td>Every visitor: nothing is stored on their device</td></tr>
+          <tr><th scope="row">What you set up</th><td>A script, and masking</td><td>An event plan and an SDK</td><td>An SDK per platform</td><td>One script and a trace.json your agent writes</td></tr>
         </tbody>
       </table>
     </div>
@@ -117,8 +120,8 @@
     <div class="grid-auto" style="--min: 240px">
       <div class="card switch-card"><span class="card-text">You use</span><h3>Rage and dead clicks</h3><span class="card-text">The same signals, per element and page, counted across every visit instead of found one replay at a time.</span></div>
       <div class="card switch-card"><span class="card-text">You use</span><h3>Funnels</h3><span class="card-text">Declared next to your code, with the step that loses the most people named, and analysis starting there.</span></div>
-      <div class="card switch-card"><span class="card-text">You use</span><h3>Errors beside sessions</h3><span class="card-text">Exceptions and failed requests, with the page and how many sessions each one hit.</span></div>
-      <div class="card switch-card"><span class="card-text">You use</span><h3>Segments and feature use</h3><span class="card-text">By device, signed-in or not, and by product area and feature: which are used, which hurt.</span></div>
+      <div class="card switch-card"><span class="card-text">You use</span><h3>Errors by who they hurt</h3><span class="card-text">Browser exceptions and failed requests, with the page, and how many sessions and which funnel step each one hit.</span></div>
+      <div class="card switch-card"><span class="card-text">You use</span><h3>Retention and feature use</h3><span class="card-text">Visitors, engagement, DAU/MAU, weekly retention, and which product areas and features are used and which hurt.</span></div>
     </div>
   </section>
 
@@ -126,13 +129,15 @@
     <div class="give-up">
       <div>
         <h2 id="give-up" class="display section-title">What you'd give up</h2>
-        <p class="lede">Trace never records a screen, by design. If that's how you work today, here's what it means.</p>
+        <p class="lede">Trace is narrower than any one of these tools on purpose. Here's what it doesn't do, so you know what to keep.</p>
       </div>
       <ul class="bare-list give-up-list">
         <li><strong>Watching one customer's session.</strong> If support replays a specific customer's visit to answer a ticket, keep a replay tool for that. Trace is for the patterns.</li>
+        <li><strong>Your backend's errors.</strong> Trace sees what breaks in the browser, not server exceptions, stack traces from your services or on-call alerts. Keep your error tracker for those.</li>
+        <li><strong>Open-ended analytics.</strong> Trace measures the goals, funnels and areas you declare. Ad-hoc cohorts by any property, warehouse exports and years of history stay with your analytics tool.</li>
         <li><strong>Heatmap images.</strong> Clicks are counted per element and shown as tables, not painted over a screenshot.</li>
         <li><strong>Surveys and feedback widgets.</strong> Trace doesn't ask visitors anything.</li>
-        <li><strong>Your history.</strong> Trace starts counting from its first visit; there's no import. That's why you'd run both for a few weeks.</li>
+        <li><strong>Your history.</strong> Trace starts counting from its first visit; there's no import. That's why you'd run it beside your tools for a few weeks.</li>
       </ul>
     </div>
   </section>
@@ -140,10 +145,10 @@
   <section class="wrap section" aria-labelledby="try">
     <h2 id="try" class="display section-title">Try it without switching anything</h2>
     <ol class="bare-list grid-auto try-steps" style="--min: 240px">
-      <li class="card switch-card"><span class="step-label">Day 1</span><h3>Add one tag</h3><span class="card-text">Next to your current script. 8.3 KB, does its work when the browser is idle, no cookies.</span></li>
+      <li class="card switch-card"><span class="step-label">Day 1</span><h3>Add one tag</h3><span class="card-text">Next to your current scripts. 8.3 KB, does its work when the browser is idle, no cookies.</span></li>
       <li class="card switch-card"><span class="step-label">Day 1</span><h3>Say what success means</h3><span class="card-text"><code>/trace:setup</code> reads your code and writes the events, goals, funnels and product areas into trace.json.</span></li>
-      <li class="card switch-card"><span class="step-label">Week 1</span><h3>Compare the lists</h3><span class="card-text">Trace's ranked problems against your replay backlog. Ship the top one with your agent.</span></li>
-      <li class="card switch-card"><span class="step-label">Week 4</span><h3>Read the verdict</h3><span class="card-text">Trace says whether the fix moved its goal. Keep both, or keep the one that got things fixed.</span></li>
+      <li class="card switch-card"><span class="step-label">Week 1</span><h3>Compare the lists</h3><span class="card-text">Trace's ranked problems against your backlog. Ship the top one with your agent.</span></li>
+      <li class="card switch-card"><span class="step-label">Week 4</span><h3>Read the verdict</h3><span class="card-text">Trace says whether the fix moved its goal. Keep what still earns its place.</span></li>
     </ol>
   </section>
 
@@ -158,9 +163,9 @@
   </section>
 
   <section class="wrap faq-section" aria-labelledby="faq-title">
-    <h2 id="faq-title" class="display">Questions replay customers ask</h2>
+    <h2 id="faq-title" class="display">Questions teams ask before switching</h2>
     <div class="grid-auto faq" style="--min: 320px">
-      <div class="card"><h3>Will two scripts slow the site down?</h3><span class="card-text">Trace's collector is 8.3 KB, only takes notes while the page is busy, and does its work when the browser is idle. A test fails our build if it grows past that.</span></div>
+      <div class="card"><h3>Will another script slow the site down?</h3><span class="card-text">Trace's collector is 8.3 KB, only takes notes while the page is busy, and does its work when the browser is idle. A test fails our build if it grows past that.</span></div>
       <div class="card"><h3>Do we need a coding agent?</h3><span class="card-text">No. The dashboard finds and ranks problems on its own, and every insight is a task you can hand to a developer. An agent makes the setup and the fix faster.</span></div>
       <div class="card"><h3>We already have a consent tool. Does Trace need it?</h3><span class="card-text">By default Trace stores nothing on the device. If your policy is to load nothing before consent anyway, switch it to wait for your consent tool.</span></div>
       <div class="card"><h3>What does it cost?</h3><span class="card-text">Hosted starts free, and paid plans are set with you. Or self-host the open-source edition with no limits. <a href="pricing.html">See pricing</a></span></div>
@@ -170,8 +175,8 @@
   <section class="wrap cta-section">
     <div class="cta">
       <div class="cta-copy">
-        <h2 class="display section-title-lg">Run it beside yours for a month.</h2>
-        <p class="lede">Then keep the one that got things fixed.</p>
+        <h2 class="display section-title-lg">Run it beside your tools for a month.</h2>
+        <p class="lede">Then keep what got things fixed.</p>
       </div>
       <a data-trace="start-switch-end" data-trace-props='{"place":"switching"}' class="btn btn-primary" href="https://app.tracetells.com/#/signup" data-app-link data-trace-event="start_free">Start free</a>
     </div>

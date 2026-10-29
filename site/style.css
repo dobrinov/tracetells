@@ -387,3 +387,12 @@ pre { margin: 0; }
 .try-steps { margin: 0; padding: 0; }
 .proof { padding: 36px; gap: 14px; }
 .proof p { margin: 0; font-size: 17px; line-height: 1.6; max-width: 760px; }
+
+.tools { display: flex; flex-direction: column; gap: 8px; }
+.tools li { display: flex; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); font-size: 14px; }
+.tools span { color: var(--muted); }
+.compare-4 { min-width: 980px; }
+.compare-4 thead span { font-weight: 400; }
+.compare-4 tbody th { width: 16%; }
+.compare-4 td:nth-child(3), .compare-4 td:nth-child(4) { color: var(--muted); }
+.compare-4 td:last-child { color: var(--text); }
