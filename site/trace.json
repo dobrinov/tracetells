@@ -111,19 +111,19 @@
             }
           ]
         },
-        "switching": {
-          "name": "Switching from replay",
-          "match": [
-            {
-              "pageview": "/switching*"
-            }
-          ]
-        },
         "pricing": {
           "name": "Pricing",
           "match": [
             {
               "pageview": "/pricing*"
+            }
+          ]
+        },
+        "help": {
+          "name": "Help",
+          "match": [
+            {
+              "pageview": "/help*"
             }
           ]
         },
@@ -212,8 +212,7 @@
   "audience": {
     "marketing": [
       "/",
-      "/pricing*",
-      "/switching*"
+      "/pricing*"
     ],
     "engaged": [
       {
