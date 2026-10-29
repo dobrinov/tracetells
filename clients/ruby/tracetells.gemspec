@@ -10,6 +10,6 @@ Gem::Specification.new do |s|
   s.homepage = "https://tracetells.com/docs/server-errors/"
   s.license = "MIT"
   s.required_ruby_version = ">= 3.1"
-  s.files = Dir["lib/**/*.rb", "README.md"]
+  s.files = Dir["lib/**/*.rb", "README.md", "LICENSE"]
   s.metadata = { "source_code_uri" => "https://github.com/dobrinov/tracetells/tree/main/clients/ruby", "rubygems_mfa_required" => "true" }
 end
