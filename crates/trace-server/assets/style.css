@@ -985,8 +985,9 @@ legend {
   gap: 12px;
 }
 
-/* A chart or card right under a row of stats keeps the row's gap. */
-.stats + .card {
+/* Whatever comes right under a row of stats (a chart, a card, a table) keeps the row's gap. */
+.stats + .card,
+.stats + .table-wrap {
   margin-top: 12px;
 }
 
