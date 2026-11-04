@@ -28,4 +28,4 @@
 ## 5. Release
 
 - [ ] 5.1 Deploy, then check on wunderkind.bg that no new `stats.aparatnata.com` failures are stored after the deploy, while its own-site errors still are
-- [ ] 5.2 Ask the owner whether to delete the noise already stored (the three rules applied to the last 90 days of events), and do it only with their go-ahead
+- [x] 5.2 Ask the owner whether to delete the noise already stored (the three rules applied to the last 90 days of events), and do it only with their go-ahead. Done 2026-11-04 with their go-ahead: 210 events (207 on wunderkind.bg, 3 on tracetells.com) deleted in one checked transaction
