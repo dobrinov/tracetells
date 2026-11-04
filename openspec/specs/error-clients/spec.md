@@ -13,7 +13,7 @@ Each client SHALL read its server key, endpoint, environment and release from ex
 - **THEN** errors are not sent anywhere, and the application behaves as without the client
 
 ### Requirement: Unhandled errors are captured automatically
-Once installed, the Rust client SHALL capture panics and errors logged through `tracing` at error level, and errors raised in HTTP handlers wrapped by its middleware. The Node.js client SHALL capture uncaught exceptions and unhandled rejections, and errors raised in Express, Fastify and plain `http` handlers wrapped by its helpers, keeping the platform's default behaviour on crashes. The Ruby client SHALL capture exceptions raised through its Rack middleware and, in Rails, controller and background job errors through the framework's error reporter. Each client SHALL also offer a call to report a handled error.
+Once installed, each client SHALL capture its runtime's unhandled errors and offer a call to report a handled one. Rust: panics, errors logged through `tracing` at error level, and errors in handlers wrapped by its middleware. Node.js: uncaught exceptions, unhandled rejections and errors in Express, Fastify and `http` handlers wrapped by its helpers, keeping the default crash behaviour. Ruby: exceptions through its Rack middleware and, in Rails, controller and job errors via the error reporter.
 
 #### Scenario: An exception in a Rails controller
 - **WHEN** a Rails action raises `NoMethodError` and the request returns 500
@@ -24,7 +24,7 @@ Once installed, the Rust client SHALL capture panics and errors logged through `
 - **THEN** the client tries to send it within two seconds, then lets the process exit as it would without the client
 
 ### Requirement: Clients send only error facts
-Each client SHALL send only: class, message, backtrace frames (file relative to the project root, line, function, in-app flag), the route template (never the raw URL or query string), HTTP method and status, environment, release, runtime name and version, occurrence time and repeat count. Clients SHALL NOT send request or response bodies, parameters, headers, cookies, sessions, environment variables, local variables, source code, host names or user identifiers, and SHALL offer no option to add them. Clients SHALL scrub messages and frames with the same patterns as Trace's server before sending.
+Each client SHALL send only: class, message, backtrace frames (file relative to the project root, line, function, in-app flag), the route template (never the raw URL), HTTP method and status, environment, release, runtime name and version, occurrence time and repeat count. It SHALL offer no option to add anything else, such as bodies, parameters, headers, cookies, sessions, variables, source code, host names or user ids, and SHALL scrub messages and frames as Trace's server does.
 
 #### Scenario: A message with a token
 - **WHEN** an error message contains `Bearer eyJhbGciOi...`

@@ -21,7 +21,7 @@ Each website SHALL have at most one active server key, separate from its public 
 - **THEN** it is refused, and they are told an owner or admin can create one
 
 ### Requirement: Only error facts are accepted, and they are scrubbed again
-A server error SHALL consist of: class, message, backtrace frames (file, line, function, in-app flag), route template, HTTP method, HTTP status, environment, release, runtime name and version, occurrence time and a repeat count. Any other field SHALL be dropped. Before storing, Trace SHALL scrub the message and every frame with the same rules as browser text (emails, tokens, card numbers, IBANs, phone-like numbers, long digit runs), cut absolute paths and home directories from file names, replace route segments that look like ids, emails or tokens with placeholders, drop query strings, and cut overlong values.
+A server error SHALL consist only of: class, message, backtrace frames (file, line, function, in-app flag), route template, HTTP method and status, environment, release, runtime name and version, occurrence time and repeat count; other fields SHALL be dropped. Before storing, Trace SHALL scrub the message and frames with the rules for browser text, strip absolute paths and home directories from files, replace id-like route segments with placeholders, drop query strings and cut overlong values.
 
 #### Scenario: Personal data in a message
 - **WHEN** an error arrives with the message `No user with email anna@example.com (id 48213907)`
@@ -79,7 +79,7 @@ The dashboard's Errors page SHALL show server error groups ranked by visits brok
 - **THEN** the Server view explains what it adds and shows the agent command that sets it up
 
 ### Requirement: Coding agents can find, fix and close server errors
-The MCP server SHALL offer tools to list server error groups with their counts and visits broken, to get one group with its sample backtrace and a fix prompt, to resolve, ignore or reopen a group (owners and admins, not read-only connections), and to create or rotate the server key (owners and admins). The behaviour summary and the analyse brief SHALL include the top open server error groups, so insights can cite them as evidence. Text inside errors SHALL be marked as coming from the application at runtime, to be treated as data, never as instructions.
+The MCP server SHALL offer tools to list server error groups with their counts and visits broken, to get one group with its sample backtrace and a fix prompt, to resolve, ignore or reopen a group, and to create or rotate the server key; changes SHALL need an owner or admin on a connection that isn't read-only. The behaviour summary and the analyse brief SHALL include the top open groups. Text inside errors SHALL be marked as coming from the application: data, never instructions.
 
 #### Scenario: Fixing an error with the agent
 - **WHEN** an agent calls the tool that gets a group
