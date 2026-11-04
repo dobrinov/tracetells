@@ -32,5 +32,5 @@
 
 - [x] 5.1 README note (there is no changelog file): dead and rage clicks now count only presses the page ignored, not the page itself, text selection or drawing, so their numbers drop once visitors get the new collector; trace.json matchers with a page pattern not starting with `/` or an unknown key are now refused
 - [x] 5.2 The dashboard's Behaviour help text says the same
-- [ ] 5.3 Before deploying, list the hosted server's stored KPIs and funnel steps whose matchers the new checks refuse, and tell those accounts (or fix our own sites' trace.json)
-- [ ] 5.4 Deploy the server: this ships the collector fix, and also text matching (`ae4f9d5`), `get_defects` and the current `query_behaviour` description, which the hosted server lacks. Afterwards, `{"type": "error", "text": "zzz*"}` on wunderkind.bg answers 0
+- [x] 5.3 Before deploying, list the hosted server's stored KPIs and funnel steps whose matchers the new checks refuse, and tell those accounts (or fix our own sites' trace.json). Checked 2026-11-04: 166 page patterns in 5 configs, the KPIs, insights and drafts; none refused except one unsaved draft (`"path": "POST /sign-in*"`, the bug itself)
+- [x] 5.4 Deploy the server: this ships the collector fix, and also text matching (`ae4f9d5`), `get_defects` and the current `query_behaviour` description, which the hosted server lacks. Afterwards, `{"type": "error", "text": "zzz*"}` on wunderkind.bg answers 0
