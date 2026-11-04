@@ -67,7 +67,7 @@
  *   describing elements and queueing happens later, when the browser is idle.
  * - Nothing reads layout on the hot path: no innerText, and scroll height is
  *   sampled at most every 250 ms (re-measured at most every 2 s).
- * - DOM mutations are observed only during the second after a click, not continuously.
+ * - DOM mutations are observed only from a press until a second after its click, not continuously.
  * - Nothing is written to storage unless the site asks for consent and gets it;
  *   then writes are throttled. Network goes out in batches via sendBeacon.
  * - Every callback is wrapped so a collector bug can never throw into the page.
@@ -86,7 +86,8 @@
   var INTERACTIVE =
     "a,button,input,select,textarea,label,summary,option,[role=button],[role=link],[role=tab]," +
     "[role=menuitem],[role=checkbox],[role=switch],[onclick],[contenteditable],[tabindex]";
-  var FORM_FIELD = /^(INPUT|SELECT|TEXTAREA|LABEL|OPTION)$/;
+  // Clicks not judged dead or rage: form fields, drawing surfaces, the page itself.
+  var UNJUDGED = /^(INPUT|SELECT|TEXTAREA|LABEL|OPTION|CANVAS|HTML|BODY)$/;
 
   function safe(fn) {
     return function () {
@@ -200,10 +201,10 @@
   }
 
   function cleanProps(v, depth) {
-    if (v == null) return undefined;
+    if (v == null) return;
     if (typeof v === "string") return redact(v.slice(0, 200), false);
     if (typeof v === "number" || typeof v === "boolean") return isFinite(v) || typeof v === "boolean" ? v : undefined;
-    if (typeof v !== "object" || depth > 2) return undefined;
+    if (typeof v !== "object" || depth > 2) return;
     var out = Array.isArray(v) ? [] : {};
     var n = 0;
     for (var k in v) {
@@ -493,8 +494,8 @@
     }
 
     function label(el) {
-      if (el.isContentEditable || el.closest("[data-trace-mask],[contenteditable]") || sensitiveForm(el)) return undefined;
-      if (HOST_MASK && el.closest(HOST_MASK)) return undefined;
+      if (el.isContentEditable || el.closest("[data-trace-mask],[contenteditable]") || sensitiveForm(el)) return;
+      if (HOST_MASK && el.closest(HOST_MASK)) return;
       var t = el.getAttribute("aria-label");
       if (!t && el.matches(TEXT_CONTROLS)) {
         // textContent, not innerText: innerText forces a layout. Large subtrees are skipped.
@@ -606,8 +607,8 @@
     );
 
     // ---- clicks: plain, rage and dead -------------------------------------------
-    // A MutationObserver runs only while some click is waiting to see whether the
-    // page reacted, so pages pay nothing for it between clicks.
+    // A MutationObserver runs only from a press until a second after its click,
+    // so pages pay nothing for it between clicks.
     var observer = null;
     var watching = 0;
     var mutations = 0;
@@ -629,6 +630,25 @@
         observer.disconnect();
       }
     }
+
+    // The page's state at a press or click: a later difference means it reacted.
+    function state() {
+      return mutations + " " + scrolls + location.href;
+    }
+
+    // Some controls react on pointerdown, before the click. A press watches for a
+    // second; a click within it starts its own watch before that one ends.
+    var press = null;
+    addEventListener(
+      "pointerdown",
+      safe(function () {
+        if (watch()) {
+          press = { t: Date.now(), k: state() };
+          setTimeout(unwatch, 1000);
+        }
+      }),
+      { capture: true, passive: true }
+    );
 
     var burst = [];
     var lastDead = {};
@@ -654,42 +674,50 @@
         var t = Date.now();
         var path = route();
 
-        // Rage click: 3+ clicks within 700 ms, close together. Cheap arithmetic only.
+        // The baseline is the press when it came within the last second (not for
+        // keyboard or synthetic clicks), or else the click itself.
+        var base = press && t - press.t < 1000 ? press.k : state();
+
+        // Dead click: nothing in the page changed from the press until a second
+        // after the click. Links that open elsewhere (new tab, download) leave the
+        // page unchanged, and a canvas changes pixels, not the page.
+        var link = raw.closest("a[href]");
+        var deadCheck = !(link && (e.metaKey || e.ctrlKey || e.shiftKey || link.target || link.hasAttribute("download"))) && !UNJUDGED.test(raw.tagName) && watch();
+
+        // Rage click: 3+ clicks within 700 ms, close together, the page ignoring all
+        // of them: decided with the dead click, from the burst's first baseline.
         burst = burst.filter(function (c) {
           return t - c.t < 700 && Math.abs(c.x - e.clientX) < 40 && Math.abs(c.y - e.clientY) < 40;
         });
-        burst.push({ t: t, x: e.clientX, y: e.clientY });
-        var rage = burst.length === 3;
+        burst.push({ t: t, x: e.clientX, y: e.clientY, b: deadCheck && base });
+        var rage = burst.length === 3 && burst[0].b;
 
-        // Dead click: nothing in the page changed within a second. Links that open
-        // elsewhere (new tab, download) legitimately leave the page unchanged.
-        var link = raw.closest("a[href]");
-        var opensElsewhere = link && (e.metaKey || e.ctrlKey || e.shiftKey || link.target || link.hasAttribute("download"));
-        var deadCheck = !opensElsewhere && !FORM_FIELD.test(raw.tagName) && watch();
-        var m = mutations;
-        var s = scrolls;
-        var href = location.href;
         var tagged = raw.closest("[data-trace-event]");
-        if (tagged && tagged.tagName === "FORM") tagged = null; // forms fire on submit
+        // Forms fire on submit.
+        if (tagged && tagged.tagName === "FORM") tagged = null;
 
         idle(function () {
           if (tagged) markupEvent(tagged, t, path);
           var el = raw.closest(INTERACTIVE) || raw;
           var data = { t: t, path: path, sel: selector(el), text: label(el) };
           push("click", data);
-          if (rage) push("rage_click", data);
           if (!deadCheck) return;
           setTimeout(
             safe(function () {
               unwatch();
-              if (FORM_FIELD.test(el.tagName)) return;
-              if (mutations !== m || scrolls !== s || location.href !== href || document.hidden) return;
+              // Clicks that selected text aren't judged: only whether there is a
+              // selection is read, never its text.
+              if (UNJUDGED.test(el.tagName) || !getSelection().isCollapsed || document.hidden) return;
+              var now = state();
+              if (rage === now) push("rage_click", data);
+              if (base !== now) return;
               // Repeated clicks on the same dead element count once (the rage click covers the rest).
               if (lastDead.sel === data.sel && t - lastDead.t < 2000) return;
               lastDead = { sel: data.sel, t: t };
               push("dead_click", data);
             }),
-            Math.max(0, 1000 - (Date.now() - t))
+            // A negative delay runs at once.
+            t + 1000 - Date.now()
           );
         });
       }),
@@ -762,7 +790,7 @@
         if (m && m[1].split(/[?#]/)[0] !== SCRIPT_SRC.split(/[?#]/)[0])
           return m[1].replace(location.origin, "").split(/[?#]/)[0] + ":" + m[2];
       }
-      return undefined;
+      return;
     }
 
     function isOwnRequest(url) {
@@ -916,7 +944,8 @@
   // With consent: "banner" or "required", start() waits for a yes. Until then
   // calls stay queued and nothing is stored, listened to or sent.
   var CONSENT_KEY = "trc_consent";
-  var gated = null; // the config waiting for consent
+  // The config waiting for consent.
+  var gated = null;
   var bar = null;
 
   function storedAnswer() {

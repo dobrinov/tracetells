@@ -56,9 +56,11 @@ async function renderBehaviour() {
     )}
 
     <h2>Rage clicks</h2>
+    <p class="sub">Three quick clicks in one spot that the page didn't react to.</p>
     ${table(clickHeaders, clickRows(d.rage_clicks), "No rage clicks. Nice.")}
 
     <h2>Dead clicks</h2>
+    <p class="sub">A click the page didn't react to within a second, counting from the press. Form fields, drawing surfaces, the page background and clicks that select text aren't judged. Since November 2026, clicks the page did react to on press, drawing and text selection no longer count, so both numbers dropped then without any change to your site.</p>
     ${table(clickHeaders, clickRows(d.dead_clicks), "No dead clicks.")}
 
     <h2>Forms</h2>

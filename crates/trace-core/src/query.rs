@@ -502,6 +502,12 @@ mod tests {
         assert_eq!(count(json!({ "error": "*", "text": "POST stats.example.com/*" })).await, Some(2.0));
         assert_eq!(count(json!({ "type": "error", "name": "network", "text": "POST /sign-in \u{2192} 422" })).await, Some(1.0));
         assert_eq!(count(json!({ "error": "/sign-in" })).await, Some(3.0), "without text, every error counts as before");
+        assert_eq!(count(json!({ "type": "error", "text": "no-such-message*" })).await, Some(0.0), "text that matches nothing counts nothing");
+        sqlx::query("INSERT INTO events (project_id, session_id, ts, type, path, text) VALUES ($1, 'b', $2, 'error', '/sign-in', 'Unhandled rejection: Missing target')")
+            .bind(site.id).bind(t + 6000).execute(&pool).await.unwrap();
+        assert_eq!(count(json!({ "error": "*", "text": "Unhandled rejection: Missing*" })).await, Some(1.0));
+        let refused = Query::parse(&json!({ "measure": "events", "match": { "error": "Missing target*" }, "days": 7 })).unwrap_err().to_string();
+        assert!(refused.contains(r#"{ "error": "*", "text": "Missing target*" }"#), "{refused}");
         // KPIs and funnels read the same events through the scan.
         let m = crate::config::parse_matcher(&json!({ "error": "*", "text": "POST stats.example.com/*" }), "m").unwrap();
         let hits = crate::kpi::hits(&pool, site.id, &m, t - 1, t + DAY_MS).await.unwrap();

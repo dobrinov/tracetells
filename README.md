@@ -138,7 +138,7 @@ Put a `trace.json` at the root of your application's repository:
   - `per_session`: matching events per session
 
   Each KPI also takes a `goal` (`increase` or `decrease`) and an optional `target` (`"55%"` or `0.55`).
-- **Event matchers**: `{ "pageview": "/checkout" }` matches a path, `{ "click": "button#pay" }` a selector, `{ "event": "purchase" }` a custom event, and `{ "error": "*" }` any error. Shorthands can add `path`, `selector` or `text` (an error's message, e.g. `{ "error": "*", "text": "POST /api/cart*" }`), and the full form `{ "type", "path", "selector", "name", "text" }` also works. A pattern ending in `*` matches by prefix.
+- **Event matchers**: `{ "pageview": "/checkout" }` matches a path, `{ "click": "button#pay" }` a selector, `{ "event": "purchase" }` a custom event, and `{ "error": "*" }` any error. Shorthands can add `path`, `selector` or `text` (an error's message, e.g. `{ "error": "*", "text": "POST /api/cart*" }`), and the full form `{ "type", "path", "selector", "name", "text" }` also works. A pattern ending in `*` matches by prefix. A matcher that would answer wrongly is refused, by `check_config`, `push_config` and `query_behaviour` alike: a page pattern that doesn't start with `/` (or isn't `*`), which would match nothing (`{ "error": "Missing target*" }` names a page; the message goes in `text`), and a key the matcher doesn't take (`{ "type": "error", "message": "X" }` would count every error). Unhandled promise rejections are stored as `Unhandled rejection: <reason>`.
 
 Send the events from code with `trace.track("purchase", { plan })`, or with no JavaScript at all: `<button data-trace-event="add_to_cart" data-trace-props='{"sku":"S-1"}'>`. On a `<form>`, the event fires when it's submitted.
 
@@ -213,7 +213,7 @@ The **Features** page measures each area and feature over the window:
 - **Reach:** the share of visitors who used it, with the window before.
 - **Adoption:** the share of signed-in people who used it.
 - **Come back:** how many of those people used it on two or more days.
-- **With problems:** the share of its sessions that hit a rage click, dead click or error on its own pages (the pages it declares, or where its events happen when it declares none), and the most common one.
+- **With problems:** the share of its sessions that hit a rage click, dead click or error on its own pages. A dead click is a press the page didn't react to (no change, scroll or navigation from the press until a second after the click), and a rage click is three such clicks in one spot within 700 ms. Form fields, `<canvas>`, the page background and clicks that leave text selected are never judged. Collectors before November 2026 also counted controls that react on press, drawing, typing on on-screen keypads and text selection, so trends drop when visitors get the current collector, with no change to the product (the pages it declares, or where its events happen when it declares none), and the most common one.
 
 Each gets a status: **used, but it hurts** (where a fix helps the most people), **little used**, **little used and it hurts**, **healthy**, or too little data. Without declared areas, Trace suggests them from the website's URLs. Home raises the busiest area that hurts, `get_areas` gives your agent the same numbers, and the analysis prompt points it there.
 
@@ -459,7 +459,7 @@ The Privacy page tests the rules against sample text before you rely on them. Ev
 
 ## Performance
 
-The collector is 8.3 KB on the wire with brotli (9.4 KB with gzip), checked by a test so the number stays true, and is built not to affect the host page. The readable, commented source is in the repo; the server strips comments and compresses it once at startup. It is cached for an hour and then revalidated with an ETag, so collector upgrades reach every site without changing the snippet. Handlers are passive and only note what happened; describing elements and queueing run in `requestIdleCallback`. Nothing reads layout on the hot path (no `innerText`; scroll height is sampled at most every 250 ms). DOM mutations are observed only during the second after a click, to spot dead clicks. Storage writes are throttled, data is sent in batches with `sendBeacon`, and every callback is wrapped so collector errors never reach the page. `data-sample="0.25"` records only a share of visitors; the rest skip setup entirely.
+The collector is 8.4 KB on the wire with brotli (9.5 KB with gzip), checked by a test so the number stays true, and is built not to affect the host page. The readable, commented source is in the repo; the server strips comments and compresses it once at startup. It is cached for an hour and then revalidated with an ETag, so collector upgrades reach every site without changing the snippet. Handlers are passive and only note what happened; describing elements and queueing run in `requestIdleCallback`. Nothing reads layout on the hot path (no `innerText`; scroll height is sampled at most every 250 ms). DOM mutations are observed only from a press until a second after its click, to spot dead and rage clicks. Storage writes are throttled, data is sent in batches with `sendBeacon`, and every callback is wrapped so collector errors never reach the page. `data-sample="0.25"` records only a share of visitors; the rest skip setup entirely.
 
 ## Install the collector
 

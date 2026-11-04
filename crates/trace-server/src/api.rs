@@ -977,11 +977,11 @@ async fn test_privacy(State(state): State<AppStateRef>, Extension(CurrentSite(si
 mod tests {
     use super::*;
 
-    /// The homepage and README promise 8.3 KB with brotli and 9.4 KB with gzip.
+    /// The homepage and README promise 8.4 KB with brotli and 9.5 KB with gzip.
     /// Anything that would round past those fails here: raise a budget only
     /// together with those claims, so they stay true.
-    const BROTLI_BUDGET: usize = 8_349;
-    const GZIP_BUDGET: usize = 9_449;
+    const BROTLI_BUDGET: usize = 8_449;
+    const GZIP_BUDGET: usize = 9_549;
 
     #[test]
     fn the_collector_stays_small() {

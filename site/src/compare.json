@@ -402,7 +402,7 @@
    ],
    [
     "Will two scripts slow my site?",
-    "Trace adds 8.3 KB and does its work when the browser is idle."
+    "Trace adds 8.4 KB and does its work when the browser is idle."
    ]
   ],
   "related": [
@@ -701,7 +701,7 @@
    ],
    [
     "Can we keep Amplitude?",
-    "Yes. Run both; Trace adds 8.3 KB."
+    "Yes. Run both; Trace adds 8.4 KB."
    ]
   ],
   "related": [
@@ -863,7 +863,7 @@
    [
     "Script size",
     "About 2.5 KB",
-    "8.3 KB"
+    "8.4 KB"
    ],
    [
     "Self-host",
@@ -956,7 +956,7 @@
    [
     "Script size",
     "About 3.9 KB",
-    "8.3 KB"
+    "8.4 KB"
    ],
    [
     "Self-host",
@@ -1086,7 +1086,7 @@
    ],
    [
     "Will two scripts slow my site?",
-    "Trace adds 8.3 KB and does its work when the browser is idle."
+    "Trace adds 8.4 KB and does its work when the browser is idle."
    ]
   ],
   "related": [

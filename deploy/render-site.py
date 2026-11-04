@@ -164,7 +164,7 @@ def compare_page(tool, all_tools):
 <section class="wrap section-sm rule">
 <h2>Run them side by side for a month</h2>
 <div class="steps">
-<div><span class="k">DAY 1</span><p>Add the Trace tag next to {n}. It adds 8.3 KB and does its work when the browser is idle.</p></div>
+<div><span class="k">DAY 1</span><p>Add the Trace tag next to {n}. It adds 8.4 KB and does its work when the browser is idle.</p></div>
 <div><span class="k">WEEK 1</span><p>{t['week1']}</p></div>
 <div><span class="k">WEEK 4</span><p>{t['week4']}</p></div>
 </div>

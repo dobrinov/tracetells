@@ -411,12 +411,32 @@ impl Parser {
         };
         let obj = self.object(v, at)?;
         let text = |k: &str| obj.get(k).and_then(Value::as_str).map(str::to_string);
+        // A key the matcher would ignore widens it to everything, so it's refused.
+        let unknown = |keys: Vec<&String>, allowed: &str| {
+            let hint = if keys.iter().any(|k| *k == "message") { "; an error's message goes in \"text\"" } else { "" };
+            let keys: Vec<String> = keys.iter().map(|k| format!("{k:?}")).collect();
+            format!("unknown key {} (a matcher takes {allowed}){hint}", keys.join(", "))
+        };
         let m = if let Some(kind) = text("type") {
+            let extra: Vec<&String> = obj.keys().filter(|k| !matches!(k.as_str(), "type" | "path" | "selector" | "name" | "text")).collect();
+            if !extra.is_empty() {
+                self.err(at, unknown(extra, "\"type\", \"path\", \"selector\", \"name\" and \"text\""));
+                return None;
+            }
             EventMatch { kind, path: text("path"), selector: text("selector"), name: text("name"), text: text("text") }
         } else {
             let shorthand: Vec<&String> = obj.keys().filter(|k| !matches!(k.as_str(), "path" | "selector" | "text")).collect();
             let [key] = shorthand.as_slice() else {
-                self.err(at, "expected one event type, e.g. { \"pageview\": \"/checkout\" } or { \"event\": \"purchase\" }");
+                let (types, extra): (Vec<&String>, Vec<&String>) = shorthand.iter().partition(|k| k.as_str() == "event" || EVENT_TYPES.contains(&k.as_str()));
+                if types.len() == 1 && !extra.is_empty() {
+                    let hint = if extra.iter().any(|k| *k == "name") { "; a custom event's name is the value of \"event\", e.g. { \"event\": \"purchase\" }" } else { "" };
+                    self.err(at, format!("{}{hint}", unknown(extra, "one event type plus \"path\", \"selector\" and \"text\"")));
+                } else if shorthand.len() > 1 {
+                    let keys: Vec<String> = shorthand.iter().map(|k| format!("{k:?}")).collect();
+                    self.err(at, format!("expected one event type, found {}", keys.join(", ")));
+                } else {
+                    self.err(at, "expected one event type, e.g. { \"pageview\": \"/checkout\" } or { \"event\": \"purchase\" }");
+                }
                 return None;
             };
             let Some(value) = obj[key.as_str()].as_str().map(str::to_string) else {
@@ -446,6 +466,19 @@ impl Parser {
             && !events.contains_key(name)
         {
             self.warnings.push(format!("{at}: custom event {name:?} is not declared under \"events\""));
+        }
+        // Stored paths always start with "/", so any other pattern matches nothing.
+        if let Some(path) = &m.path
+            && path != "*"
+            && !path.starts_with('/')
+        {
+            let hint = match m.kind.as_str() {
+                "error" => format!("; to match an error's message, put it in \"text\": {{ \"error\": \"*\", \"text\": {path:?} }}"),
+                "click" | "rage_click" | "dead_click" => format!("; to match an element's label, put it in \"text\": {{ \"type\": {:?}, \"text\": {path:?} }}", m.kind),
+                _ => String::new(),
+            };
+            self.err(at, format!("page pattern {path:?} must start with \"/\" (or be \"*\"){hint}"));
+            return None;
         }
         Some(m)
     }
@@ -658,6 +691,7 @@ pub async fn tracking_health(pool: &Pool, project_id: i64, days: i64) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     const STRIDE: &str = r#"{
       "product": "Stride",
@@ -784,6 +818,36 @@ mod tests {
     fn warns_about_undeclared_custom_events() {
         let p = parse(r#"{ "kpis": { "x": { "session_rate": { "event": "purchase" }, "goal": "increase" } } }"#).unwrap();
         assert_eq!(p.warnings, vec!["kpis.x.session_rate: custom event \"purchase\" is not declared under \"events\""]);
+    }
+
+    #[test]
+    fn matchers_that_would_answer_wrongly_are_refused() {
+        let refused = |v: Value| parse_matcher(&v, "m").unwrap_err();
+        // An error's message given as its page matches nothing.
+        let e = refused(json!({ "error": "Missing target*" }));
+        assert!(e.contains("must start with \"/\"") && e.contains(r#"{ "error": "*", "text": "Missing target*" }"#), "{e}");
+        assert!(refused(json!({ "dead_click": "*", "path": "checkout" })).contains("put it in \"text\""));
+        assert!(!refused(json!({ "pageview": "checkout" })).contains("text"), "pages have no text hint");
+        // A key the matcher would ignore makes it match every error.
+        let e = refused(json!({ "type": "error", "message": "X" }));
+        assert!(e.contains("unknown key \"message\"") && e.contains("goes in \"text\""), "{e}");
+        let e = refused(json!({ "error": "*", "name": "X" }));
+        assert!(e.contains("unknown key \"name\"") && e.contains(r#"{ "event": "purchase" }"#), "{e}");
+        assert!(refused(json!({ "error": "*", "pageview": "/" })).contains("found \"error\", \"pageview\""));
+
+        for ok in [
+            json!({ "error": "/checkout" }),
+            json!({ "pageview": "/products/*" }),
+            json!({ "error": "*", "text": "Unhandled rejection: Missing*" }),
+            json!({ "type": "error", "path": "*", "name": "network", "text": "POST *" }),
+            json!({ "rage_click": "button#pay", "path": "/checkout" }),
+        ] {
+            assert!(parse_matcher(&ok, "m").is_ok(), "{ok}");
+        }
+
+        // trace.json checks refuse it the same way, naming the matcher.
+        let all = parse(r#"{ "kpis": { "errs": { "session_rate": { "error": "TypeError*" } } } }"#).unwrap_err().join("\n");
+        assert!(all.contains("errs") && all.contains(r#"{ "error": "*", "text": "TypeError*" }"#), "{all}");
     }
 
     #[tokio::test]

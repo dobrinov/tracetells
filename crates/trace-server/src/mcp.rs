@@ -238,7 +238,7 @@ pub fn tools() -> Vec<Value> {
         tool(
             "query_behaviour",
             "Ask about behaviour",
-            "Answer a question about how visitors behave, with numbers: one measure of matching events over the last `days`, optionally broken down by path, selector, device or day, and compared with the window before. Measures: sessions (with a match), events, session_rate (share of sessions that started in the window), per_session, conversion (from → to, later in the same session). Matchers use trace.json's form: {\"pageview\": \"/checkout\"}, {\"rage_click\": \"button#pay\", \"path\": \"/checkout\"}, {\"event\": \"purchase\"}, {\"error\": \"*\"}, {\"error\": \"*\", \"text\": \"POST /api/cart*\"} (by message), or {\"type\": \"dead_click\", \"selector\": \"img*\"}; a trailing * matches by prefix. Aggregates only: never sessions or people.",
+            "Answer a question about how visitors behave, with numbers: one measure of matching events over the last `days`, optionally broken down by path, selector, device or day, and compared with the window before. Measures: sessions (with a match), events, session_rate (share of sessions that started in the window), per_session, conversion (from → to, later in the same session). Matchers use trace.json's form: {\"pageview\": \"/checkout\"}, {\"rage_click\": \"button#pay\", \"path\": \"/checkout\"}, {\"event\": \"purchase\"}, {\"error\": \"*\"}, {\"error\": \"*\", \"text\": \"POST /api/cart*\"} (by message), or {\"type\": \"dead_click\", \"selector\": \"img*\"}; a trailing * matches by prefix. Page patterns start with / (the value of {\"error\": …} is the page, not the message). \"text\" matches an error's whole message as stored (unhandled rejections start with \"Unhandled rejection: \") or a click's label. Aggregates only: never sessions or people.",
             json!({
                 "measure": { "type": "string", "enum": ["sessions", "events", "session_rate", "per_session", "conversion"] },
                 "match": { "type": "object", "description": "What to count (every measure but conversion)" },
@@ -1586,6 +1586,12 @@ mod tests {
         assert_eq!(pushed["applied"]["created"].as_array().unwrap().len(), 1, "{pushed}");
         let bad = handle(&ctx, &call("push_config", json!({ "config": "{\"kpis\": 3}" }))).await.unwrap();
         assert_eq!(bad["result"]["isError"], true);
+        // A matcher that would answer wrongly is refused with the fix, not answered with a number.
+        for (m, fix) in [(json!({ "error": "Missing target*" }), "\"text\": \"Missing target*\""), (json!({ "type": "error", "message": "X" }), "unknown key \"message\"")] {
+            let r = handle(&ctx, &call("query_behaviour", json!({ "measure": "events", "match": m }))).await.unwrap();
+            assert_eq!(r["result"]["isError"], true, "{r}");
+            assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains(fix), "{r}");
+        }
 
         let rule = ok(handle(&ctx, &call("add_privacy_rule", json!({ "kind": "mask_selector", "pattern": ".account-summary", "note": "balances" }))).await.unwrap());
         let rules = ok(handle(&ctx, &call("get_privacy_rules", json!({}))).await.unwrap());
