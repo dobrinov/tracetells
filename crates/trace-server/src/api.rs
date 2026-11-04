@@ -487,12 +487,18 @@ async fn collect(
         .or_else(|| headers.get(header::REFERER))
         .and_then(|v| v.to_str().ok());
     let rules = site_rules(&state, site).await?;
-    if let Err(e) = ingest::store(&state.pool, site, batch, ua, origin, &rules).await {
-        // A rejected batch uses none of the account's quota.
-        give_back_events(&state, account, allowed);
-        return Err(ApiError::bad_request(e));
-    }
-    trace_core::usage::add_events(&state.pool, account, allowed, n - allowed).await?;
+    let kept = match ingest::store(&state.pool, site, batch, ua, origin, &rules).await {
+        Ok(kept) => kept as i64,
+        Err(e) => {
+            // A rejected batch uses none of the account's quota.
+            give_back_events(&state, account, allowed);
+            return Err(ApiError::bad_request(e));
+        }
+    };
+    // Events left out on purpose (ignored pages, a developer's machine, errors from
+    // outside the website) use none of it either.
+    give_back_events(&state, account, allowed - kept);
+    trace_core::usage::add_events(&state.pool, account, kept, n - allowed).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -280,7 +280,8 @@ mod tests {
         }"#;
         crate::config::apply(&pool, s, &crate::config::parse(trace_json).unwrap(), "test").await.unwrap();
         let t = now_ms() - DAY_MS;
-        let failed = "POST stats.example.com/api/event \u{2192} failed";
+        // A request to the website's own API: one to another site with no response isn't stored.
+        let failed = "POST /api/event \u{2192} failed";
         // One session's analytics script fails on every page; eight sessions see / and none signs up.
         session(&pool, s, "a", t, &[("pageview", "/", "", "", ""), ("error", "/", "", "network", failed), ("pageview", "/home", "", "", ""),
             ("error", "/home", "", "network", failed), ("dead_click", "/home", "button.pay", "", ""), ("dead_click", "/home", "div.question-body > p", "", ""),

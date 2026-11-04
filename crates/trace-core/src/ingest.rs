@@ -82,6 +82,48 @@ fn device(vw: Option<u32>) -> Option<&'static str> {
     })
 }
 
+/// Whether an error came from outside the website rather than from it: a browser
+/// extension, a blocker refusing a request to another site, or an error the browser
+/// hid entirely. Applied here as well as in the collector, for collectors loaded
+/// before it learned to leave these out.
+fn browser_noise(e: &IncomingEvent, page_host: Option<&str>) -> bool {
+    if e.kind != "error" {
+        return false;
+    }
+    let (kind, text, sel) = (e.name.as_deref().unwrap_or(""), e.text.as_deref().unwrap_or(""), e.sel.as_deref().unwrap_or(""));
+    if sel.contains("-extension://") || text.contains("-extension://") {
+        return true;
+    }
+    if kind == "exception" && text == "Script error." && sel.is_empty() {
+        return true;
+    }
+    // A request with no response, or a resource that didn't load (the browser gives
+    // no status for those), to another site: what ad and privacy blockers do.
+    let target = match kind {
+        "network" if text.ends_with("\u{2192} failed") => text.split_once(' ').map(|(_, rest)| rest),
+        "resource" => text.strip_prefix("Failed to load ").and_then(|rest| rest.split_once(' ')).map(|(_, url)| url),
+        _ => None,
+    };
+    match (target, page_host) {
+        (Some(url), Some(page)) if !url.starts_with('/') => !same_site(url.split(['/', ' ']).next().unwrap_or(""), page),
+        _ => false,
+    }
+}
+
+/// Whether two hosts belong to one site: the same host, or the same registrable
+/// domain, approximated as the last two labels (three for `co.uk`-style suffixes).
+/// It errs towards "same site", which keeps an error rather than losing it.
+fn same_site(a: &str, b: &str) -> bool {
+    fn site(host: &str) -> String {
+        let host = host.rsplit_once(':').filter(|(_, port)| port.chars().all(|c| c.is_ascii_digit())).map_or(host, |(h, _)| h);
+        let labels: Vec<&str> = host.trim_end_matches('.').split('.').collect();
+        let n = labels.len();
+        let keep = if n >= 3 && labels[n - 1].len() == 2 && labels[n - 2].len() <= 3 { 3 } else { 2 };
+        labels[n.saturating_sub(keep)..].join(".").to_ascii_lowercase()
+    }
+    !a.is_empty() && (a.eq_ignore_ascii_case(b) || site(a) == site(b))
+}
+
 /// Stores a batch and returns how many events were kept.
 pub async fn store(
     pool: &Pool,
@@ -105,6 +147,7 @@ pub async fn store(
             return Ok(0);
         }
     }
+    let page_host = origin.and_then(referrer_origin).map(|o| o.split_once("://").map_or(o.clone(), |(_, h)| h.to_string()));
     let server_now = now_ms();
     let skew = batch.now.map(|c| server_now - c).unwrap_or(0);
     let events: Vec<_> = batch
@@ -115,6 +158,8 @@ pub async fn store(
         .filter(|e| {
             e.path.as_deref().is_none_or(|p| !rules.ignores(p) && !rules.ignores(&redact_path(p)))
         })
+        // Errors from outside the website: extensions, blockers, hidden cross-origin errors.
+        .filter(|e| !browser_noise(e, page_host.as_deref()))
         .take(MAX_EVENTS_PER_BATCH)
         .map(|e| {
             let ts = e
@@ -211,8 +256,86 @@ pub async fn store(
 }
 
 #[cfg(test)]
+mod noise_tests {
+    use super::*;
+
+    fn error(kind: &str, text: &str, sel: Option<&str>) -> IncomingEvent {
+        serde_json::from_value(serde_json::json!({ "type": "error", "name": kind, "text": text, "sel": sel })).unwrap()
+    }
+
+    #[test]
+    fn noise_from_outside_the_website_is_recognised() {
+        let page = Some("shop.example.com");
+        let noise = |e: IncomingEvent| browser_noise(&e, page);
+        // Blocked requests to another site.
+        assert!(noise(error("network", "POST stats.example.org/api/event \u{2192} failed", None)));
+        assert!(noise(error("resource", "Failed to load script stats.example.org/js/:id", None)));
+        // The website's own site, a status, the page's own origin: kept.
+        assert!(!noise(error("network", "POST api.example.com/orders \u{2192} failed", None)));
+        assert!(!noise(error("network", "GET payments.example.org/session \u{2192} 500", None)));
+        assert!(!noise(error("network", "GET /api/project \u{2192} failed", None)));
+        assert!(!noise(error("resource", "Failed to load img /logo.png", None)));
+        assert!(!noise(error("resource", "Failed to load img cdn.example.com:8443/logo.png", None)));
+        // Extensions, wherever their address shows.
+        assert!(noise(error("exception", "TypeError: x is undefined", Some("chrome-extension://abcdef/content.js:12"))));
+        assert!(noise(error("rejection", "Unhandled rejection: at moz-extension://1-2/a.js:3", None)));
+        assert!(!noise(error("exception", "TypeError: x is undefined", Some("/assets/app.js:40"))));
+        // Errors the browser hid.
+        assert!(noise(error("exception", "Script error.", None)));
+        assert!(!noise(error("exception", "Script error.", Some("/assets/app.js:1"))));
+        // Without the page's origin there's nothing to compare with: kept.
+        assert!(!browser_noise(&error("network", "POST stats.example.org/api/event \u{2192} failed", None), None));
+        // Other event types are never noise.
+        let click: IncomingEvent = serde_json::from_value(serde_json::json!({ "type": "click", "sel": "chrome-extension://x" })).unwrap();
+        assert!(!noise(click));
+    }
+
+    #[test]
+    fn sites_are_compared_by_registrable_domain() {
+        assert!(same_site("api.example.com", "shop.example.com"));
+        assert!(same_site("example.com", "www.example.com"));
+        assert!(same_site("shop.example.com:8443", "shop.example.com"));
+        assert!(!same_site("stats.example.org", "shop.example.com"));
+        assert!(same_site("cdn.shop.co.uk", "www.shop.co.uk"));
+        assert!(!same_site("other.co.uk", "www.shop.co.uk"));
+        assert!(!same_site("", "shop.example.com"));
+        assert!(same_site("localhost", "localhost"));
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn errors_from_outside_the_website_are_not_stored() {
+        let target = crate::db::test_target("noise").await;
+        let pool = crate::db::connect(&target).await.unwrap();
+        let (_, site) = crate::db::create_account_with_site(&pool, "Shop", None).await.unwrap();
+        let t = now_ms() - 1000;
+        let error = |name: &str, text: &str, sel: Option<&str>| serde_json::json!({ "type": "error", "t": t, "path": "/", "name": name, "text": text, "sel": sel });
+        let batch: Batch = serde_json::from_value(serde_json::json!({ "key": "k", "sid": "s1", "events": [
+            { "type": "pageview", "t": t, "path": "/" },
+            error("network", "POST stats.example.org/api/event \u{2192} failed", None),
+            error("resource", "Failed to load script stats.example.org/js/:id", None),
+            error("exception", "TypeError: x", Some("chrome-extension://abcdef/content.js:12")),
+            error("exception", "Script error.", None),
+            error("network", "POST api.shop.example.com/orders \u{2192} failed", None),
+            error("network", "GET payments.example.org/session \u{2192} 500", None),
+            error("exception", "TypeError: y", Some("/assets/app.js:40")),
+        ] }))
+        .unwrap();
+        let kept = store(&pool, site.id, batch, None, Some("https://shop.example.com"), &HostRules::default()).await.unwrap();
+        assert_eq!(kept, 4, "the pageview and the website's own three errors");
+        let mut stored: Vec<String> = sqlx::query_scalar("SELECT text FROM events WHERE project_id = $1 AND type = 'error'")
+            .bind(site.id)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        stored.sort();
+        assert_eq!(stored, ["GET payments.example.org/session \u{2192} 500", "POST api.shop.example.com/orders \u{2192} failed", "TypeError: y"]);
+        crate::db::drop_test_target(&target).await;
+    }
 
     #[tokio::test]
     async fn a_live_website_leaves_out_developer_machines() {

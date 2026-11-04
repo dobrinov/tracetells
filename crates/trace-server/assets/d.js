@@ -759,7 +759,9 @@
     // network errors keep only the method, path and status, never bodies or queries.
     var reporting = false;
     function error(kind, message, source) {
-      if (reporting || (page && page.errors++ >= 20)) return;
+      // A browser extension's error isn't the website's, and its address would
+      // help identify the visitor: nothing about it leaves the browser.
+      if (reporting || /-extension:/.test(source) || (page && page.errors++ >= 20)) return;
       reporting = true;
       try {
         push("error", { name: kind, text: redact(String(message).slice(0, 300), false), sel: source });
@@ -782,11 +784,12 @@
       }
     }
 
-    // "file:line" of the first stack frame outside the collector.
+    // "file:line" of the first stack frame outside the collector. An extension's
+    // frame counts, so error() can leave its error out.
     function frame(err) {
       var lines = String((err && err.stack) || "").split("\n");
       for (var i = 0; i < lines.length; i++) {
-        var m = /((?:https?:\/\/|\/)[^\s()]+?):(\d+)(?::\d+)?\)?\s*$/.exec(lines[i]);
+        var m = /((?:https?:\/\/|[a-z-]+-extension:\/\/|\/)[^\s()]+?):(\d+)(?::\d+)?\)?\s*$/.exec(lines[i]);
         if (m && m[1].split(/[?#]/)[0] !== SCRIPT_SRC.split(/[?#]/)[0])
           return m[1].replace(location.origin, "").split(/[?#]/)[0] + ":" + m[2];
       }

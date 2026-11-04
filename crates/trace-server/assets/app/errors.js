@@ -41,7 +41,7 @@ async function renderErrors() {
   const d = await api(`/digest?days=${digestDays}`);
   const total = d.errors.reduce((n, e) => n + e.sessions, 0);
   view.innerHTML = html`
-    ${errorsToolbar("Exceptions, console errors, failed requests and missing files that visitors hit, with the page and how many sessions each one reached.")}
+    ${errorsToolbar("Exceptions, console errors, failed requests and missing files that visitors hit, with the page and how many sessions each one reached. Errors from browser extensions, requests to other sites that ad blockers refused, and cross-origin errors the browser hides (Script error.) aren't counted.")}
     ${errorTabs("browser")}
     ${d.errors.length ? html`<div class="stats">${raw(stat(num(d.errors.length), "Different errors"))}${raw(stat(num(total), "Sessions hit", `of ${num(d.totals.sessions)}`))}</div>` : ""}
     ${table(
