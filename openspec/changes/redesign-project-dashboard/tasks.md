@@ -29,9 +29,9 @@ There is no JavaScript test harness, so dashboard tasks are verified in a browse
 
 ## 4. Stage 4: Work
 
-- [ ] 4.1 Write `app/work.js`: five columns by status and settled verdict, dismissed toggle with reasons, cards with kind, confidence, pages and goal, "measuring, day N of 14", before and after with the verdict, the next-step agent command with Copy, and the full insight in a side panel; the board scrolls sideways inside itself on narrow screens; verify on the demo (one released insight) that it sits in the right column with its verdict, and that no control changes an insight
-- [ ] 4.2 Redirect `#/improve/insights` and `#/improve/releases` to `#/work` at the matching column and point Home's insight items there; verify both old links
-- [ ] 4.3 Update the README and the coding-agent docs where they describe Insights and Releases; verify the commands shown on the board are the ones documented
+- [x] 4.1 Write `app/work.js`: five columns by status and settled verdict, dismissed toggle with reasons, cards with kind, confidence, pages and goal, "measuring, day N of 14", before and after with the verdict, the next-step agent command with Copy, and the full insight in a side panel; the board scrolls sideways inside itself on narrow screens; verify on the demo (one released insight) that it sits in the right column with its verdict, and that no control changes an insight
+- [x] 4.2 Redirect `#/improve/insights` and `#/improve/releases` to `#/work` at the matching column and point Home's insight items there; verify both old links
+- [x] 4.3 Update the README and the coding-agent docs where they describe Insights and Releases; verify the commands shown on the board are the ones documented
 
 ## 5. Stage 5: Product map
 

@@ -127,7 +127,8 @@ const PLACES = [
   { key: "map", label: "Product map", views: [["features", "Areas", ""], ["pages", "Pages", "pages"]] },
   { key: "problems", label: "Problems", views: [["errors", "Problems", ""]] },
   { key: "goals", label: "Goals", views: [["goals", "Goals", ""]] },
-  { key: "work", label: "Work", views: [["insights", "Suggested and in progress", ""], ["releases", "Released", "released"]] },
+  // Releases is the board too, scrolled to its released columns: an address, not a tab.
+  { key: "work", label: "Work", views: [["insights", "Board", ""], ["releases", "Released", "released", true]] },
   { key: "settings", label: "Settings", views: [["start", "Get started", "start"], ["install", "Install and tracking", "install"], ["privacy", "Privacy", "privacy"], ["team", "Team", "team"], ["plan", "Plan", "plan"]] },
 ];
 // The places a phone's bottom bar shows; the rest are in the menu.
@@ -192,7 +193,8 @@ function renderSubnav(page) {
   const nav = document.getElementById("subnav");
   const place = placeOf(page);
   if (!place || place.key === "pulse" && page === "home") return (nav.hidden = true);
-  const views = place.views.filter(([p]) => {
+  const views = place.views.filter(([p, , , notTab]) => {
+    if (notTab) return false;
     if (PUBLIC) return PUBLIC_PAGES.includes(p);
     if (p === "team") return can("admin");
     if (p === "start") return !checklist || !checklist.complete;

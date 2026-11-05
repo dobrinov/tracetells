@@ -1,11 +1,9 @@
 "use strict";
 
-// Insights and Releases.
+// Insight cards, their evidence and verdicts, and copying an insight's prompt. Work (work.js) lays them out.
 // The dashboard is plain scripts loaded in order (see index.html); they share one scope.
 
 // ---------------------------------------------------------------- Insights
-
-let insightTab = store("trace_tab") || "new";
 
 function kpiValue(k, v) {
   if (v == null) return "–";
@@ -113,16 +111,6 @@ function insightCard(insight) {
   </article>`;
 }
 
-async function showPrompt(id) {
-  const panel = view.querySelector(".prompt-panel");
-  if (!panel) return;
-  panel.querySelector("pre").textContent = "Loading…";
-  panel.dataset.id = id;
-  panel.querySelector(".cli").textContent = `trace prompt ${id} | claude`;
-  const text = await api(`/insights/${id}/prompt`);
-  if (panel.dataset.id === String(id)) panel.querySelector("pre").textContent = text;
-}
-
 async function copyPrompt(id, btn) {
   const text = await api(`/insights/${id}/prompt`);
   if (await copyText(text)) {
@@ -133,84 +121,4 @@ async function copyPrompt(id, btn) {
   } else {
     toast("Couldn't copy. Select the prompt in the panel and copy it from there.", true);
   }
-}
-
-// Insights in progress, or (as Releases) the shipped ones and their verdicts.
-let insightsMode = "insights";
-
-async function renderInsights() {
-  const releases = insightsMode === "releases";
-  const [insights, kpis, analysis] = await Promise.all([api("/insights"), api("/kpis"), releases || PUBLIC ? null : api("/analysis").catch(() => null)]);
-  kpiCache = kpis;
-  if (!releases && insightTab === "released") insightTab = "new";
-  const tab = releases ? "released" : insightTab;
-  const counts = Object.fromEntries(STATUSES.map(([s]) => [s, insights.filter((i) => i.status === s).length]));
-  const shown = insights.filter((i) => i.status === tab).sort((a, b) => (releases ? (b.released_at || 0) - (a.released_at || 0) : 0));
-  if (!shown.some((i) => i.id === focusedInsight)) focusedInsight = shown.length ? shown[0].id : null;
-  view.innerHTML = `
-    <h1>${releases ? "Releases" : "Insights"}</h1>
-    <p class="sub">${
-      releases
-        ? "Shipped changes, newest first, and whether each moved its goal: Trace compares the 14 days before the release with the 14 after."
-        : PUBLIC
-        ? `What a coding agent found in how people use ${esc(project.name)}, with the change it suggests. Each one is also a ready prompt for a coding agent.`
-        : "What your coding agent found in real behaviour, with the change it suggests. Your agent moves them along: /trace:fix implements one, and /trace:manage picks, dismisses or releases one. Once released, it moves to Releases, where Trace measures whether it worked."
-    }</p>
-    ${analysis ? analysisPanel(analysis) : ""}
-    <div class="chips" role="tablist" aria-label="Status" ${releases ? "hidden" : ""}>
-      ${STATUSES.filter(([s]) => s !== "released" && !(PUBLIC && s === "dismissed")).map(
-        ([s, label]) =>
-          `<button role="tab" data-tab="${s}" class="${s === tab ? "active" : ""}" aria-selected="${s === tab}">${label}<span class="count">${counts[s]}</span></button>`
-      ).join("")}
-    </div>
-    ${
-      shown.length
-        ? `<div class="insights-layout">
-            <div class="insights">${shown.map(insightCard).join("")}</div>
-            <aside class="prompt-panel" aria-label="Prompt for your coding agent">
-              <div class="head"><strong>Prompt for your coding agent</strong><button data-panel-copy>Copy</button></div>
-              <pre></pre>
-              <div class="cli"></div>
-            </aside>
-          </div>`
-        : `<div class="empty">${
-            PUBLIC
-              ? "Nothing here yet."
-              : releases
-              ? `Nothing released yet. When a change from an insight ships, mark it released and its verdict appears here.`
-              : tab === "new"
-              ? `No new insights. The panel above says when an analysis is worth running and how.`
-              : `Nothing here yet.`
-          }</div>`
-    }`;
-  if (analysis) {
-    wireAnalysisPanel(analysis);
-    analysisBadge(analysis);
-  }
-
-  view.querySelectorAll("[data-tab]").forEach((el) =>
-    el.addEventListener("click", () => {
-      insightTab = el.dataset.tab;
-      store("trace_tab", insightTab);
-      renderInsights();
-    })
-  );
-  if (focusedInsight != null) showPrompt(focusedInsight);
-  view.querySelector("[data-panel-copy]")?.addEventListener("click", (e) => copyPrompt(focusedInsight, e.currentTarget));
-
-  view.querySelectorAll(".card").forEach((card) => {
-    const id = Number(card.dataset.id);
-    // Clicking a card shows its prompt; controls inside it keep their own behaviour.
-    card.addEventListener("click", (e) => {
-      if (e.target.closest("button, select, a, summary") || focusedInsight === id) return;
-      focusedInsight = id;
-      view.querySelectorAll(".card").forEach((c) => {
-        const on = Number(c.dataset.id) === id;
-        c.classList.toggle("focused", on);
-        c.querySelector("[data-copy]").classList.toggle("primary", on);
-      });
-      showPrompt(id);
-    });
-    card.querySelector("[data-copy]").addEventListener("click", (e) => copyPrompt(id, e.currentTarget));
-  });
 }
