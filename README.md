@@ -211,7 +211,7 @@ A larger product has parts (areas) and those have features, and some get used wh
 }
 ```
 
-**Product map** measures each area and feature over the window:
+**Product map** draws the areas as a map, each tile sized by its sessions and coloured by its status (with the status in words too; areas under 3% of sessions share one tile), and Pulse shows it in miniature. Choosing an area opens its features, its pages (each opening its story), what goes wrong there, and its funnels and insights. Product map measures each area and feature over the window:
 - **Reach:** the share of visitors who used it, with the window before.
 - **Adoption:** the share of signed-in people who used it.
 - **Come back:** how many of those people used it on two or more days.

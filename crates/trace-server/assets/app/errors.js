@@ -15,10 +15,10 @@ function errorTabs(active) {
   return problemTabs(active === "browser" ? "pages" : active);
 }
 
-function errorsToolbar(sub, extra = "") {
+function errorsToolbar(sub, extra = "", title = "Errors") {
   return html`
     <div class="toolbar">
-      <div><h1>Errors</h1><p class="sub">${sub}</p></div>
+      <div><h1>${title}</h1><p class="sub">${sub}</p></div>
       <div class="toolbar-fields">${raw(extra)}
         <label class="field narrow">Window
           <select id="days">${[1, 7, 14, 30, 90].map((n) => html`<option value="${n}" ${raw(n === digestDays ? "selected" : "")}>Last ${n} day${n > 1 ? "s" : ""}</option>`)}</select>
@@ -78,7 +78,7 @@ async function renderServerErrors() {
   const sub = "Exceptions on the website's servers, grouped and counted, never individual requests. Ranked by how many visits saw the same request fail in the browser, then by how often.";
   if (!r.key && !r.groups.length) {
     view.innerHTML = html`
-      ${errorsToolbar(sub)}
+      ${errorsToolbar(sub, "", "Server errors")}
       ${errorTabs("server")}
       <div class="empty">
         <h2>See the errors behind failed requests</h2>
@@ -91,7 +91,7 @@ async function renderServerErrors() {
   const occurrences = r.groups.reduce((n, g) => n + g.occurrences, 0);
   const broken = r.groups.reduce((n, g) => n + g.impact.visits, 0);
   view.innerHTML = html`
-    ${errorsToolbar(sub, envPicker(r))}
+    ${errorsToolbar(sub, envPicker(r), "Server errors")}
     ${errorTabs("server")}
     ${r.key ? "" : html`<p class="hint">The server key was revoked, so new errors aren't arriving. ${askAgent("/trace:manage create a server key", "New key")}</p>`}
     <div class="stats">${raw(stat(num(r.groups.length), "Error groups"))}${raw(stat(num(occurrences), "Occurrences"))}${raw(stat(num(broken), "Visits broken", "the same request failed in the browser"))}</div>

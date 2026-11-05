@@ -131,17 +131,11 @@ function journeysPart(funnels) {
   })}</div>`;
 }
 
-const AREA_TONE = { painful: "hurts", rare_painful: "hurts", rare: "warn", healthy: "ok", too_little: "none" };
 
 function mapPart(areas) {
   if (!areas) return html`<p class="hint">Couldn't load the product map.</p>`;
-  const tops = areas.nodes.filter((n) => !n.area).sort((x, y) => y.sessions - x.sessions);
-  if (!tops.length) return html`<p class="hint">No areas yet.</p>`;
-  return html`<div class="pulse-map">${tops.map(
-    (n) => html`<a href="${pageUrl("features")}/${encodeURIComponent(n.key)}" class="pulse-area ${AREA_TONE[n.status] || "none"}" style="flex-grow:${Math.max(1, n.sessions)}">
-      <strong>${n.name}</strong><span>${num(n.sessions)} sessions</span><span class="pulse-area-status">${(AREA_STATUS[n.status] || [n.status])[0]}</span>
-    </a>`
-  )}</div>${areas.source === "suggested" ? html`<p class="hint">Suggested from your URLs: name your areas in trace.json.</p>` : ""}`;
+  if (!areas.nodes.some((n) => !n.area)) return html`<p class="hint">No areas yet.</p>`;
+  return productMap(areas, { mini: true });
 }
 
 function pulseSection(title, href, linkText, body, extra = "") {

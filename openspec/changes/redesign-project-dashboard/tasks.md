@@ -35,14 +35,14 @@ There is no JavaScript test harness, so dashboard tasks are verified in a browse
 
 ## 5. Stage 5: Product map
 
-- [ ] 5.1 Write the squarified treemap in `app/map.js` (tiles sized by sessions, status in words and colour, areas under 3% grouped, too-small tiles listed under the map, suggested areas labelled); verify on the demo and with wunderkind.bg's six areas that the busiest area is the largest tile and every area is reachable
-- [ ] 5.2 Put the area page, the Pages view and page stories inside Product map at their new addresses, with every page path opening its story; use the treemap in miniature on Pulse; verify from Pulse → Practice → `/questions/:id` that the story opens inside Product map
-- [ ] 5.3 Update the README's Areas and features and Page stories sections; verify they name Product map
+- [x] 5.1 Write the squarified treemap in `app/map.js` (tiles sized by sessions, status in words and colour, areas under 3% grouped, too-small tiles listed under the map, suggested areas labelled); verify on the demo and with wunderkind.bg's six areas that the busiest area is the largest tile and every area is reachable
+- [x] 5.2 Put the area page, the Pages view and page stories inside Product map at their new addresses, with every page path opening its story; use the treemap in miniature on Pulse; verify from Pulse → Practice → `/questions/:id` that the story opens inside Product map
+- [x] 5.3 Update the README's Areas and features and Page stories sections; verify they name Product map
 
 ## 6. Integration
 
-- [ ] 6.1 After each stage, run `cargo test --workspace` on SQLite and with `TRACE_TEST_POSTGRES` set, and clippy with the CI flags; verify all pass before that stage ships
-- [ ] 6.2 After stage 5, walk every old address from the `dashboard` spec and every place at 1440 px and 390 px in both themes on the demo; verify none lands on a blank or wrong page
+- [x] 6.1 After each stage, run `cargo test --workspace` on SQLite and with `TRACE_TEST_POSTGRES` set, and clippy with the CI flags; verify all pass before that stage ships
+- [x] 6.2 After stage 5, walk every old address from the `dashboard` spec and every place at 1440 px and 390 px in both themes on the demo; verify none lands on a blank or wrong page
 
 ## Workflow follow-up
 

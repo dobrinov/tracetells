@@ -107,6 +107,7 @@ const APP_SCRIPTS: &[(&str, &str)] = &[
     ("settings", include_str!("../assets/app/settings.js")),
     ("audience", include_str!("../assets/app/audience.js")),
     ("features", include_str!("../assets/app/features.js")),
+    ("map", include_str!("../assets/app/map.js")),
     ("boot", include_str!("../assets/app/boot.js")),
 ];
 const STYLE_CSS: &str = include_str!("../assets/style.css");

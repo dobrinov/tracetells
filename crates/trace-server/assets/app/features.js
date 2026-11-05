@@ -129,18 +129,19 @@ async function renderFeatures() {
   });
   view.innerHTML = html`
     <div class="toolbar">
-      <div><h1>${project.name}, by area</h1><p class="sub">Which parts of the product people use, and where using them goes wrong: rage clicks, dead clicks and errors on each area's own pages. ${
+      <div><h1>Product map</h1><p class="sub">Which parts of ${project.name} people use, and where using them goes wrong: rage clicks, dead clicks and errors on each area's own pages. ${
         a.source === "trace.json" ? `${areas.length} area${areas.length === 1 ? "" : "s"} and ${a.nodes.length - areas.length} features, from trace.json.` : ""
       }</p></div>
       <label class="field narrow">Window
         <select id="features-days">${[7, 14, 30, 90].map((n) => html`<option value="${n}" ${n === featuresDays ? raw("selected") : ""}>Last ${n} days</option>`)}</select>
       </label>
     </div>
+    ${areas.length ? html`<section class="card map-card" aria-label="The product map">${productMap(a)}</section>` : ""}
     ${source}
     ${first.length ? html`<h2>Where to look first</h2><p class="sub">The parts people use that hurt, by sessions affected.</p><div class="look-first-grid">${firstCards}</div>` : ""}
     ${
       areas.length
-        ? html`<h2>The product map</h2><div class="area-grid">${areas.map((x) => areaCard(x, features(x.key)))}</div>`
+        ? html`<h2>Areas and their features</h2><div class="area-grid">${areas.map((x) => areaCard(x, features(x.key)))}</div>`
         : html`<div class="card"><p>No areas yet: there are no pages viewed in this window to suggest them from.</p></div>`
     }
     <div class="quadrant-row">
@@ -158,10 +159,15 @@ async function renderFeatures() {
 
 // One area: its numbers, its features, what goes wrong on its pages, and what's been done about it.
 async function renderArea(key) {
-  const [a, funnels, insights] = await Promise.all([api(`/areas?days=${featuresDays}`), api("/funnels").catch(() => []), api("/insights").catch(() => [])]);
+  const [a, funnels, insights, digest] = await Promise.all([
+    api(`/areas?days=${featuresDays}`),
+    api("/funnels").catch(() => []),
+    api("/insights").catch(() => []),
+    api(`/digest?days=${featuresDays}`).catch(() => null),
+  ]);
   const area = a.nodes.find((n) => n.key === key && !n.area);
   if (!area) {
-    view.innerHTML = html`<div class="empty"><h1>No area called "${key}"</h1><p><a href="#/map">Back to features</a></p></div>`;
+    view.innerHTML = html`<div class="empty"><h1>No area called "${key}"</h1><p><a href="#/map">Back to the product map</a></p></div>`;
     return;
   }
   const features = a.nodes.filter((n) => n.area === key);
@@ -175,6 +181,7 @@ async function renderArea(key) {
   const onPage = (path) => patterns.some((p) => (p.endsWith("*") ? path.startsWith(p.slice(0, -1)) : path === p));
   const through = funnels.filter((f) => f.steps.some((s) => area.matches.includes(s.label) || onPage(s.label)));
   const about = insights.filter((i) => i.status !== "dismissed" && (i.pages || []).some(onPage));
+  const pages = digest ? digest.pages.filter((p) => onPage(p.path)) : [];
   const hurts = HURTS.includes(area.status);
   const tile = (label, value, sub, tone = "") => html`<div class="card stat ${tone}"><div class="label">${label}</div><div class="value">${value}</div><div class="hint">${sub}</div></div>`;
   const featureRows = features
@@ -197,7 +204,7 @@ async function renderArea(key) {
     </li>`
   );
   view.innerHTML = html`
-    <nav class="breadcrumb" aria-label="Breadcrumb"><a href="#/map">Features</a> <span aria-hidden="true">›</span> <span aria-current="page">${area.name}</span></nav>
+    <nav class="breadcrumb" aria-label="Breadcrumb"><a href="#/map">Product map</a> <span aria-hidden="true">›</span> <span aria-current="page">${area.name}</span></nav>
     <div class="toolbar">
       <div><div class="area-title"><h1>${area.name}</h1>${statusBadge(area.status)}</div>
         <p class="sub">${area.description ? `${area.description}. ` : ""}Counted from ${area.matches.map((m, i) => html`${i ? ", " : ""}<code>${m}</code>`)}${a.source === "trace.json" ? ", as declared in trace.json" : ""}. Last ${featuresDays} days.</p></div>
@@ -217,6 +224,13 @@ async function renderArea(key) {
           )}`
         : ""
     }
+    <h2>Its pages</h2>
+    <p class="sub">Open a page for its story: what people click there, in which order, and what goes wrong.</p>
+    ${table(
+      [{ label: "Page" }, { label: "Views", num: 1 }, { label: "Sessions", num: 1 }, { label: "Exit rate", num: 1 }],
+      pages.map((p) => [pageLink(p.path), num(p.views), num(p.sessions), pct(p.exit_rate)]),
+      "None of the busiest pages in this window belongs to this area."
+    )}
     <h2>What goes wrong here</h2>
     <p class="sub">The most common rage click, dead click or error on ${area.name}'s own pages and on each feature's.</p>
     ${problems.length ? html`<ol class="problem-list">${problemItems}</ol>` : html`<p class="hint">No rage clicks, dead clicks or errors on its pages in this window.</p>`}
