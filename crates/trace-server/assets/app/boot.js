@@ -115,7 +115,7 @@ const routes = {
   start: renderStart,
   audience: renderAudience,
   features: renderFeatures,
-  funnels: renderFunnels,
+  funnels: renderJourneys,
   pages: () => (routeArg && !PUBLIC ? renderStory(decodeURIComponent(routeArg)) : renderBehaviour()),
   errors: renderProblems,
   goals: renderKpis,

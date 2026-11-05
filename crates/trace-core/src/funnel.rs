@@ -288,6 +288,73 @@ fn ratio(part: i64, whole: i64) -> Option<f64> {
     (whole > 0).then(|| part as f64 / whole as f64)
 }
 
+/// A page sessions started or ended on. `path` None is "other": pages from fewer
+/// than 5 sessions, and those beyond the top 10.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct EdgePage {
+    pub path: Option<String>,
+    pub sessions: i64,
+    /// For an arrival: of those sessions, how many saw no second page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub one_page: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Edges {
+    pub arrivals: Vec<EdgePage>,
+    pub exits: Vec<EdgePage>,
+}
+
+/// Pages listed under arrivals and exits; fewer sessions than this count as "other".
+pub const EDGE_PAGES: usize = 10;
+
+/// Top pages, then one "other" row for the rest and for any under 5 sessions.
+fn top_pages(mut rows: Vec<(String, i64, Option<i64>)>) -> Vec<EdgePage> {
+    rows.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    let mut out = Vec::new();
+    let mut other = EdgePage { path: None, sessions: 0, one_page: rows.first().and_then(|r| r.2).map(|_| 0) };
+    for (path, sessions, one_page) in rows {
+        if sessions >= crate::public::MIN_SESSIONS && out.len() < EDGE_PAGES {
+            out.push(EdgePage { path: Some(crate::privacy::one_line_path(&path)), sessions, one_page });
+        } else {
+            other.sessions += sessions;
+            other.one_page = other.one_page.map(|n| n + one_page.unwrap_or(0));
+        }
+    }
+    if other.sessions > 0 {
+        out.push(other);
+    }
+    out
+}
+
+/// Where sessions in the window started and where they ended.
+pub async fn edges(pool: &Pool, project_id: i64, days: u32) -> Result<Edges> {
+    let to = now_ms();
+    let from = to - i64::from(days) * DAY_MS;
+    let arrivals = sqlx::query_as::<_, (String, i64, i64)>(
+        "SELECT s.entry_path, COUNT(*), SUM(CASE WHEN COALESCE(v.n, 0) <= 1 THEN 1 ELSE 0 END)
+         FROM sessions s
+         LEFT JOIN (SELECT session_id, COUNT(*) AS n FROM events WHERE project_id = $1 AND type = 'pageview' AND ts >= $2 AND ts < $3 GROUP BY session_id) v
+           ON v.session_id = s.id
+         WHERE s.project_id = $1 AND s.started_at >= $2 AND s.started_at < $3 AND s.entry_path IS NOT NULL
+         GROUP BY s.entry_path",
+    )
+    .bind(project_id).bind(from).bind(to)
+    .fetch_all(pool).await?;
+    let exits = sqlx::query_as::<_, (String, i64)>(
+        "SELECT path, COUNT(*) FROM (
+           SELECT path, ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY ts DESC, id DESC) AS nth FROM events
+           WHERE project_id = $1 AND type = 'pageview' AND ts >= $2 AND ts < $3
+         ) AS last_views WHERE nth = 1 AND path IS NOT NULL GROUP BY path",
+    )
+    .bind(project_id).bind(from).bind(to)
+    .fetch_all(pool).await?;
+    Ok(Edges {
+        arrivals: top_pages(arrivals.into_iter().map(|(p, n, one)| (p, n, Some(one))).collect()),
+        exits: top_pages(exits.into_iter().map(|(p, n)| (p, n, None)).collect()),
+    })
+}
+
 /// Every funnel of a website, measured over the last `days` and the `days` before.
 pub async fn report(pool: &Pool, project_id: i64, days: u32) -> Result<Vec<FunnelReport>> {
     let to = now_ms();
@@ -372,6 +439,49 @@ mod tests {
             target: None,
             created_at: 0,
         }
+    }
+
+    #[tokio::test]
+    async fn where_sessions_arrive_and_leave() {
+        let target = crate::db::test_target("funnel_edges").await;
+        let pool = crate::db::connect(&target).await.unwrap();
+        let (_, site) = crate::db::create_account_with_site(&pool, "Kids", None).await.unwrap();
+        let t = now_ms() - DAY_MS;
+        let mut tx = pool.begin().await.unwrap();
+        let mut n = 0;
+        // 98 land on a competition page; 79 of them see nothing else, 19 go on to sign up.
+        // 3 land on a page too rare to name.
+        let mut visit = |pages: &[&str]| {
+            n += 1;
+            (format!("s{n}"), pages.iter().map(|p| p.to_string()).collect::<Vec<_>>())
+        };
+        let mut all = Vec::new();
+        for i in 0..98 {
+            all.push(visit(if i < 79 { &["/sastezaniya/ivan"] } else { &["/sastezaniya/ivan", "/sign-up"] }));
+        }
+        for _ in 0..3 {
+            all.push(visit(&["/rare"]));
+        }
+        for (sid, pages) in all {
+            sqlx::query("INSERT INTO sessions (id, project_id, started_at, last_seen_at, entry_path) VALUES ($1, $2, $3, $3, $4)")
+                .bind(&sid).bind(site.id).bind(t).bind(&pages[0]).execute(&mut *tx).await.unwrap();
+            for (k, p) in pages.iter().enumerate() {
+                sqlx::query("INSERT INTO events (project_id, session_id, ts, type, path) VALUES ($1, $2, $3, 'pageview', $4)")
+                    .bind(site.id).bind(&sid).bind(t + k as i64 * 1000).bind(p).execute(&mut *tx).await.unwrap();
+            }
+        }
+        tx.commit().await.unwrap();
+        let e = edges(&pool, site.id, 7).await.unwrap();
+        assert_eq!(e.arrivals, [
+            EdgePage { path: Some("/sastezaniya/ivan".into()), sessions: 98, one_page: Some(79) },
+            EdgePage { path: None, sessions: 3, one_page: Some(3) },
+        ]);
+        assert_eq!(e.exits, [
+            EdgePage { path: Some("/sastezaniya/ivan".into()), sessions: 79, one_page: None },
+            EdgePage { path: Some("/sign-up".into()), sessions: 19, one_page: None },
+            EdgePage { path: None, sessions: 3, one_page: None },
+        ]);
+        crate::db::drop_test_target(&target).await;
     }
 
     #[test]

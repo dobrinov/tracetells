@@ -23,9 +23,9 @@ There is no JavaScript test harness, so dashboard tasks are verified in a browse
 
 ## 3. Stage 3: Journeys
 
-- [ ] 3.1 Add arrivals and exits to `trace-core/src/funnel.rs` (entry pages with one-page sessions, last pages, under 5 sessions as "other", 10 each) and serve `GET /api/sites/{site}/journeys?days=` with the funnels; verify unit tests for the landing-page scenario (98 arrive, 79 leave without a second page) on both databases
-- [ ] 3.2 Write `app/journeys.js`: funnel picker (funnels without sessions listed as collecting), step columns with carried on and stopped, biggest drop marked, arrivals and exits; verify on the demo with the checkout funnel that the numbers match the Funnels page they replace
-- [ ] 3.3 Update the README's Funnels section; verify it describes the new page
+- [x] 3.1 Add arrivals and exits to `trace-core/src/funnel.rs` (entry pages with one-page sessions, last pages, under 5 sessions as "other", 10 each) and serve `GET /api/sites/{site}/journeys?days=` with the funnels; verify unit tests for the landing-page scenario (98 arrive, 79 leave without a second page) on both databases
+- [x] 3.2 Write `app/journeys.js`: funnel picker (funnels without sessions listed as collecting), step columns with carried on and stopped, biggest drop marked, arrivals and exits; verify on the demo with the checkout funnel that the numbers match the Funnels page they replace
+- [x] 3.3 Update the README's Funnels section; verify it describes the new page
 
 ## 4. Stage 4: Work
 

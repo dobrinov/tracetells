@@ -100,6 +100,7 @@ const APP_SCRIPTS: &[(&str, &str)] = &[
     ("story", include_str!("../assets/app/story.js")),
     ("errors", include_str!("../assets/app/errors.js")),
     ("problems", include_str!("../assets/app/problems.js")),
+    ("journeys", include_str!("../assets/app/journeys.js")),
     ("setup", include_str!("../assets/app/setup.js")),
     ("accounts", include_str!("../assets/app/accounts.js")),
     ("settings", include_str!("../assets/app/settings.js")),
@@ -140,6 +141,7 @@ pub fn router(state: AppStateRef) -> Router {
         .route("/digest", get(get_digest))
         .route("/pages/story", get(get_page_story))
         .route("/problems", get(get_problems))
+        .route("/journeys", get(get_journeys))
         .route("/overlay", post(make_overlay_link))
         .route("/kpis", get(list_kpis))
         .route("/funnels", get(list_funnels))
@@ -550,6 +552,15 @@ where
 
 async fn get_digest(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<DaysQuery>) -> ApiResult<Json<Value>> {
     cached(&state, &site, "digest", q.days.clamp(1, 365), |pool, s, days| async move { Ok(json!(digest::build(&pool, s.id, days).await?)) }).await
+}
+
+/// Funnels, and where sessions start and end.
+async fn get_journeys(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<DaysQuery>) -> ApiResult<Json<Value>> {
+    cached(&state, &site, "journeys", q.days.clamp(1, 90), |pool, s, days| async move {
+        let edges = trace_core::funnel::edges(&pool, s.id, days).await?;
+        Ok(json!({ "days": days, "funnels": trace_core::funnel::report(&pool, s.id, days).await?, "arrivals": edges.arrivals, "exits": edges.exits }))
+    })
+    .await
 }
 
 async fn get_problems(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<DaysQuery>) -> ApiResult<Json<Value>> {
@@ -1115,7 +1126,7 @@ mod isolation_tests {
         ("POST", "privacy/rules/1"), ("DELETE", "privacy/rules/1"), ("POST", "privacy/test"),
         ("GET", "onboarding"), ("POST", "onboarding/privacy-reviewed"), ("GET", "analysis"),
         ("GET", "errors"), ("GET", "errors/1"), ("GET", "errors/1/prompt"), ("POST", "errors/1/status"),
-        ("GET", "server-key"), ("POST", "server-key"), ("DELETE", "server-key"), ("GET", "pages/story?path=/cart"), ("POST", "overlay"), ("GET", "problems"),
+        ("GET", "server-key"), ("POST", "server-key"), ("DELETE", "server-key"), ("GET", "pages/story?path=/cart"), ("POST", "overlay"), ("GET", "problems"), ("GET", "journeys"),
     ];
 
     async fn app() -> (tower::util::MapRequest<Router, fn(Request) -> Request>, AppStateRef, String) {
@@ -1259,6 +1270,8 @@ mod isolation_tests {
         for auth in [("cookie", cookie.as_str()), ("authorization", bearer.as_str())] {
             let (status, problems) = send(&app, json_req("GET", "/api/sites/acme/problems?days=7", auth, json!({}))).await;
             assert_eq!((status, problems["pages"].as_array().map(|p| p.len())), (StatusCode::OK, Some(0)), "{problems}");
+            let (status, journeys) = send(&app, json_req("GET", "/api/sites/acme/journeys?days=7", auth, json!({}))).await;
+            assert_eq!((status, journeys["funnels"].is_array(), journeys["exits"][0]["path"].as_str()), (StatusCode::OK, true, Some("/cart")), "{journeys}");
         }
 
         // Overlay links: only on an origin the collector has sent from, only by people.
