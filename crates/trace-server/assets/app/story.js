@@ -1,7 +1,7 @@
 "use strict";
 
 // Page story: how people use one page, as patterns, never single visits.
-// Reached from the Pages tables, area pages and the error list (#/understand/pages/<path>).
+// Reached from the Pages tables, area pages and the error list (#/map/pages/<path>).
 // The dashboard is plain scripts loaded in order (see index.html); they share one scope.
 
 let storyDays = Math.min(90, Number(store("trace_days")) || 14);
@@ -9,7 +9,7 @@ let storyPlay = null;
 
 // The address of a page's story, from anywhere a page path is shown.
 function storyUrl(path) {
-  return `#/understand/pages/${encodeURIComponent(path)}`;
+  return `#/map/pages/${encodeURIComponent(path)}`;
 }
 // A page path as a link to its story (plain text in the public view, which has no stories).
 function pageLink(path) {
@@ -82,7 +82,7 @@ async function renderStory(path) {
 
   view.innerHTML = html`
     <div class="toolbar">
-      <div><p class="hint"><a href="#/understand/pages">Pages</a> ›</p><h1><code>${path}</code></h1>
+      <div><p class="hint"><a href="#/map/pages">Pages</a> ›</p><h1><code>${path}</code></h1>
         <p class="sub">How ${num(s.sessions)} session${s.sessions === 1 ? "" : "s"}${s.capped ? " (the latest)" : ""} used this page, as patterns. No visit is shown on its own: nothing from fewer than ${s.min_sessions} sessions appears.</p></div>
       <label class="field narrow">Window
         <select id="story-days">${[7, 14, 30, 90].map((n) => html`<option value="${n}" ${n === storyDays ? raw("selected") : ""}>Last ${n} days</option>`)}</select>
@@ -118,7 +118,7 @@ async function renderStory(path) {
 
     <h2>Insights about this page</h2>
     ${s.insights.length
-      ? html`<ul class="story-insights">${s.insights.map((i) => html`<li><a href="${i.status === "released" ? "#/improve/releases" : "#/improve/insights"}">${i.title}</a> <span class="chip">${i.kind}</span> <span class="hint">${i.status.replace("_", " ")} · ${i.confidence} confidence</span></li>`)}</ul>`
+      ? html`<ul class="story-insights">${s.insights.map((i) => html`<li><a href="${i.status === "released" ? "#/work/released" : "#/work"}">${i.title}</a> <span class="chip">${i.kind}</span> <span class="hint">${i.status.replace("_", " ")} · ${i.confidence} confidence</span></li>`)}</ul>`
       : html`<p class="hint">No insight names this page yet.</p>`}
     ${PUBLIC ? "" : askAgent(`Use Trace's get_page_story to explain how people use ${path} and what to fix`, "Ask your agent")}
 

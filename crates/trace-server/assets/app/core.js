@@ -1,6 +1,6 @@
 "use strict";
 
-// Shared state, helpers, the API client, navigation between areas and the website menu.
+// Shared state, helpers, the API client, navigation between places and the website menu.
 // The dashboard is plain scripts loaded in order (see index.html); they share one scope.
 
 const view = document.getElementById("view");
@@ -108,55 +108,132 @@ function toast(message, isError = false) {
 // A website's public, read-only view lives at /p/{token}: no session, only
 // the aggregated pages, read from /v1/public/{token}/....
 const PUBLIC = (location.pathname.match(/^\/p\/([A-Za-z0-9_-]{20,})\/?$/) || [])[1] || null;
-// Four areas in the order of the job: see, understand, change, configure. Each
-// page has one home; the URL carries the area (#/understand/funnels), and the
-// old flat links (#/kpis, #/behaviour) still resolve.
-const SECTIONS = {
-  home: { label: "Home", pages: [["home", "Home"]] },
-  understand: { label: "Understand", pages: [["audience", "Audience"], ["features", "Features"], ["funnels", "Funnels"], ["pages", "Pages"], ["errors", "Errors"]] },
-  improve: { label: "Improve", pages: [["goals", "Goals"], ["insights", "Insights"], ["releases", "Releases"]] },
-  setup: { label: "Setup", pages: [["start", "Get started"], ["install", "Install and tracking"], ["privacy", "Privacy"], ["team", "Team"], ["plan", "Plan"]] },
+// Six places, each answering one question, plus Settings. A place's views are
+// [page key, label, address slug]; the first is the place's own address. Page
+// keys are what routes (boot.js) render; addresses are #/<place>/<slug>/<arg>.
+const ICON = {
+  pulse: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+  journeys: '<path d="M3 6h18M6 12h12M9 18h6"/>',
+  map: '<rect x="3" y="3" width="10" height="10" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="15" y="11" width="6" height="10" rx="1"/><rect x="3" y="15" width="10" height="6" rx="1"/>',
+  problems: '<path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.5"/>',
+  goals: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+  work: '<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="6" rx="1"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>',
 };
-const ALIASES = { kpis: "goals", behaviour: "pages", setup: "install" };
+const icon = (key) => raw(`<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[key] || ""}</svg>`);
+const PLACES = [
+  { key: "pulse", label: "Pulse", views: [["home", "Pulse", ""], ["audience", "Audience", "audience"]] },
+  { key: "journeys", label: "Journeys", views: [["funnels", "Funnels", ""]] },
+  { key: "map", label: "Product map", views: [["features", "Areas", ""], ["pages", "Pages", "pages"]] },
+  { key: "problems", label: "Problems", views: [["errors", "Problems", ""]] },
+  { key: "goals", label: "Goals", views: [["goals", "Goals", ""]] },
+  { key: "work", label: "Work", views: [["insights", "Suggested and in progress", ""], ["releases", "Released", "released"]] },
+  { key: "settings", label: "Settings", views: [["start", "Get started", "start"], ["install", "Install and tracking", "install"], ["privacy", "Privacy", "privacy"], ["team", "Team", "team"], ["plan", "Plan", "plan"]] },
+];
+// The places a phone's bottom bar shows; the rest are in the menu.
+const TAB_PLACES = ["pulse", "journeys", "problems", "goals", "work"];
+// Page keys from before the places, and Home's item keys, as page keys.
+const ALIASES = { kpis: "goals", behaviour: "pages", setup: "install", home: "home", features: "features", funnels: "funnels" };
+// The areas before the places (#/understand/funnels) and the places' own keys.
+const OLD_AREAS = ["understand", "improve", "setup", "home"];
 const PUBLIC_PAGES = ["goals", "insights", "releases", "funnels", "pages", "errors"];
-const sectionOf = (page) => Object.keys(SECTIONS).find((s) => SECTIONS[s].pages.some(([p]) => p === page));
-const pageUrl = (page) => `#/${sectionOf(page) && sectionOf(page) !== "home" ? `${sectionOf(page)}/` : ""}${page}`;
+const placeOf = (page) => PLACES.find((p) => p.views.some(([k]) => k === page));
+const viewOf = (page) => placeOf(page)?.views.find(([k]) => k === page);
+const pageUrl = (page) => {
+  const place = placeOf(page);
+  if (!place) return `#/${page}`;
+  const slug = viewOf(page)[2];
+  return `#/${place.key}${slug ? `/${slug}` : ""}`;
+};
+// The old name, for code that still asks which area a page is in.
+const sectionOf = (page) => placeOf(page)?.key;
 
-// The page a hash names, and anything after it (an area's key, a setup step).
+// The page an address names, and anything after it (an area's key, a page's path, a setup step).
 function resolve(hash) {
   const parts = hash.replace(/^#\//, "").split("?")[0].split("/").filter(Boolean);
   if (!parts.length) return { page: null, arg: null };
-  if (SECTIONS[parts[0]] && parts[0] !== "home") {
-    const pages = SECTIONS[parts[0]].pages.map(([p]) => p).filter((p) => !PUBLIC || PUBLIC_PAGES.includes(p));
-    const page = pages.includes(parts[1]) ? parts[1] : parts[0] === "setup" && parts[1] === "start" ? "start" : pages.find((p) => p !== "start" || !checklist?.complete) || pages[0];
-    return { page, arg: parts[1] === page ? parts[2] || null : null };
+  const place = PLACES.find((p) => p.key === parts[0]);
+  if (place) {
+    const view = place.views.find(([, , slug]) => slug && slug === parts[1]);
+    if (view) return { page: view[0], arg: parts[2] || null };
+    // Settings opens on Get started until setup is complete, then on Install and tracking.
+    if (place.key === "settings") return { page: checklist && checklist.complete ? "install" : "start", arg: null };
+    return { page: place.views[0][0], arg: parts[1] || null };
+  }
+  if (OLD_AREAS.includes(parts[0])) {
+    if (parts[0] === "home") return { page: "home", arg: null };
+    const page = ALIASES[parts[1]] || parts[1];
+    if (placeOf(page)) return { page, arg: parts[2] || null };
+    return { page: parts[0] === "setup" ? "start" : parts[0] === "improve" ? "insights" : "home", arg: null };
   }
   const page = ALIASES[parts[0]] || parts[0];
   return { page, arg: parts[1] || null };
 }
 let routeArg = null;
 
-// The pages of the current area, under the header.
+// The sidebar's places (and the phone's bottom bar), with the current one marked.
+function renderPlaces(page) {
+  const current = placeOf(page)?.key;
+  const shown = (key) => !PUBLIC || PLACES.find((p) => p.key === key).views.some(([k]) => PUBLIC_PAGES.includes(k));
+  const link = (p, cls) => {
+    const first = PUBLIC ? p.views.find(([k]) => PUBLIC_PAGES.includes(k))?.[0] : p.views[0][0];
+    const href = p.key === "settings" ? "#/settings" : pageUrl(first);
+    const on = p.key === current;
+    return html`<a href="${href}" class="${cls}${on ? " active" : ""}" data-place="${p.key}" ${on ? raw('aria-current="page"') : ""}>${icon(p.key)}<span class="label">${p.label}</span><span class="count" data-count="${p.key}"></span></a>`;
+  };
+  document.getElementById("nav").innerHTML = html`${PLACES.filter((p) => p.key !== "settings" && shown(p.key)).map((p) => link(p, "place"))}`;
+  document.getElementById("settings-link").innerHTML = PUBLIC ? "" : html`${link(PLACES.find((p) => p.key === "settings"), "place")}`;
+  document.getElementById("tabbar").innerHTML = html`${PLACES.filter((p) => TAB_PLACES.includes(p.key) && shown(p.key)).map((p) => link(p, "tab"))}`;
+  paintCounts();
+}
+
+// A place's own views, at the top of its content, when it has more than one.
 function renderSubnav(page) {
   const nav = document.getElementById("subnav");
-  const section = sectionOf(page);
-  document.querySelectorAll("#nav a[data-section]").forEach((a) => {
-    const on = a.dataset.section === section;
-    a.classList.toggle("active", on);
-    if (on) a.setAttribute("aria-current", "page");
-    else a.removeAttribute("aria-current");
-  });
-  if (!section || section === "home") return (nav.hidden = true);
-  const pages = SECTIONS[section].pages.filter(([p]) => {
+  const place = placeOf(page);
+  if (!place || place.key === "pulse" && page === "home") return (nav.hidden = true);
+  const views = place.views.filter(([p]) => {
     if (PUBLIC) return PUBLIC_PAGES.includes(p);
     if (p === "team") return can("admin");
     if (p === "start") return !checklist || !checklist.complete;
     return true;
   });
+  if (views.length < 2 && place.key !== "pulse") return (nav.hidden = true);
   nav.hidden = false;
-  nav.innerHTML = `<div>${pages
-    .map(([p, label]) => `<a href="#/${section}/${p}" class="${p === page ? "active" : ""}"${p === page ? ' aria-current="page"' : ""}>${esc(label)}${p === "start" && checklist ? ` <span class="progress">${checklist.done}/${checklist.total}</span>` : ""}</a>`)
-    .join("")}</div>`;
+  nav.innerHTML = html`<div>${views.map(
+    ([p, label]) => html`<a href="${pageUrl(p)}" class="${p === page ? "active" : ""}" ${p === page ? raw('aria-current="page"') : ""}>${label}${p === "start" && checklist ? html` <span class="progress">${checklist.done}/${checklist.total}</span>` : ""}</a>`
+  )}</div>`;
+}
+
+// What's waiting, beside Problems, Goals and Work: pages with problems in the
+// last 7 days, goals at target out of those with data, insights not yet picked.
+let placeCounts = { site: null, at: 0, values: {} };
+function paintCounts() {
+  for (const [key, text] of Object.entries(placeCounts.values)) {
+    document.querySelectorAll(`[data-count="${key}"]`).forEach((el) => {
+      el.textContent = text || "";
+      el.hidden = !text;
+    });
+  }
+}
+async function loadCounts() {
+  if (PUBLIC || !project) return;
+  if (placeCounts.site === currentSite && Date.now() - placeCounts.at < 60000) return paintCounts();
+  const site = currentSite;
+  const [digest, kpis, fresh] = await Promise.all([api("/digest?days=7").catch(() => null), api("/kpis").catch(() => null), api("/insights?status=new").catch(() => null)]);
+  if (site !== currentSite) return;
+  const values = {};
+  if (digest) {
+    const pages = new Set([...digest.rage_clicks, ...digest.dead_clicks, ...digest.errors].map((x) => x.path).filter(Boolean));
+    values.problems = pages.size ? String(pages.size) : "";
+  }
+  if (kpis) {
+    const measured = kpis.filter((k) => k.target != null && k.current != null && (k.sessions || 0) >= SAMPLE_MIN);
+    values.goals = measured.length ? `${measured.filter((k) => k.target_met).length}/${measured.length}` : "";
+  }
+  if (fresh) values.work = fresh.length ? `${fresh.length} new` : "";
+  placeCounts = { site, at: Date.now(), values: { settings: placeCounts.values.settings, ...values } };
+  paintCounts();
 }
 
 // Every request is JSON: the server rejects cookie-authenticated writes that
@@ -321,6 +398,7 @@ async function addWebsite() {
 // arrives, Insights after. The page open for the previous website (its onboarding,
 // say) may mean nothing for this one.
 function switchSite(slug) {
+  placeCounts = { site: null, at: 0, values: {} };
   currentSite = slug;
   store("trace_site", slug);
   project = null;

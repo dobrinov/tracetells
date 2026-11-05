@@ -149,10 +149,24 @@ pub struct Retention {
     pub average: Vec<Option<f64>>,
 }
 
+/// Where sessions came from: a referrer's origin, a search engine, or none.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct Source {
+    /// "Google", "facebook.com", "direct" (no referrer) or "other" (sources under 5 sessions).
+    pub name: String,
+    pub sessions: i64,
+    pub share: f64,
+    /// Share in the window before; None when that window had no sessions.
+    pub previous_share: Option<f64>,
+    /// The origins counted under this name.
+    pub origins: Vec<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct Audience {
     pub days: u32,
     pub visitors: Visitors,
+    pub sources: Vec<Source>,
     pub bounce: Bounce,
     pub engaged: Engaged,
     pub active: Active,
@@ -415,7 +429,82 @@ pub async fn report(pool: &Pool, project_id: i64, days: u32) -> Result<Audience>
         by_action: actions_now.iter().map(|(label, ids)| Action { label: label.clone(), sessions: current.iter().filter(|s| ids.contains(&s.id)).count() as i64 }).collect(),
     };
 
-    Ok(Audience { days, visitors, bounce, engaged, active: active(pool, project_id, now).await?, retention: retention(pool, project_id, now).await? })
+    let sources = sources(pool, project_id, from, now, before).await?;
+    Ok(Audience { days, visitors, sources, bounce, engaged, active: active(pool, project_id, now).await?, retention: retention(pool, project_id, now).await? })
+}
+
+/// Search engines count as one source whatever their country domain.
+const SEARCH: &[(&str, &str)] = &[
+    ("google.", "Google"),
+    ("bing.com", "Bing"),
+    ("duckduckgo.com", "DuckDuckGo"),
+    ("yahoo.", "Yahoo"),
+    ("yandex.", "Yandex"),
+    ("ecosia.org", "Ecosia"),
+    ("baidu.com", "Baidu"),
+];
+
+/// A referrer origin's source name: the search engine, or the host without `www.` / `m.`.
+pub fn source_name(origin: Option<&str>) -> String {
+    let Some(origin) = origin.filter(|o| !o.is_empty()) else { return "direct".into() };
+    let host = origin.split_once("://").map_or(origin, |(_, h)| h).split([':', '/']).next().unwrap_or("").to_ascii_lowercase();
+    let host = host.strip_prefix("www.").or_else(|| host.strip_prefix("m.")).unwrap_or(&host).to_string();
+    for (pattern, name) in SEARCH {
+        let hit = match pattern.strip_suffix('.') {
+            // "google." : google.com, google.bg, google.co.uk, but not googleblog.com
+            Some(stem) => host == stem || host.starts_with(pattern) || host.contains(&format!(".{pattern}")),
+            None => host == *pattern || host.ends_with(&format!(".{pattern}")),
+        };
+        if hit {
+            return (*name).into();
+        }
+    }
+    host
+}
+
+async fn sources(pool: &Pool, project_id: i64, from: i64, to: i64, before: i64) -> Result<Vec<Source>> {
+    let rows = |a: i64, b: i64| {
+        sqlx::query_as::<_, (Option<String>, i64)>("SELECT referrer, COUNT(*) FROM sessions WHERE project_id = $1 AND started_at >= $2 AND started_at < $3 GROUP BY referrer")
+            .bind(project_id)
+            .bind(a)
+            .bind(b)
+            .fetch_all(pool)
+    };
+    let group = |rows: Vec<(Option<String>, i64)>| {
+        let mut by: BTreeMap<String, (i64, Vec<String>)> = BTreeMap::new();
+        for (origin, n) in rows {
+            let e = by.entry(source_name(origin.as_deref())).or_default();
+            e.0 += n;
+            if let Some(o) = origin.filter(|o| !o.is_empty()) {
+                e.1.push(o);
+            }
+        }
+        by
+    };
+    let now = group(rows(from, to).await?);
+    let then = group(rows(before, from).await?);
+    let total: i64 = now.values().map(|(n, _)| n).sum();
+    let total_then: i64 = then.values().map(|(n, _)| n).sum();
+    let mut out: Vec<Source> = Vec::new();
+    let mut other = Source { name: "other".into(), sessions: 0, share: 0.0, previous_share: None, origins: vec![] };
+    let mut other_then = 0;
+    for (name, (n, mut origins)) in now {
+        let prev = then.get(&name).map_or(0, |(p, _)| *p);
+        if n < crate::public::MIN_SESSIONS && name != "direct" {
+            other.sessions += n;
+            other_then += prev;
+            continue;
+        }
+        origins.sort();
+        out.push(Source { share: ratio(n, total).unwrap_or(0.0), previous_share: ratio(prev, total_then), name, sessions: n, origins });
+    }
+    if other.sessions > 0 {
+        other.share = ratio(other.sessions, total).unwrap_or(0.0);
+        other.previous_share = ratio(other_then, total_then);
+        out.push(other);
+    }
+    out.sort_by(|a, b| (a.name == "other").cmp(&(b.name == "other")).then(b.sessions.cmp(&a.sessions)).then(a.name.cmp(&b.name)));
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -453,6 +542,34 @@ mod tests {
         let thursday = crate::util::parse_time("2026-10-29T15:00Z").unwrap();
         assert_eq!(date(monday(thursday)), "2026-10-26");
         assert_eq!(monday(crate::util::parse_time("2026-10-26").unwrap()), crate::util::parse_time("2026-10-26").unwrap());
+    }
+
+    #[tokio::test]
+    async fn sessions_by_where_they_came_from() {
+        let target = crate::db::test_target("audience_sources").await;
+        let pool = crate::db::connect(&target).await.unwrap();
+        let (_, site) = crate::db::create_account_with_site(&pool, "Kids", None).await.unwrap();
+        let at = now_ms() - 3_600_000;
+        let mut i = 0;
+        for (referrer, n) in [(Some("https://www.google.com"), 219), (Some("https://www.google.bg"), 1), (None, 94), (Some("https://m.facebook.com"), 3)] {
+            for _ in 0..n {
+                sqlx::query("INSERT INTO sessions (id, project_id, started_at, last_seen_at, referrer) VALUES ($1, $2, $3, $3, $4)")
+                    .bind(format!("s{i}")).bind(site.id).bind(at).bind(referrer).execute(&pool).await.unwrap();
+                i += 1;
+            }
+        }
+        let got: Vec<(String, i64)> = sources(&pool, site.id, at - 1000, now_ms(), at - 8 * DAY_MS).await.unwrap().into_iter().map(|s| (s.name, s.sessions)).collect();
+        assert_eq!(got, [("Google".to_string(), 220), ("direct".into(), 94), ("other".into(), 3)]);
+        crate::db::drop_test_target(&target).await;
+    }
+
+    #[test]
+    fn source_names() {
+        assert_eq!(source_name(Some("https://www.google.co.uk")), "Google");
+        assert_eq!(source_name(Some("https://googleblog.com")), "googleblog.com");
+        assert_eq!(source_name(Some("https://m.facebook.com")), "facebook.com");
+        assert_eq!(source_name(Some("https://search.yahoo.com")), "Yahoo");
+        assert_eq!(source_name(None), "direct");
     }
 
     #[tokio::test]

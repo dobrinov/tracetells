@@ -8,7 +8,6 @@
 // Decides between the sign-in screens and the app.
 async function bootPublic() {
   document.body.classList.add("public");
-  document.querySelectorAll("#nav a").forEach((a) => (a.hidden = !["understand", "improve"].includes(a.dataset.section)));
   for (const id of ["run-analysis", "me", "site-menu"]) document.getElementById(id).hidden = true;
   try {
     await loadProject();
@@ -112,7 +111,7 @@ async function renderConnect() {
 
 const routes = {
   connect: renderConnect,
-  home: renderHome,
+  home: renderPulse,
   start: renderStart,
   audience: renderAudience,
   features: renderFeatures,
@@ -150,6 +149,7 @@ async function route() {
   if (PUBLIC && !project) return;
   let { page, arg } = resolve(location.hash);
   page = page || (PUBLIC ? "insights" : "home");
+  // Places that need a person (Pulse, Settings) aren't in the public view; it opens on Work.
   if (PUBLIC && !PUBLIC_PAGES.includes(page)) page = "insights";
   if (!PUBLIC && !sites.length && !ACCOUNT_PAGES.includes(page)) return renderNoSites();
   if (!project && !ACCOUNT_PAGES.includes(page)) {
@@ -160,14 +160,16 @@ async function route() {
       return;
     }
   }
-  // Every website opens on its home. Old and bare links settle on the page's own address.
-  const canonical = `${pageUrl(page)}${arg ? `/${arg}` : ""}`;
-  if (!ACCOUNT_PAGES.includes(page) && location.hash.split("?")[0] !== canonical) history.replaceState(null, "", canonical + (location.hash.includes("?") ? location.hash.slice(location.hash.indexOf("?")) : ""));
+  // Every website opens on Pulse. Old and bare links settle on the page's own address.
+  const canonical = page === "account" || page === "connect" ? `#/${page}` : `${pageUrl(page)}${arg ? `/${arg}` : ""}`;
+  if (page !== "account" && page !== "connect" && location.hash.split("?")[0] !== canonical) history.replaceState(null, "", canonical + (location.hash.includes("?") ? location.hash.slice(location.hash.indexOf("?")) : ""));
   routeArg = arg;
-  measurePage(ACCOUNT_PAGES.includes(page) || !sectionOf(page) ? `/${page}` : sectionOf(page) === "home" ? "/home" : `/${sectionOf(page)}/${page}${page === "features" && arg ? "/area" : page === "pages" && arg ? "/story" : ""}`);
-  const render = routes[page] || renderHome;
+  measurePage(selfName(page, arg));
+  const render = routes[page] || renderPulse;
   if (!PUBLIC && project && !ACCOUNT_PAGES.includes(page)) await loadChecklist();
+  renderPlaces(page);
   renderSubnav(ACCOUNT_PAGES.includes(page) && page !== "team" && page !== "plan" ? null : page);
+  closePlacesMenu();
   clearInterval(analysisWatch);
   if (!PUBLIC && project && !ACCOUNT_PAGES.includes(page) && page !== "home" && page !== "insights") api("/analysis").then(analysisBadge, () => {});
   try {
@@ -175,7 +177,30 @@ async function route() {
   } catch (e) {
     view.innerHTML = `<div class="empty">Couldn't load this page: ${esc(e.message)}</div>`;
   }
+  if (!PUBLIC && project && !ACCOUNT_PAGES.includes(page)) loadCounts().catch(() => {});
 }
+
+// The name a page is measured under when the dashboard measures itself: the
+// place and a fixed view name, never an area key, a path or an id.
+function selfName(page, arg) {
+  const place = placeOf(page);
+  if (!place) return `/${page}`;
+  const slug = viewOf(page)[2];
+  const sub = page === "features" && arg ? "area" : page === "pages" && arg ? "story" : page === "errors" && arg ? (arg === "server" ? "server" : "server-error") : page === "start" && arg ? "step" : "";
+  return `/${place.key}${slug ? `/${slug}` : ""}${sub ? `/${sub}` : ""}`;
+}
+
+// On a phone, the menu holds Product map, Settings and the account.
+const placesToggle = document.getElementById("places-toggle");
+function closePlacesMenu() {
+  document.getElementById("places").classList.remove("open");
+  placesToggle.setAttribute("aria-expanded", "false");
+}
+placesToggle.addEventListener("click", () => {
+  const open = !document.getElementById("places").classList.contains("open");
+  document.getElementById("places").classList.toggle("open", open);
+  placesToggle.setAttribute("aria-expanded", String(open));
+});
 
 // The header's "Analyse · N new": analysis runs in your agent, so this copies the command.
 document.getElementById("run-analysis").addEventListener("click", async () => {

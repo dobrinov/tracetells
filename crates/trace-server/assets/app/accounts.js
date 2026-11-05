@@ -395,7 +395,7 @@ function impersonationBanner() {
 
 function applyRole() {
   impersonationBanner();
-  document.querySelector('#nav a[data-view="admin"]').hidden = !auth.user.is_operator;
+  document.querySelector('.places a[data-view="admin"]').hidden = !auth.user.is_operator;
   // Shown by analysisBadge when an analysis is due; never while viewing as someone.
   document.getElementById("run-analysis").hidden = true;
   const me = document.getElementById("me");

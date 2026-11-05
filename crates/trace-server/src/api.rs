@@ -95,6 +95,7 @@ const APP_SCRIPTS: &[(&str, &str)] = &[
     ("goals", include_str!("../assets/app/goals.js")),
     ("analysis", include_str!("../assets/app/analysis.js")),
     ("home", include_str!("../assets/app/home.js")),
+    ("pulse", include_str!("../assets/app/pulse.js")),
     ("pages", include_str!("../assets/app/pages.js")),
     ("story", include_str!("../assets/app/story.js")),
     ("errors", include_str!("../assets/app/errors.js")),

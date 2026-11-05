@@ -177,7 +177,7 @@ The **KPIs** page shows every funnel: sessions per step, the share that continue
 
 ### Audience
 
-The **Audience** page answers how many people come, how many leave straight away, how many get engaged and how many come back. Say what your marketing pages are and which actions make a visitor engaged:
+**Audience** (under Pulse) answers how many people come, how many leave straight away, how many get engaged and how many come back. Say what your marketing pages are and which actions make a visitor engaged:
 
 ```json
 "audience": {
@@ -191,7 +191,7 @@ The **Audience** page answers how many people come, how many leave straight away
 - **Engaged**: the share of visitors who did at least one of the `engaged` actions, and how often each happened.
 - **DAU, WAU, MAU and stickiness**, and **weekly retention** cohorts: these follow people from one day to the next, so they count only people your app signs in with `trace.identify(id)`. Pass an id that isn't an email, ideally a keyed hash of the user's id, so Trace can count a person without knowing who they are.
 
-Home shows the last 7 days of it, and `get_audience` over MCP gives your agent the same numbers.
+Pulse shows the last 7 days of it, with where sessions come from (search engines count as one source, and sources under 5 sessions as "other"), and `get_audience` over MCP gives your agent the same numbers.
 
 ### Areas and features
 
@@ -209,17 +209,17 @@ A larger product has parts (areas) and those have features, and some get used wh
 }
 ```
 
-The **Features** page measures each area and feature over the window:
+**Product map** measures each area and feature over the window:
 - **Reach:** the share of visitors who used it, with the window before.
 - **Adoption:** the share of signed-in people who used it.
 - **Come back:** how many of those people used it on two or more days.
 - **With problems:** the share of its sessions that hit a rage click, dead click or error on its own pages. A dead click is a press the page didn't react to (no change, scroll or navigation from the press until a second after the click), and a rage click is three such clicks in one spot within 700 ms. Form fields, `<canvas>`, the page background and clicks that leave text selected are never judged. Collectors before November 2026 also counted controls that react on press, drawing, typing on on-screen keypads and text selection, so trends drop when visitors get the current collector, with no change to the product (the pages it declares, or where its events happen when it declares none), and the most common one.
 
-Each gets a status: **used, but it hurts** (where a fix helps the most people), **little used**, **little used and it hurts**, **healthy**, or too little data. Without declared areas, Trace suggests them from the website's URLs. Home raises the busiest area that hurts, `get_areas` gives your agent the same numbers, and the analysis prompt points it there.
+Each gets a status: **used, but it hurts** (where a fix helps the most people), **little used**, **little used and it hurts**, **healthy**, or too little data. Without declared areas, Trace suggests them from the website's URLs. Pulse raises the busiest area that hurts, `get_areas` gives your agent the same numbers, and the analysis prompt points it there.
 
 ### Page stories
 
-Open any page on the **Pages** page (or from an area, an error or a dead click) for its story: how people use that page, as patterns rather than recordings.
+Open any page in **Product map › Pages** (or from an area, a problem or Pulse) for its story: how people use that page, as patterns rather than recordings.
 - **Elements people use:** the share of the page's sessions that clicked each one, clicks per session, and the share whose clicks there did nothing.
 - **Common patterns:** what visits do first, in order, with repeats folded together ("number pad → Check → Next, again and again"). Visits that start the same way are grouped, and you can play a pattern step by step.
 - **Came from and went next,** how far people scroll, how long they stay and how long until the first click.
@@ -235,11 +235,11 @@ Once a website sends events from a real address, batches from localhost, loopbac
 
 ### How fast the dashboard is
 
-Home, Audience, Features, Funnels, Goals and the behaviour summary read every event in their window. Each report is computed once and served from memory for a minute; after that it's served at once and recomputed in the background, and reports someone is looking at are refreshed before they get old. A change made in the dashboard or through the API (a pushed trace.json, an insight moved) drops the website's reports so it shows at once; changes made over MCP show within a minute. Reports that match many things against the same events (funnel steps, areas and features) read each type of event once per window. On a website with half a million events in 30 days, Home takes about 4 seconds the first time and under a millisecond after.
+Pulse, Audience, Product map, Journeys, Goals and the behaviour summary read every event in their window. Each report is computed once and served from memory for a minute; after that it's served at once and recomputed in the background, and reports someone is looking at are refreshed before they get old. A change made in the dashboard or through the API (a pushed trace.json, an insight moved) drops the website's reports so it shows at once; changes made over MCP show within a minute. Reports that match many things against the same events (funnel steps, areas and features) read each type of event once per window. On a website with half a million events in 30 days, Home takes about 4 seconds the first time and under a millisecond after.
 
 ### The dashboard shows; your agent does
 
-Analysis happens only in your own coding agent, over MCP, with the model you choose: Trace's server never analyses on its own. The dashboard is for looking, and every change goes through the agent too: moving an insight along, privacy rules, the public link, adding a website, applying trace.json. Wherever there's something to do, the dashboard shows the exact command to give it, with a Copy button, and Setup › Install and tracking lists them all. With the Claude Code plugin:
+Analysis happens only in your own coding agent, over MCP, with the model you choose: Trace's server never analyses on its own. The dashboard is for looking, and every change goes through the agent too: moving an insight along, privacy rules, the public link, adding a website, applying trace.json. Wherever there's something to do, the dashboard shows the exact command to give it, with a Copy button, and Settings › Install and tracking lists them all. With the Claude Code plugin:
 
 | To | Ask |
 |---|---|
@@ -303,7 +303,7 @@ In Claude Code it's the slash command `/mcp__trace__analyse_website`. Saving, ev
 
 **Small websites: defects.** Patterns need traffic; something broken doesn't. Below the threshold, if Trace has seen a failing request, a JS error, a missing file, a funnel step nobody reaches, a declared event that never arrives or a dead click on a button or link that no insight covers yet, the status is `sweep` and `/trace:analyse` runs a defect sweep: `get_defects` lists the candidates, the agent finds each one's cause in the code, and drafts the confirmed ones as `defect` insights (no KPI needed). A released defect is judged by whether it happens again: "still happening" as soon as it does, "stopped" after 14 days without it. A sweep doesn't reset the sessions counted toward the next analysis.
 
-**When to analyse.** Trace says a website is worth analysing once it has 100 new sessions since the last analysis, or 30 once a week has passed (before the first analysis, a week since the first session). Home and Insights show an analysis panel: when the last analysis ran and who ran it, so how old the analysed behaviour is; how many sessions and events have arrived since; and, once it's worth it, the command to run (`/trace:analyse`). The header's Run analysis button counts the new sessions, and the panel notices within 20 seconds when your agent saves an analysis. The same is in `get_overview` and `get_analysis_status`, and at `GET /api/sites/{site}/analysis` (`?format=text` gives one line, or nothing until it's time). To hear it from Claude Code when a session starts, add a `SessionStart` hook to `~/.claude/settings.json` (the Setup page has it with your address filled in) and keep your token in the `TRACE_TOKEN` environment variable:
+**When to analyse.** Trace says a website is worth analysing once it has 100 new sessions since the last analysis, or 30 once a week has passed (before the first analysis, a week since the first session). Pulse and Work show an analysis panel: when the last analysis ran and who ran it, so how old the analysed behaviour is; how many sessions and events have arrived since; and, once it's worth it, the command to run (`/trace:analyse`). The header's Run analysis button counts the new sessions, and the panel notices within 20 seconds when your agent saves an analysis. The same is in `get_overview` and `get_analysis_status`, and at `GET /api/sites/{site}/analysis` (`?format=text` gives one line, or nothing until it's time). To hear it from Claude Code when a session starts, add a `SessionStart` hook to `~/.claude/settings.json` (the Setup page has it with your address filled in) and keep your token in the `TRACE_TOKEN` environment variable:
 
 ```json
 { "hooks": { "SessionStart": [ { "matcher": "startup", "hooks": [ { "type": "command",
@@ -386,9 +386,22 @@ Works for one person or a whole company. An **account** is a company or a solo u
 
 ## Websites
 
-Each website opens on its **Home**: what needs attention now, most important first, each with a link to act on it. Finishing setup comes first while it's unfinished; then a release verdict that just came in, analysis being due, insights waiting to be reviewed, KPIs that are short of target and getting worse, the funnel step losing the most people, errors visitors hit this week, and declared events that stopped arriving. `get_overview` over MCP returns the same list as `today`, so an agent sees the same priorities.
+The dashboard has six places in one sidebar, each answering one question, plus Settings (Get started, Install and tracking, Privacy, Team, Plan) at the bottom. On a phone the sidebar becomes a top bar and a bottom bar.
 
-Switch websites with the menu next to the logo. Your coding agent adds websites (`add_site`, or `/trace:manage add a website called docs`), each with its own write key; its Setup page has the snippets. Removing a website deletes its data and asks you to type its name.
+| Place | Answers |
+|---|---|
+| **Pulse** | Is the website OK, what changed, what's next? |
+| **Journeys** | Where do people get through, and where do they drop out? |
+| **Product map** | Which parts get used, and which hurt? Its pages, and each page's story. |
+| **Problems** | What is going wrong for people right now? |
+| **Goals** | Are the numbers we care about at target? |
+| **Work** | What are we changing, and did it help? |
+
+The sidebar counts what's waiting: pages with problems this week, goals at target, insights not yet picked. Links from earlier layouts (`#/kpis`, `#/understand/funnels`, `#/setup/privacy`) open the place that replaced them.
+
+Each website opens on **Pulse**: one sentence on how it's doing, traffic with where it comes from, every goal drawn against its target, and **Next up**, what needs attention now, most important first, each with a link to act on it. The funnels and the product map follow in miniature. Finishing setup comes first while it's unfinished; then a release verdict that just came in, analysis being due, insights waiting to be reviewed, KPIs that are short of target and getting worse, the funnel step losing the most people, errors visitors hit this week, and declared events that stopped arriving. `get_overview` over MCP returns the same list as `today`, so an agent sees the same priorities.
+
+Switch websites with the menu next to the logo. Your coding agent adds websites (`add_site`, or `/trace:manage add a website called docs`), each with its own write key; Settings › Install and tracking has the snippets. Removing a website deletes its data and asks you to type its name.
 
 Everything that works on data takes a website:
 
@@ -543,7 +556,7 @@ The servers behind a website can report their errors too, with the tracetells cl
 - **Counts, not occurrences.** Trace scrubs every field again, groups errors by class and the first frame of the app's own code (or a normalised message), and keeps counts per hour, route, method, status, environment and release, plus the latest backtrace per group. Each occurrence counts as an event towards the plan's monthly limit; hourly counts follow the plan's retention.
 - **Tied to visits.** A group whose route and status match failed requests the collector saw in browsers shows how many visits it broke, on which pages, and which goals and funnels those pages feed.
 - **Releases.** A group first seen in a release is new in it. A resolved group that comes back from the release its fix shipped in, or a newer one, reopens as a regression; older releases still running don't count. A week after resolving without it, the group shows "stopped".
-- **Where it shows:** the Errors page's Server tab, `GET /api/sites/{site}/errors` and `/errors/{id}`, the MCP tools `list_server_errors`, `get_server_error` (with a fix prompt) and `update_server_error`, `server_errors` in the behaviour summary and `get_brief`, and `/trace:fix server error 7`.
+- **Where it shows:** Problems' Server tab, `GET /api/sites/{site}/errors` and `/errors/{id}`, the MCP tools `list_server_errors`, `get_server_error` (with a fix prompt) and `update_server_error`, `server_errors` in the behaviour summary and `get_brief`, and `/trace:fix server error 7`.
 
 The three clients share `clients/test-vectors.json` with the server's own scrubbing tests, so all four scrub the same way.
 

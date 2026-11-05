@@ -88,7 +88,7 @@ function areaCard(area, features) {
   );
   return html`<article class="card area-card">
     <div class="area-head">
-      <div class="area-title"><a href="#/understand/features/${encodeURIComponent(area.key)}">${area.name}</a>${statusBadge(area.status)}</div>
+      <div class="area-title"><a href="#/map/${encodeURIComponent(area.key)}">${area.name}</a>${statusBadge(area.status)}</div>
       ${area.description ? html`<span class="hint">${area.description}</span>` : ""}
       <div class="area-stats">
         <div><strong>${pct(area.reach)}</strong><span>reach</span></div>
@@ -119,7 +119,7 @@ async function renderFeatures() {
       <div class="look-head"><strong>${n.name}</strong>${parent ? html`<span class="hint">${parent.name}</span>` : ""}</div>
       <div class="look-rate"><span class="bad-text">${pct(n.problem_rate)}</span><span class="hint">of ${num(n.sessions)} sessions hit a problem</span></div>
       ${n.top_problem ? html`<p>${problemLine(n.top_problem)}</p>` : ""}
-      <div class="actions">${analyseButton(n.key, i === 0)}<a class="button" href="#/understand/features/${encodeURIComponent(n.area || n.key)}">Open ${parent ? parent.name : n.name}</a></div>
+      <div class="actions">${analyseButton(n.key, i === 0)}<a class="button" href="#/map/${encodeURIComponent(n.area || n.key)}">Open ${parent ? parent.name : n.name}</a></div>
     </article>`;
   });
   const statusCards = ["painful", "rare_painful", "rare", "healthy"].map((s) => {
@@ -161,7 +161,7 @@ async function renderArea(key) {
   const [a, funnels, insights] = await Promise.all([api(`/areas?days=${featuresDays}`), api("/funnels").catch(() => []), api("/insights").catch(() => [])]);
   const area = a.nodes.find((n) => n.key === key && !n.area);
   if (!area) {
-    view.innerHTML = html`<div class="empty"><h1>No area called "${key}"</h1><p><a href="#/understand/features">Back to features</a></p></div>`;
+    view.innerHTML = html`<div class="empty"><h1>No area called "${key}"</h1><p><a href="#/map">Back to features</a></p></div>`;
     return;
   }
   const features = a.nodes.filter((n) => n.area === key);
@@ -197,7 +197,7 @@ async function renderArea(key) {
     </li>`
   );
   view.innerHTML = html`
-    <nav class="breadcrumb" aria-label="Breadcrumb"><a href="#/understand/features">Features</a> <span aria-hidden="true">›</span> <span aria-current="page">${area.name}</span></nav>
+    <nav class="breadcrumb" aria-label="Breadcrumb"><a href="#/map">Features</a> <span aria-hidden="true">›</span> <span aria-current="page">${area.name}</span></nav>
     <div class="toolbar">
       <div><div class="area-title"><h1>${area.name}</h1>${statusBadge(area.status)}</div>
         <p class="sub">${area.description ? `${area.description}. ` : ""}Counted from ${area.matches.map((m, i) => html`${i ? ", " : ""}<code>${m}</code>`)}${a.source === "trace.json" ? ", as declared in trace.json" : ""}. Last ${featuresDays} days.</p></div>
@@ -222,11 +222,11 @@ async function renderArea(key) {
     ${problems.length ? html`<ol class="problem-list">${problemItems}</ol>` : html`<p class="hint">No rage clicks, dead clicks or errors on its pages in this window.</p>`}
     <div class="side-by-side">
       <div class="card"><h2>Funnels through ${area.name}</h2>${
-        through.length ? html`<ul>${through.map((f) => html`<li><a href="#/understand/funnels">${f.name}</a></li>`)}</ul>` : html`<p class="hint">No funnel has a step on its pages.</p>`
+        through.length ? html`<ul>${through.map((f) => html`<li><a href="#/journeys">${f.name}</a></li>`)}</ul>` : html`<p class="hint">No funnel has a step on its pages.</p>`
       }</div>
       <div class="card"><h2>Insights about ${area.name}</h2>${
         about.length
-          ? html`<ul>${about.map((i) => html`<li><a href="${i.status === "released" ? "#/improve/releases" : "#/improve/insights"}">${i.title}</a> <span class="hint">${i.status.replace("_", " ")}</span></li>`)}</ul>`
+          ? html`<ul>${about.map((i) => html`<li><a href="${i.status === "released" ? "#/work/released" : "#/work"}">${i.title}</a> <span class="hint">${i.status.replace("_", " ")}</span></li>`)}</ul>`
           : html`<p class="hint">None yet. Analysing just this area gives your agent its pages, features and problems, and asks only about them.</p>`
       }${PUBLIC ? "" : snippet(onSite(`${ANALYSE_COMMAND} ${area.key}`))}</div>
     </div>`;

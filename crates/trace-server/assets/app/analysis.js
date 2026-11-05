@@ -41,7 +41,7 @@ function analysisPanel(a) {
         </div>`
       : `<div class="analysis-how">
           <span>Analysis runs in your coding agent, with the model you choose, over MCP. It reads your code too.</span>
-          <a class="button primary" href="#/setup/install">Connect your coding agent</a>
+          <a class="button primary" href="#/settings/install">Connect your coding agent</a>
         </div>`;
   return `<section class="analysis-panel next-${esc(a.next)}" aria-label="Analysis">
     <div class="analysis-head">

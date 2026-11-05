@@ -1,66 +1,7 @@
 "use strict";
 
-// Home, and the funnel cards and tracking table other pages use.
+// The funnel cards, Goals and the tracking table other pages use. The website's home is Pulse (pulse.js).
 // The dashboard is plain scripts loaded in order (see index.html); they share one scope.
-
-// ---------------------------------------------------------------- Home
-
-// The website's home: what needs the team now, most important first, each with
-// a way to act on it. Built by the server from what Trace already measures.
-async function renderHome() {
-  const [t, a, analysis] = await Promise.all([api("/today"), api("/audience?days=7").catch(() => null), api("/analysis").catch(() => null)]);
-  // The analysis panel says it better than a line in the list.
-  if (analysis) t.items = t.items.filter((i) => i.kind !== "analyse");
-  const change = t.sessions_week_before
-    ? (() => {
-        const d = (t.sessions_week - t.sessions_week_before) / t.sessions_week_before;
-        if (Math.abs(d) < 0.005) return `<span class="delta">same as the week before</span>`;
-        return `<span class="delta ${d > 0 ? "good" : "bad"}">${d > 0 ? "▲" : "▼"} ${Math.abs(d * 100).toFixed(0)}% vs the week before</span>`;
-      })()
-    : "";
-  const items = t.items.length
-    ? `<ol class="today">${t.items
-        .map(
-          (i, n) => `<li class="today-item tone-${esc(i.tone)}">
-            <div class="today-text"><strong>${esc(i.title)}</strong><span>${esc(i.detail)}</span></div>
-            <a class="button${n === 0 ? " primary" : ""}" href="#/${esc(i.page)}" ${i.kind === "analyse" ? "data-analyse" : ""}>${esc(i.action)}</a>
-          </li>`
-        )
-        .join("")}</ol>`
-    : `<div class="card empty-today"><p><strong>Nothing needs you right now.</strong> Trace keeps measuring; this page fills up when there's something to look at.</p></div>`;
-  view.innerHTML = `
-    <div class="page-head">
-      <div><h1>${esc(project.name)}</h1><p class="sub">What needs attention now, most important first.</p></div>
-      <div class="week"><span class="value">${num(t.sessions_week)}</span> <span class="hint">sessions in the last 7 days</span> ${change}</div>
-    </div>
-    ${a && a.visitors.sessions ? audienceStrip(a) : ""}
-    ${analysis && analysis.next === "analyse" ? analysisPanel(analysis) : ""}
-    ${items}
-    ${analysis && analysis.next !== "analyse" ? analysisPanel(analysis) : ""}`;
-  if (analysis) {
-    wireAnalysisPanel(analysis);
-    analysisBadge(analysis);
-  }
-  view.querySelector("[data-analyse]")?.addEventListener("click", (e) => {
-    const run = document.getElementById("run-analysis");
-    if (run && !run.hidden) {
-      e.preventDefault();
-      run.click();
-    }
-  });
-}
-
-// The audience at a glance on Home, last 7 days; the Audience page has the rest.
-function audienceStrip(a) {
-  const link = (body) => `<a class="card stat link" href="#/audience">${body}</a>`;
-  const cell = (value, label, extra = "") => link(`<div class="value">${value}</div><div class="label">${label}</div>${extra ? `<div class="hint">${extra}</div>` : ""}`);
-  return `<div class="stats audience-strip">
-    ${cell(num(a.visitors.visitors), "Visitors", change(a.visitors.visitors, a.visitors.previous_visitors, { neutral: true }))}
-    ${a.bounce.sessions ? cell(pct(a.bounce.rate), "Bounce on marketing pages", change(a.bounce.rate, a.bounce.previous_rate, { rate: true, up: false })) : ""}
-    ${a.engaged.declared ? cell(pct(a.engaged.rate), "Engaged", change(a.engaged.rate, a.engaged.previous_rate, { rate: true })) : ""}
-    ${a.active.identified ? cell(num(Math.round(a.active.dau * 10) / 10), "Daily active people", `of ${num(a.active.mau)} a month · ${pct(a.active.stickiness)}`) : ""}
-  </div>`;
-}
 
 // One funnel: each step as a bar sized against the first, the share that got
 // there from the step before, and the step losing the most sessions marked.
@@ -153,7 +94,7 @@ async function renderKpis() {
       <strong>Change a goal in your repo</strong>
       <span>Edit <code>trace.json</code> next to the code that sends the events, then:</span>
       <pre>${esc(steps)}</pre>
-      <span class="hint">Run them in CI with a personal API token (<code>TRACE_TOKEN</code>), so the dashboard always matches your main branch. Whether each event arrives is under <a href="#/setup/install">Setup › Install and tracking</a>.</span>
+      <span class="hint">Run them in CI with a personal API token (<code>TRACE_TOKEN</code>), so the dashboard always matches your main branch. Whether each event arrives is under <a href="#/settings/install">Settings › Install and tracking</a>.</span>
     </div>`;
   wireCopy();
 }
@@ -164,7 +105,7 @@ async function renderFunnels() {
   wireCopy();
 }
 
-// Declared events and whether each arrives, for Setup › Install and tracking.
+// Declared events and whether each arrives, for Settings › Install and tracking.
 async function trackingSection() {
   const cfg = await api("/config");
   const declared = cfg.events.map((e) => [`<code>${esc(e.name)}</code>`, esc(e.description), num(e.count), eventStatus(e, cfg.collecting_since)]);

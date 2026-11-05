@@ -116,6 +116,18 @@ async function renderAudience() {
       ${act.identified ? stat(num(v.signed_in), "Signed-in people") : ""}
     </div>
     ${visitorBars(v.days, a.days)}
+    <h2>Where they come from</h2>
+    <p class="sub">Sessions by the website that sent them (search engines count as one, whatever their country), or direct when nothing did. Sources under 5 sessions are counted together.</p>
+    ${table(
+      [{ label: "Source" }, { label: "Sessions", num: 1 }, { label: "Share", num: 1 }, { label: "Before", num: 1 }],
+      (a.sources || []).map((x) => [
+        html`<strong>${x.name === "direct" ? "Direct" : x.name === "other" ? "Other" : x.name}</strong>${x.origins.length > 1 ? html`<br><span class="hint">${x.origins.map(host).join(", ")}</span>` : ""}`,
+        num(x.sessions),
+        pct(x.share),
+        pct(x.previous_share),
+      ]),
+      "No sessions in this window."
+    )}
     <h2>Bounce on the marketing pages</h2>
     <p class="sub">Sessions that landed on ${b.pages.length ? b.pages.map((p) => `<code>${esc(p)}</code>`).join(", ") : "any page (declare the marketing pages under <code>audience.marketing</code> in trace.json)"} and left without clicking, filling in a form or going to another page.</p>
     ${bounce}

@@ -1,6 +1,6 @@
 "use strict";
 
-// Setup › Install and tracking, and Get started.
+// Settings › Install and tracking, and Get started.
 // The dashboard is plain scripts loaded in order (see index.html); they share one scope.
 
 // ---------------------------------------------------------------- Setup
@@ -141,7 +141,7 @@ async function renderSetup() {
   if (!installs[installTab]) installTab = "site";
   view.innerHTML = `
     <h1>Install and tracking</h1>
-    <p class="sub">This dashboard is for looking. Setting Trace up, analysing, fixing and every change happen in your coding agent, over MCP: Claude Code, Cursor or any MCP client, with the model you choose. New here? <a href="#/setup/start">Follow the setup steps</a>.</p>
+    <p class="sub">This dashboard is for looking. Setting Trace up, analysing, fixing and every change happen in your coding agent, over MCP: Claude Code, Cursor or any MCP client, with the model you choose. New here? <a href="#/settings/start">Follow the setup steps</a>.</p>
     <div class="card setup-status" id="setup-status">${setupStatus()}</div>
 
     <h2>1. Connect your coding agent</h2>
@@ -180,7 +180,7 @@ async function renderSetup() {
     <div class="copy-row"><pre class="snippet">${esc(custom)}</pre><button data-copy="${esc(custom)}">Copy</button></div>
 
     <h2>5. Hear when it's time to analyse</h2>
-    <p class="hint">Trace says a website is worth analysing once it has 100 new sessions since the last analysis (30 after a week); Home shows it too. To hear it from Claude Code each time you start it, add this to <code>~/.claude/settings.json</code> and put a token from Account in the <code>TRACE_TOKEN</code> environment variable. It prints nothing until there's something to analyse.</p>
+    <p class="hint">Trace says a website is worth analysing once it has 100 new sessions since the last analysis (30 after a week); Pulse shows it too. To hear it from Claude Code each time you start it, add this to <code>~/.claude/settings.json</code> and put a token from Account in the <code>TRACE_TOKEN</code> environment variable. It prints nothing until there's something to analyse.</p>
     <div class="copy-row"><pre class="snippet">${esc(analysisHook)}</pre><button data-copy="${esc(analysisHook)}">Copy</button></div>
 
     <h2>Public view</h2>
@@ -285,9 +285,9 @@ async function loadChecklist() {
   } catch {
     checklist = null;
   }
-  const progress = document.getElementById("start-progress");
-  progress.hidden = !checklist || checklist.complete;
-  if (checklist) progress.textContent = `${checklist.done}/${checklist.total}`;
+  // Setup's progress shows beside Settings until it's complete.
+  placeCounts.values.settings = checklist && !checklist.complete ? `${checklist.done}/${checklist.total}` : "";
+  paintCounts();
 }
 
 const tick = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>`;
@@ -324,7 +324,7 @@ async function renderStart() {
       <div class="card" id="setup-status" style="margin-top: 16px">${setupStatus()}</div>
       <div class="pair">
         <div class="card"><strong>What it records</strong><p class="hint">Pages, clicks, scroll, form starts and submits, errors. Counted per route, never per person.</p></div>
-        <div class="card"><strong>What it never records</strong><p class="hint">Anything typed, page titles, query strings, the content of your pages. <a href="#/setup/start/privacy">Review what's protected</a></p></div>
+        <div class="card"><strong>What it never records</strong><p class="hint">Anything typed, page titles, query strings, the content of your pages. <a href="#/settings/start/privacy">Review what's protected</a></p></div>
       </div>`,
     privacy: () => `
       <h1>Check what's protected</h1>
@@ -343,7 +343,7 @@ async function renderStart() {
       <h1>Tell Trace what success means</h1>
       <p class="sub">Goals (KPIs), the events behind them, funnels and your product's areas live in <code>trace.json</code> in your repository, next to the code that sends the events. The analyst puts the goals first, and released insights are judged against them. This step is done when the file is applied.</p>
       <div class="pair">
-        <div class="card"><strong>With your coding agent</strong><p class="hint">It reads your code, proposes events, goals, funnels and areas, writes trace.json and applies it.</p>${snippet("/trace:setup")}<p class="hint">Not connected yet? <a href="#/setup/start/agent">Connect your coding agent</a>.</p></div>
+        <div class="card"><strong>With your coding agent</strong><p class="hint">It reads your code, proposes events, goals, funnels and areas, writes trace.json and applies it.</p>${snippet("/trace:setup")}<p class="hint">Not connected yet? <a href="#/settings/start/agent">Connect your coding agent</a>.</p></div>
         <div class="card"><strong>By hand</strong><p class="hint">Start from this example and edit it in your repository.</p></div>
       </div>
       <pre class="snippet">${esc(CONFIG_EXAMPLE)}</pre>
@@ -379,18 +379,18 @@ async function renderStart() {
     <div class="start">
       <nav class="start-steps" aria-label="Setup steps">${steps
         .map(
-          (x, i) => `<a href="#/start/${x.key}" class="${x === current ? "current" : ""} ${x.done ? "done" : ""}" ${x === current ? 'aria-current="step"' : ""}>
+          (x, i) => `<a href="#/settings/start/${x.key}" class="${x === current ? "current" : ""} ${x.done ? "done" : ""}" ${x === current ? 'aria-current="step"' : ""}>
             <span class="mark">${x.done ? tick : i + 1}</span><span>${esc(START_STEPS[x.key] || x.key)}${x.optional ? ` <span class="hint">(optional)</span>` : ""}</span></a>`
         )
         .join("")}
-        <p class="hint">${checklist.complete ? "All set. This checklist stays here, under Setup." : `${checklist.done} of ${checklist.total} done. The dashboard works from the first visit: stop any time.`} <a href="#/home">Go to Home</a></p>
+        <p class="hint">${checklist.complete ? "All set. This checklist stays here, under Settings." : `${checklist.done} of ${checklist.total} done. The dashboard works from the first visit: stop any time.`} <a href="#/pulse">Go to Pulse</a></p>
       </nav>
       <section class="start-body">
         <span class="hint">Step ${index + 1} of ${steps.length}${current.done ? " · done" : ""}</span>
         ${(content[current.key] || (() => ""))()}
         <div class="start-foot">
-          ${index > 0 ? `<a href="#/start/${steps[index - 1].key}">Back</a>` : "<span></span>"}
-          ${next ? `<a class="button" href="#/start/${next.key}">Next: ${esc(START_STEPS[next.key].toLowerCase())}</a>` : `<a class="button" href="#/home">Go to Home</a>`}
+          ${index > 0 ? `<a href="#/settings/start/${steps[index - 1].key}">Back</a>` : "<span></span>"}
+          ${next ? `<a class="button" href="#/settings/start/${next.key}">Next: ${esc(START_STEPS[next.key].toLowerCase())}</a>` : `<a class="button" href="#/pulse">Go to Pulse</a>`}
         </div>
       </section>
     </div>`;

@@ -1,7 +1,7 @@
 "use strict";
 
 // Errors: what breaks in visitors' browsers (from the behaviour summary) and on
-// the website's servers (sent by the tracetells clients). #/understand/errors
+// the website's servers (sent by the tracetells clients). #/problems
 // is the browser, /server the server groups, /<id> one server group.
 
 let serverEnv = store("trace_error_env") || "";
