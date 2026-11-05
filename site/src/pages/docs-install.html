@@ -45,5 +45,8 @@
 <h2>When your site already asks for consent</h2>
 <p>Add <code>data-consent="required"</code>. Before an answer nothing is stored, listened to or sent. Your consent tool calls <code>trace.consent(true)</code> or <code>trace.consent(false)</code>. After a yes, the collector keeps a visitor id in <code>localStorage</code> so returning visitors are recognised across days. Global Privacy Control counts as no.</p>
 
+<h2>Overlay links</h2>
+<p>From a page's story in the dashboard, <strong>Show it on my page</strong> opens your page with <code>#trace-overlay=…</code> in its address. On that page load the collector sends nothing and loads <code>overlay.js</code> from your Trace server, which removes the token from the address bar and draws the page's aggregated story on top. If your site has a Content Security Policy that allows the collector's server for scripts and requests, the overlay works too. Visitors never load it.</p>
+
 <h2>Performance</h2>
 <p>8.4 KB on the wire, about 3 µs of work per click and no layout reads on the hot path. It takes notes while the page is busy and sends them when the browser is idle. If it ever fails, your site carries on as if it weren't there.</p>

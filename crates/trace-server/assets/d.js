@@ -203,7 +203,8 @@
   function cleanProps(v, depth) {
     if (v == null) return;
     if (typeof v === "string") return redact(v.slice(0, 200), false);
-    if (typeof v === "number" || typeof v === "boolean") return isFinite(v) || typeof v === "boolean" ? v : undefined;
+    // isFinite(true) is true too: booleans pass, NaN and Infinity don't.
+    if (typeof v === "number" || typeof v === "boolean") return isFinite(v) ? v : undefined;
     if (typeof v !== "object" || depth > 2) return;
     var out = Array.isArray(v) ? [] : {};
     var n = 0;
@@ -290,6 +291,20 @@
         return { name: r.replace(/\/+$/, "") || "/", segs: r.replace(/\/+$/, "").split("/") };
       });
 
+    // ---- routes --------------------------------------------------------------
+    // Hash routers (#/settings, #!/settings) use the hash as the route; plain
+    // anchors (#section) don't. Dynamic segments are grouped so /orders/123 and
+    // /orders/456 count as one page.
+    var ID_SEGMENT = /^(\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}|(?=[^/]*\d)[A-Za-z0-9_-]{24,})$/i;
+
+    // An overlay link (#trace-overlay=…) opened by a team member to see Trace's
+    // page story on this page: collect nothing here, and load the overlay, which
+    // reads the token, clears it from the address bar and names pages with `traceAnalytics.route`.
+    if (/trace-overlay=/.test(location.hash)) {
+      api.route = route;
+      return document.head.appendChild(document.createElement("script")).src = new URL("/overlay.js", SCRIPT_SRC);
+    }
+
     // ---- storage -------------------------------------------------------------
     // Only with consent does anything go into the browser's storage. Otherwise
     // ids live in memory for this page, and the server recognises the visit.
@@ -364,11 +379,6 @@
       return sid;
     }
 
-    // ---- routes --------------------------------------------------------------
-    // Hash routers (#/settings, #!/settings) use the hash as the route; plain
-    // anchors (#section) don't. Dynamic segments are grouped so /orders/123 and
-    // /orders/456 count as one page.
-    var ID_SEGMENT = /^(\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}|(?=[^/]*\d)[A-Za-z0-9_-]{24,})$/i;
     var routeHref = null;
     var routeName = null;
     var manualRoute = null;

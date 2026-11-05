@@ -96,6 +96,7 @@ const APP_SCRIPTS: &[(&str, &str)] = &[
     ("analysis", include_str!("../assets/app/analysis.js")),
     ("home", include_str!("../assets/app/home.js")),
     ("pages", include_str!("../assets/app/pages.js")),
+    ("story", include_str!("../assets/app/story.js")),
     ("errors", include_str!("../assets/app/errors.js")),
     ("setup", include_str!("../assets/app/setup.js")),
     ("accounts", include_str!("../assets/app/accounts.js")),
@@ -106,6 +107,7 @@ const APP_SCRIPTS: &[(&str, &str)] = &[
 ];
 const STYLE_CSS: &str = include_str!("../assets/style.css");
 const COLLECTOR_JS: &str = include_str!("../assets/d.js");
+const OVERLAY_JS: &str = include_str!("../assets/overlay.js");
 
 /// The dashboard page, with this server's own collector when it measures
 /// itself: page names come from the app (never ids or website names) and the
@@ -126,12 +128,16 @@ pub fn router(state: AppStateRef) -> Router {
     let collector = Router::new()
         .route("/v1/collect", post(collect))
         .route("/d.js", get(collector_js))
+        .route("/overlay.js", get(|| async { asset("application/javascript; charset=utf-8", OVERLAY_JS, "no-cache") }))
+        .route("/v1/overlay/story", get(overlay_story))
         .layer(CorsLayer::new().allow_origin(Any).allow_methods([Method::GET, Method::POST]).allow_headers(Any));
 
     let api = Router::new()
         .route("/project", get(get_project))
         .route("/config", get(get_config).post(push_config))
         .route("/digest", get(get_digest))
+        .route("/pages/story", get(get_page_story))
+        .route("/overlay", post(make_overlay_link))
         .route("/kpis", get(list_kpis))
         .route("/funnels", get(list_funnels))
         .route("/audience", get(audience))
@@ -543,6 +549,85 @@ async fn get_digest(State(state): State<AppStateRef>, Extension(CurrentSite(site
     cached(&state, &site, "digest", q.days.clamp(1, 365), |pool, s, days| async move { Ok(json!(digest::build(&pool, s.id, days).await?)) }).await
 }
 
+#[derive(Deserialize)]
+pub(crate) struct StoryQuery {
+    pub path: String,
+    #[serde(default = "default_days")]
+    pub days: u32,
+}
+
+/// The page story's window must be 1 to 90 days and its path a page path.
+fn story_args(path: &str, days: u32) -> Result<(), ApiError> {
+    if !(1..=90).contains(&days) {
+        return Err(ApiError::bad_request("`days` is between 1 and 90"));
+    }
+    if !path.starts_with('/') || path.chars().count() > 512 {
+        return Err(ApiError::bad_request("`path` is a page path such as /questions/:id"));
+    }
+    Ok(())
+}
+
+async fn get_page_story(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<StoryQuery>) -> ApiResult<Json<Value>> {
+    story_args(&q.path, q.days)?;
+    let path = q.path.clone();
+    cached(&state, &site, &format!("story:{path}"), q.days, move |pool, s, days| {
+        let path = path.clone();
+        async move { Ok(json!(trace_core::story::build(&pool, s.id, &path, days).await?)) }
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct OverlayBody {
+    url: String,
+}
+
+/// An address on the website with an overlay token in its fragment, for the
+/// overlay script to draw the page's story on the page itself.
+async fn make_overlay_link(
+    State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Extension(who): Extension<crate::auth_api::Principal>,
+    Json(body): Json<OverlayBody>,
+) -> ApiResult<Json<Value>> {
+    let url = body.url.trim();
+    let known: Vec<String> = db::collection(&state.pool, site.id).await?.sources.into_iter().map(|s| s.origin).collect();
+    let origin = privacy::referrer_origin(url);
+    if origin.as_ref().is_none_or(|o| !known.contains(o)) {
+        let list = if known.is_empty() { "none yet: open the website once with the collector installed".to_string() } else { known.join(", ") };
+        return Err(ApiError::bad_request(format!("that address isn't on this website. Trace has seen the collector on: {list}")));
+    }
+    let token = trace_core::overlay::mint(&state.pool, site.id, &who.actor()).await?;
+    let base = url.split('#').next().unwrap_or(url);
+    Ok(Json(json!({
+        "url": format!("{base}#trace-overlay={token}"),
+        "expires_at": trace_core::util::now_ms() + trace_core::overlay::LIFETIME_MS,
+    })))
+}
+
+#[derive(Deserialize)]
+struct OverlayStoryQuery {
+    route: String,
+    #[serde(default = "default_days")]
+    days: u32,
+}
+
+/// The page story for the overlay script, authenticated by an overlay token.
+async fn overlay_story(State(state): State<AppStateRef>, headers: HeaderMap, Query(q): Query<OverlayStoryQuery>) -> ApiResult<Json<Value>> {
+    let token = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
+    let site = match trace_core::overlay::check(&state.pool, token).await? {
+        trace_core::overlay::Check::Valid(site) => site,
+        trace_core::overlay::Check::Expired => return Err(ApiError::unauthorized("this overlay link has expired: open a new one from the page story")),
+        trace_core::overlay::Check::Unknown => return Err(ApiError::unauthorized("this overlay link isn't valid")),
+    };
+    story_args(&q.route, q.days)?;
+    let project = db::project(&state.pool, site).await?;
+    let route = q.route.clone();
+    cached(&state, &project, &format!("story:{route}"), q.days, move |pool, s, days| {
+        let route = route.clone();
+        async move { Ok(json!(trace_core::story::build(&pool, s.id, &route, days).await?)) }
+    })
+    .await
+}
+
 pub(crate) async fn list_kpis(State(state): State<AppStateRef>, Extension(CurrentSite(site)): Extension<CurrentSite>, Query(q): Query<DaysQuery>) -> ApiResult<Json<Value>> {
     cached(&state, &site, "kpis", q.days.clamp(1, 365), |pool, s, days| async move { kpi_values(&pool, s.id, days).await }).await
 }
@@ -587,7 +672,9 @@ async fn areas(State(state): State<AppStateRef>, Extension(CurrentSite(site)): E
 
 /// Any change made through the API drops the website's cached reports, so it shows at once.
 async fn forget_on_change(State(state): State<AppStateRef>, req: Request, next: middleware::Next) -> Response {
-    let site = (req.method() != Method::GET).then(|| req.extensions().get::<CurrentSite>().map(|c| c.0.id)).flatten();
+    // Making an overlay link changes nothing a report shows.
+    let changes = req.method() != Method::GET && req.uri().path() != "/overlay";
+    let site = changes.then(|| req.extensions().get::<CurrentSite>().map(|c| c.0.id)).flatten();
     let res = next.run(req).await;
     if let Some(site) = site
         && res.status().is_success()
@@ -1021,7 +1108,7 @@ mod isolation_tests {
         ("POST", "privacy/rules/1"), ("DELETE", "privacy/rules/1"), ("POST", "privacy/test"),
         ("GET", "onboarding"), ("POST", "onboarding/privacy-reviewed"), ("GET", "analysis"),
         ("GET", "errors"), ("GET", "errors/1"), ("GET", "errors/1/prompt"), ("POST", "errors/1/status"),
-        ("GET", "server-key"), ("POST", "server-key"), ("DELETE", "server-key"),
+        ("GET", "server-key"), ("POST", "server-key"), ("DELETE", "server-key"), ("GET", "pages/story?path=/cart"), ("POST", "overlay"),
     ];
 
     async fn app() -> (tower::util::MapRequest<Router, fn(Request) -> Request>, AppStateRef, String) {
@@ -1098,7 +1185,7 @@ mod isolation_tests {
         let res = app.clone().oneshot(req).await.unwrap();
         let status = res.status();
         let bytes = axum::body::to_bytes(res.into_body(), 1 << 22).await.unwrap();
-        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+        (status, serde_json::from_slice(&bytes).unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned())))
     }
 
     fn json_req(method: &str, path: &str, auth: (&str, &str), body: Value) -> Request {
@@ -1136,6 +1223,62 @@ mod isolation_tests {
         assert!(hook["systemMessage"].as_str().unwrap().contains("/trace:analyse"));
         let (_, status) = send(&app, json_req("GET", "/api/sites/acme/analysis", ("authorization", &bearer), json!({}))).await;
         assert_eq!((status["next"].as_str(), status["defects"].as_u64(), status["ready"].as_bool()), (Some("sweep"), Some(1), Some(false)));
+        trace_core::db::drop_test_target(&path).await;
+    }
+
+    #[tokio::test]
+    async fn page_stories_and_overlay_links() {
+        let (app, state, path) = app().await;
+        let (acme, shop) = db::create_account_with_site(&state.pool, "Acme", None).await.unwrap();
+        let (_, bolt) = db::create_account_with_site(&state.pool, "Bolt", None).await.unwrap();
+        let cookie = person(&state, acme.id, "a@acme.example", Role::User).await;
+        let user = auth::find_user(&state.pool, "a@acme.example").await.unwrap().unwrap();
+        let (_, token) = auth::create_api_token(&state.pool, acme.id, &user, "agent", true).await.unwrap();
+        let bearer = format!("Bearer {token}");
+        let now = trace_core::util::now_ms();
+        for i in 0..6 {
+            sqlx::query("INSERT INTO events (project_id, session_id, ts, type, path) VALUES ($1, $2, $3, 'pageview', '/cart')").bind(shop.id).bind(format!("s{i}")).bind(now - 60_000).execute(&state.pool).await.unwrap();
+        }
+        sqlx::query("INSERT INTO event_sources (project_id, origin, first_seen, last_seen) VALUES ($1, 'https://shop.example', $2, $2)").bind(shop.id).bind(now).execute(&state.pool).await.unwrap();
+
+        // Members and read-only tokens read stories; the window is 1 to 90 days.
+        let (status, story) = send(&app, json_req("GET", "/api/sites/acme/pages/story?path=/cart&days=7", ("cookie", &cookie), json!({}))).await;
+        assert_eq!((status, story["sessions"].as_i64()), (StatusCode::OK, Some(6)), "{story}");
+        let (status, by_token) = send(&app, json_req("GET", "/api/sites/acme/pages/story?path=/cart&days=7", ("authorization", &bearer), json!({}))).await;
+        assert_eq!((status, by_token["sessions"].as_i64()), (StatusCode::OK, Some(6)));
+        let (status, _) = send(&app, json_req("GET", "/api/sites/acme/pages/story?path=/cart&days=120", ("cookie", &cookie), json!({}))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        // Overlay links: only on an origin the collector has sent from, only by people.
+        let (status, err) = send(&app, json_req("POST", "/api/sites/acme/overlay", ("cookie", &cookie), json!({ "url": "https://evil.example/cart" }))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(err["error"].as_str().unwrap_or(&err.to_string()).contains("https://shop.example"), "{err}");
+        let (_, writer) = auth::create_api_token(&state.pool, acme.id, &user, "ci", false).await.unwrap();
+        let (status, _) = send(&app, json_req("POST", "/api/sites/acme/overlay", ("authorization", &format!("Bearer {writer}")), json!({ "url": "https://shop.example/cart" }))).await;
+        assert_eq!(status, StatusCode::OK, "a token that can make changes can make a link for its person");
+        let (status, link) = send(&app, json_req("POST", "/api/sites/acme/overlay", ("cookie", &cookie), json!({ "url": "https://shop.example/cart#top" }))).await;
+        assert_eq!(status, StatusCode::OK, "{link}");
+        let url = link["url"].as_str().unwrap();
+        let overlay = url.strip_prefix("https://shop.example/cart#trace-overlay=").expect(url).to_string();
+
+        // The overlay reads the same story with its token, and nothing else.
+        let read = |token: String| {
+            let app = app.clone();
+            async move {
+                let req = Request::builder().uri("/v1/overlay/story?route=/cart&days=7").header(header::AUTHORIZATION, format!("Bearer {token}")).body(axum::body::Body::empty()).unwrap();
+                send(&app, req).await
+            }
+        };
+        let (status, seen) = read(overlay.clone()).await;
+        assert_eq!((status, seen["sessions"].as_i64()), (StatusCode::OK, Some(6)));
+        let other = trace_core::overlay::mint(&state.pool, bolt.id, "b@bolt.example").await.unwrap();
+        let (_, bolt_story) = read(other).await;
+        assert_eq!(bolt_story["sessions"].as_i64(), Some(0), "a token for another website reads that website only");
+        sqlx::query("UPDATE overlay_tokens SET expires_at = $1").bind(now - 1).execute(&state.pool).await.unwrap();
+        let (status, _) = read(overlay).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "expired");
+        let (status, _) = read("made-up".into()).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
         trace_core::db::drop_test_target(&path).await;
     }
 

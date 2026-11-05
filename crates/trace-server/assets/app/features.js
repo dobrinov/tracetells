@@ -34,7 +34,7 @@ function statusBadge(status) {
 }
 
 function problemLine(p) {
-  return html`<strong>${PROBLEM_KIND[p.kind] || p.kind}</strong> on <code>${p.path}</code>: ${p.what}, in ${num(p.sessions)} session${p.sessions === 1 ? "" : "s"}`;
+  return html`<strong>${PROBLEM_KIND[p.kind] || p.kind}</strong> on ${pageLink(p.path)}: ${p.what}, in ${num(p.sessions)} session${p.sessions === 1 ? "" : "s"}`;
 }
 
 // A prompt for a coding agent about one problem, so it can be handed over as a task.
@@ -191,7 +191,7 @@ async function renderArea(key) {
   const problemItems = problems.map(
     (p) => html`<li class="card">
       <span class="badge ${p.kind === "error" ? "bad" : "warn"}">${PROBLEM_KIND[p.kind] || p.kind}</span>
-      <div class="problem-text"><strong>${p.what}</strong><span class="hint">On <code>${p.path}</code>${p.node !== area ? ` · ${p.node.name}` : ""}</span></div>
+      <div class="problem-text"><strong>${p.what}</strong><span class="hint">On ${pageLink(p.path)}${p.node !== area ? ` · ${p.node.name}` : ""}</span></div>
       <span class="problem-count">${num(p.sessions)}</span>
       ${PUBLIC ? "" : html`<button type="button" data-task="1" data-copy="${problemTask(p, p.node)}" title="Copies a task for your coding agent">Make it a task</button>`}
     </li>`

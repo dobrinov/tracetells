@@ -9,9 +9,10 @@ use crate::util::{DAY_MS, now_ms};
 /// Deletes raw events and sessions older than each account's retention: the
 /// shorter of its plan's limit and the server-wide `server_days` (0 = no
 /// server-wide limit). Insights, KPIs and evaluations are aggregates and stay.
-/// Returns the number of events deleted.
+/// Expired overlay links go too. Returns the number of events deleted.
 pub async fn purge(pool: &Pool, server_days: u32) -> Result<u64> {
     let mut deleted = 0;
+    crate::overlay::purge(pool).await?;
     for account in crate::db::accounts(pool).await? {
         let plan_days = crate::plans::for_account(pool, account.id).await?.effective.retention_days;
         let server = (server_days > 0).then_some(server_days as i64);

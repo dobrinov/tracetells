@@ -2338,3 +2338,127 @@ pre.backtrace {
 pre.backtrace .muted {
   color: var(--muted);
 }
+
+/* ---- page story ---- */
+.story-patterns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+}
+.story-pattern {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.story-pattern-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.story-pattern-head .value {
+  margin-left: auto;
+  font-weight: 600;
+}
+.story-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  counter-reset: step;
+}
+.story-step {
+  counter-increment: step;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 8px 40px;
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+  transition: background 0.2s, border-color 0.2s;
+}
+.story-step::before {
+  content: counter(step);
+  position: absolute;
+  left: 10px;
+  top: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.story-step.dead {
+  border-color: var(--bad);
+  background: var(--bad-soft);
+}
+.story-step.now {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.story-step.now::before {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.story-kind {
+  color: var(--muted);
+  font-size: 13px;
+}
+.story-then {
+  color: var(--muted);
+}
+.story-again {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
+}
+.story-share {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 140px;
+}
+.story-share .funnel-bar {
+  flex: 1;
+}
+.story-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+.story-insights {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.story-overlay {
+  margin-top: 24px;
+}
+.story-overlay form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.story-overlay input {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.story-overlay .hint {
+  color: var(--code-text);
+  opacity: 0.8;
+}
+.story-pattern.goes-wrong {
+  border-color: var(--bad);
+}

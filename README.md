@@ -217,6 +217,18 @@ The **Features** page measures each area and feature over the window:
 
 Each gets a status: **used, but it hurts** (where a fix helps the most people), **little used**, **little used and it hurts**, **healthy**, or too little data. Without declared areas, Trace suggests them from the website's URLs. Home raises the busiest area that hurts, `get_areas` gives your agent the same numbers, and the analysis prompt points it there.
 
+### Page stories
+
+Open any page on the **Pages** page (or from an area, an error or a dead click) for its story: how people use that page, as patterns rather than recordings.
+- **Elements people use:** the share of the page's sessions that clicked each one, clicks per session, and the share whose clicks there did nothing.
+- **Common patterns:** what visits do first, in order, with repeats folded together ("number pad → Check → Next, again and again"). Visits that start the same way are grouped, and you can play a pattern step by step.
+- **Came from and went next,** how far people scroll, how long they stay and how long until the first click.
+- **The page's problems** (dead and rage clicks, errors) and the **insights** that name it.
+
+Every element, pattern and transition comes from at least 5 sessions; smaller ones are only counted as hidden, so a quiet page can't show one person's visit. `get_page_story` gives your agent the same story.
+
+**Show it on my page** opens your own page in a new tab with the story drawn on its elements: shares as badges, the clicks that did nothing, and the patterns ready to play. The link carries a 15-minute, read-only token in its fragment (never sent to your server). On that page load the collector sends nothing and loads `overlay.js` from Trace instead, which reads only the story. Nothing from any visitor's screen is recorded; the page you see is your own browser loading your website.
+
 ### Visits from your own machine
 
 Once a website sends events from a real address, batches from localhost, loopback and private-network addresses (and `.local` / `.localhost` names) are left out, so opening a local copy of the site doesn't add to its numbers. A website that has only ever sent from local addresses, such as one you're trying Trace out on, keeps them.
@@ -310,6 +322,7 @@ In Claude Code it's the slash command `/mcp__trace__analyse_website`. Saving, ev
 | `get_behaviour_summary` | The aggregated digest the analyst reads |
 | `list_kpis`, `get_tracking_health` | KPI values; whether declared events are arriving |
 | `list_insights`, `get_insight`, `get_insight_prompt` | Find work, and get it as a complete implementation task |
+| `get_page_story` | How people use one page, as patterns: the elements they use and how often clicks there do nothing, the common orders of action, where people come from and go next, scroll and time, plus the page's problems and the insights that name it. Rows from fewer than 5 sessions are only counted as hidden. Read-only connections can use it |
 | `query_behaviour` | Ask a question: a measure of matching events, optionally broken down by path, selector, device or day, and compared with the window before. Read-only connections can ask |
 | `draft_insights`, `save_insights` | Propose insights; Trace measures their evidence and returns drafts. Save the ones the person approves. (`add_insights` was replaced by these) |
 | `refresh_insight` | Measure an insight's evidence again with fresh data, and get each item's history |

@@ -46,7 +46,7 @@ async function renderErrors() {
     ${d.errors.length ? html`<div class="stats">${raw(stat(num(d.errors.length), "Different errors"))}${raw(stat(num(total), "Sessions hit", `of ${num(d.totals.sessions)}`))}</div>` : ""}
     ${table(
       [{ label: "Kind" }, { label: "Message" }, { label: "Page" }, { label: "Source" }, { label: "Count", num: 1 }, { label: "Sessions", num: 1 }],
-      d.errors.map((e) => [html`<span class="chip">${e.kind}</span>`, html`${e.message}`, html`${e.path}`, e.source ? html`<code>${e.source}</code>` : "", num(e.count), num(e.sessions)]),
+      d.errors.map((e) => [html`<span class="chip">${e.kind}</span>`, html`${e.message}`, pageLink(e.path), e.source ? html`<code>${e.source}</code>` : "", num(e.count), num(e.sessions)]),
       "No errors: no exceptions, console errors, failed requests or missing files."
     )}`;
   onDaysChange(renderErrors);

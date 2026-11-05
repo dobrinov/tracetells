@@ -140,7 +140,7 @@ pub(crate) fn set_cookie(res: &mut Response, token: Option<&str>, secure: bool) 
 
 /// Paths about one website; everything else is about the account.
 fn is_site_path(path: &str) -> bool {
-    ["/project", "/config", "/digest", "/kpis", "/funnels", "/audience", "/areas", "/today", "/insights", "/analysis", "/releases", "/publish", "/query", "/evaluate", "/privacy", "/onboarding", "/errors", "/server-key"]
+    ["/project", "/config", "/digest", "/kpis", "/funnels", "/audience", "/areas", "/today", "/insights", "/analysis", "/releases", "/publish", "/query", "/evaluate", "/privacy", "/onboarding", "/errors", "/server-key", "/pages", "/overlay"]
         .iter()
         .any(|p| path == *p || path.starts_with(&format!("{p}/")))
 }
@@ -152,6 +152,7 @@ fn required_role(method: &Method, path: &str) -> Role {
     let user_actions = path == "/evaluate"
         || path == "/releases"
         || path == "/query"
+        || path == "/overlay"
         || (path.starts_with("/insights/") && (path.ends_with("/status") || path.ends_with("/kpi") || path.ends_with("/refresh")));
     match () {
         _ if path.starts_with("/team") || path.starts_with("/audit") => Role::Admin,

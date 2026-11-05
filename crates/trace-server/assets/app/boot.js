@@ -117,7 +117,7 @@ const routes = {
   audience: renderAudience,
   features: renderFeatures,
   funnels: renderFunnels,
-  pages: renderBehaviour,
+  pages: () => (routeArg && !PUBLIC ? renderStory(decodeURIComponent(routeArg)) : renderBehaviour()),
   errors: renderErrors,
   goals: renderKpis,
   insights: () => ((insightsMode = "insights"), renderInsights()),
@@ -164,7 +164,7 @@ async function route() {
   const canonical = `${pageUrl(page)}${arg ? `/${arg}` : ""}`;
   if (!ACCOUNT_PAGES.includes(page) && location.hash.split("?")[0] !== canonical) history.replaceState(null, "", canonical + (location.hash.includes("?") ? location.hash.slice(location.hash.indexOf("?")) : ""));
   routeArg = arg;
-  measurePage(ACCOUNT_PAGES.includes(page) || !sectionOf(page) ? `/${page}` : sectionOf(page) === "home" ? "/home" : `/${sectionOf(page)}/${page}${page === "features" && arg ? "/area" : ""}`);
+  measurePage(ACCOUNT_PAGES.includes(page) || !sectionOf(page) ? `/${page}` : sectionOf(page) === "home" ? "/home" : `/${sectionOf(page)}/${page}${page === "features" && arg ? "/area" : page === "pages" && arg ? "/story" : ""}`);
   const render = routes[page] || renderHome;
   if (!PUBLIC && project && !ACCOUNT_PAGES.includes(page)) await loadChecklist();
   renderSubnav(ACCOUNT_PAGES.includes(page) && page !== "team" && page !== "plan" ? null : page);

@@ -19,11 +19,11 @@ function table(headers, rows, empty = "No data in this window.") {
 async function renderBehaviour() {
   const d = await api(`/digest?days=${digestDays}`);
   const t = d.totals;
-  const clickRows = (list) => list.map((c) => [esc(c.path), `<code>${esc(c.selector)}</code>`, esc(c.text || ""), num(c.count), num(c.sessions)]);
+  const clickRows = (list) => list.map((c) => [pageLink(c.path), `<code>${esc(c.selector)}</code>`, esc(c.text || ""), num(c.count), num(c.sessions)]);
   const clickHeaders = [{ label: "Page" }, { label: "Element" }, { label: "Text" }, { label: "Count", num: 1 }, { label: "Sessions", num: 1 }];
   view.innerHTML = `
     <div class="toolbar">
-      <div><h1>Pages</h1><p class="sub">How each page is used, aggregated over the window, never individual recordings. Errors have their own page.</p></div>
+      <div><h1>Pages</h1><p class="sub">How each page is used, aggregated over the window, never individual recordings. Open a page for its story: what people click, in which order, and what goes wrong there. Errors have their own page.</p></div>
       <label class="field narrow">Window
         <select id="days">${[1, 7, 14, 30, 90].map((n) => `<option value="${n}" ${n === digestDays ? "selected" : ""}>Last ${n} day${n > 1 ? "s" : ""}</option>`).join("")}</select>
       </label>
@@ -46,7 +46,7 @@ async function renderBehaviour() {
     ${table(
       [{ label: "Path" }, { label: "Views", num: 1 }, { label: "Sessions", num: 1 }, { label: "Exit rate", num: 1 }, { label: "Avg scroll", num: 1 }, { label: "Avg time", num: 1 }],
       d.pages.map((p) => [
-        esc(p.path),
+        pageLink(p.path),
         num(p.views),
         num(p.sessions),
         pct(p.exit_rate),
@@ -66,13 +66,13 @@ async function renderBehaviour() {
     <h2>Forms</h2>
     ${table(
       [{ label: "Page" }, { label: "Form" }, { label: "Started", num: 1 }, { label: "Submitted", num: 1 }, { label: "Completion", num: 1 }],
-      d.forms.map((f) => [esc(f.path), `<code>${esc(f.selector)}</code>`, num(f.started), num(f.submitted), pct(f.completion_rate)])
+      d.forms.map((f) => [pageLink(f.path), `<code>${esc(f.selector)}</code>`, num(f.started), num(f.submitted), pct(f.completion_rate)])
     )}
 
     <h2>Top paths</h2>
     ${table(
       [{ label: "From" }, { label: "To" }, { label: "Count", num: 1 }],
-      d.transitions.map((x) => [esc(x.from), esc(x.to), num(x.count)])
+      d.transitions.map((x) => [pageLink(x.from), pageLink(x.to), num(x.count)])
     )}`;
   view.querySelector("#days").addEventListener("change", (e) => {
     digestDays = Number(e.target.value);

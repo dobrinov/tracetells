@@ -347,6 +347,16 @@ CREATE TABLE IF NOT EXISTS oauth_codes (
   expires_at INTEGER NOT NULL
 );
 
+-- Short-lived links that open a page story over the website's own page:
+-- the token's hash, the website, who made it and until when it works.
+CREATE TABLE IF NOT EXISTS overlay_tokens (
+  token_hash TEXT PRIMARY KEY,
+  project_id INTEGER NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+
 -- Who changed what: team, security settings, API tokens, privacy rules.
 CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY,
