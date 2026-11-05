@@ -16,10 +16,10 @@ There is no JavaScript test harness, so dashboard tasks are verified in a browse
 
 ## 2. Stage 2: Problems
 
-- [ ] 2.1 Add the per-page problems report in `trace-core/src/problems.rs` (dead, rage and error counts and sessions hit per path, top 50, plus each page's detail via `story::problems` and the insights naming it); verify unit tests for the spec's questions-page scenario on SQLite and Postgres
-- [ ] 2.2 Serve it at `GET /api/sites/{site}/problems?days=` through the report cache, with open server errors; verify an API test for members, read-only tokens and the isolation test's route list
-- [ ] 2.3 Write `app/problems.js`: shaded table (lightness as well as hue), page detail with "Make it a task" and a link to the story, server errors section with the not-set-up notice; switch the sidebar count to this report; verify on the demo that the heaviest cells are darkest, the task text names page, element, counts and window, and nothing on the page changes data
-- [ ] 2.4 Update the README and docs where they describe the Errors page; verify the text matches the page
+- [x] 2.1 Add the per-page problems report in `trace-core/src/problems.rs` (dead, rage and error counts and sessions hit per path, top 50; a page's detail and the insights naming it come from its story, `story::build`); verify unit tests for the spec's questions-page scenario on SQLite and Postgres
+- [x] 2.2 Serve it at `GET /api/sites/{site}/problems?days=` through the report cache (the page lists open server errors from `/errors` beside it); verify an API test for members, read-only tokens and the isolation test's route list
+- [x] 2.3 Write `app/problems.js`: shaded table (lightness as well as hue), page detail with "Make it a task" and a link to the story, server errors section with the not-set-up notice; switch the sidebar count to this report; verify on the demo that the heaviest cells are darkest, the task text names page, element, counts and window, and nothing on the page changes data
+- [x] 2.4 Update the README and docs where they describe the Errors page; verify the text matches the page
 
 ## 3. Stage 3: Journeys
 

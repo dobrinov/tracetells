@@ -9,10 +9,10 @@ let serverEnv = store("trace_error_env") || "";
 const SERVER_STATUS = { open: ["Open", "warn"], resolved: ["Resolved", "good"], ignored: ["Ignored", ""] };
 const VERDICT = { stopped: ["Stopped", "good"], dropped: ["Dropped", "good"], still_happening: ["Still happening", "warn"], waiting: ["Waiting", ""] };
 
+// Problems' tabs: by page (problems.js) and the server errors (here).
 function errorTabs(active) {
   if (PUBLIC) return "";
-  const tab = (id, label, href) => html`<a role="tab" class="${active === id ? "active" : ""}" aria-selected="${active === id}" href="${href}">${label}</a>`;
-  return html`<div class="tabs" role="tablist" aria-label="Where errors happen">${tab("browser", "Browser", pageUrl("errors"))}${tab("server", "Server", `${pageUrl("errors")}/server`)}</div>`;
+  return problemTabs(active === "browser" ? "pages" : active);
 }
 
 function errorsToolbar(sub, extra = "") {

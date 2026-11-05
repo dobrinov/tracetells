@@ -3008,3 +3008,109 @@ body.auth .subnav {
 .places .count:empty {
   display: none;
 }
+
+/* ---- Problems: pages by problem, shaded by how much ---- */
+.heat-table {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-x: auto;
+  margin: 12px 0 20px;
+}
+.heat-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 2.4fr) repeat(4, minmax(84px, 1fr));
+  gap: 4px;
+  min-width: 640px;
+  align-items: stretch;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  border-radius: 8px;
+}
+button.heat-row {
+  cursor: pointer;
+}
+button.heat-row.on {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.heat-headings span {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+  padding-bottom: 2px;
+}
+.heat-headings span:first-child {
+  text-align: left;
+}
+.heat-path,
+.heat {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  border-radius: 6px;
+  padding: 0 12px;
+}
+.heat-path {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.heat-path code {
+  background: transparent;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.heat {
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
+/* Five shades of one colour, lighter to darker, readable in both themes. */
+.heat-0 {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.heat-1 {
+  background: color-mix(in srgb, var(--bad) 12%, var(--surface));
+  color: var(--text);
+}
+.heat-2 {
+  background: color-mix(in srgb, var(--bad) 26%, var(--surface));
+  color: var(--text);
+}
+/* Text stays the page's text colour up to here, and flips only on the full colour. */
+.heat-3 {
+  background: color-mix(in srgb, var(--bad) 46%, var(--surface));
+  color: var(--text);
+  font-weight: 600;
+}
+.heat-4 {
+  background: var(--bad);
+  color: var(--surface);
+  font-weight: 700;
+}
+.problem-detail {
+  margin-bottom: 24px;
+}
+.problem-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+}
+.problem-detail-head h2 {
+  margin: 0;
+}
+.problem-detail-head a {
+  margin-left: auto;
+  font-weight: 600;
+}
+.problem-detail h3 {
+  margin: 18px 0 8px;
+}

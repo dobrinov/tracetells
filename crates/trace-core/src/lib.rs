@@ -20,6 +20,7 @@ pub mod overlay;
 pub mod onboarding;
 pub mod plans;
 pub mod privacy;
+pub mod problems;
 pub mod readiness;
 pub mod story;
 pub mod today;

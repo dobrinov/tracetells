@@ -220,13 +220,11 @@ async function loadCounts() {
   if (PUBLIC || !project) return;
   if (placeCounts.site === currentSite && Date.now() - placeCounts.at < 60000) return paintCounts();
   const site = currentSite;
-  const [digest, kpis, fresh] = await Promise.all([api("/digest?days=7").catch(() => null), api("/kpis").catch(() => null), api("/insights?status=new").catch(() => null)]);
+  const [problems, kpis, fresh] = await Promise.all([api("/problems?days=7").catch(() => null), api("/kpis").catch(() => null), api("/insights?status=new").catch(() => null)]);
   if (site !== currentSite) return;
   const values = {};
-  if (digest) {
-    const pages = new Set([...digest.rage_clicks, ...digest.dead_clicks, ...digest.errors].map((x) => x.path).filter(Boolean));
-    values.problems = pages.size ? String(pages.size) : "";
-  }
+  // The same report as the Problems page, so the count and the page agree.
+  if (problems) values.problems = problems.pages.length ? String(problems.pages.length) : "";
   if (kpis) {
     const measured = kpis.filter((k) => k.target != null && k.current != null && (k.sessions || 0) >= SAMPLE_MIN);
     values.goals = measured.length ? `${measured.filter((k) => k.target_met).length}/${measured.length}` : "";
